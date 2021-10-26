@@ -1,0 +1,12 @@
+[package]
+name = "poker"
+version = "0.1.0"
+authors = ["Adam St Arnaud <ajstarna@ualberta.ca>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+strum = "0.22"
+strum_macros = "0.22"
+rand = "0.8"
