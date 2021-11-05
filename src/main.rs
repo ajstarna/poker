@@ -1,11 +1,12 @@
+use std::iter;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::cmp::Ordering;
 
-#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter, Hash)]
 enum Rank {
     TWO = 2,
     THREE = 3,
@@ -112,18 +113,87 @@ impl PartialEq for HandResult {
 }
 
 impl HandResult {
+
+    /// Given a hand ranking, along with the constituent cards and the kickers, this function returns a numerical score
+    /// that determines the hand's value compared to any other hand
+    fn score_hand (hand_ranking: HandRanking, constituent_cards: & Vec<Card>, kickers: & Vec<Card>) -> u32 {
+	888
+    }
+
     /// Given a hand of 5 cards, we return a HandResult, which tells
-    /// us the hand randking, the constituent cards, kickers, and hand score
-    fn from_5_cards(five_cards: Vec<Card>) -> Self {
-	// TODO: determine real result
+    /// us the hand ranking, the constituent cards, kickers, and hand score    
+    fn analyze_hand(mut five_cards: Vec<Card>) -> Self {
 	assert!(five_cards.len() == 5);
+	five_cards.sort(); // first sort by Rank
 	println!("five cards = {:?}", five_cards);
-	let hand_ranking = HandRanking::STRAIGHT;
+	
+	let hand_ranking: HandRanking;
+
+	let mut rank_counts: HashMap<Rank, u8> = HashMap::new();	
+	let mut is_flush = true;
+	let first_suit = five_cards[0].suit;
+	let mut is_straight = true;
+	let first_rank = five_cards[0].rank as usize;
+	for (i, card) in five_cards.iter().enumerate() {
+	    let count = rank_counts.entry(card.rank).or_insert(0);
+	    *count += 1;
+	    if card.suit != first_suit {
+		is_flush = false;
+	    }
+	    if card.rank as usize != first_rank + i {
+		// TODO: we need to handle ACE being high or low
+		is_straight = false;
+	    }
+	}
+
+	if is_flush {
+	    println!("is_flush = {}", is_flush);
+	}
+	if is_straight {
+	    println!("is_straight = {}", is_straight);
+	}
+	println!("rank counts = {:?}", rank_counts);
+
+	if is_flush {
+	    if is_straight {
+		if let Rank::ACE = five_cards[4].rank {
+		    hand_ranking = HandRanking::ROYALFLUSH;
+		}
+		else {
+		    hand_ranking = HandRanking::STRAGHTFLUSH;		    
+		}
+	    }
+	    else {
+		hand_ranking = HandRanking::FLUSH;
+	    }
+	}
+	else if is_straight {
+	    hand_ranking = HandRanking::STRAIGHT;
+	}
+	else {
+	    if rank_counts.len() == 5 {
+		hand_ranking = HandRanking::HIGHCARD;
+		// TODO: constituent is high card and other four are kickers i guess?
+	    }
+	    else {
+		// TODO: we have at least one pair here. could also have full house, or three of a kind
+		if blah {
+		    hand_ranking = HandRanking::PAIR;		    
+		} else if blah2 {
+		    hand_ranking = HandRanking::TWOPAIR;		    		    
+		} else if blah3 {
+		    hand_ranking = HandRanking::THREEOFAKIND;		    		    
+		} else if blah4 {
+		    hand_ranking = HandRanking::FULLHOUSE;		    		    
+		}
+	    }
+	}
+	
 	let mut constituent_cards = five_cards[..3].to_vec();
 	constituent_cards.sort();
 	let mut kickers = five_cards[3..].to_vec();
 	kickers.sort();
-	let value = 888; // TODO
+	let value = HandResult::score_hand(hand_ranking, &constituent_cards, &kickers);
 	Self {
 	    hand_ranking,
 	    constituent_cards,
@@ -214,7 +284,7 @@ enum Street {
     Flop,
     Turn,
     River,
-    End
+    ShowDown
 }
 
 struct GameHand<'a> {
@@ -264,9 +334,9 @@ impl <'a> GameHand<'a> {
 		println!("\nRiver = {:?}", self.river);				
 	    }
 	    Street::River => {
-	    	self.street = Street::End;
+	    	self.street = Street::ShowDown;
 	    }
-	    Street::End => () // we are already in the end street (from players folding during the street)
+	    Street::ShowDown => () // we are already in the end street (from players folding during the street)
 	}
     }
 
@@ -307,38 +377,51 @@ impl <'a> GameHand<'a> {
 
     fn finish(&mut self) {
 
-	/*
-	let mut remaining = Vec::<&mut Player>::new();
-	for player in self.players.iter_mut() {
-	    // TODO: make this more functional/rsuty
-	    if player.is_active {
-		println!("found an active player remaining");
-		remaining.push(player);
-	    }
-	}
-	 */
-	// winners is a vec of bools the same length of the players where we keep track of
-	// which ones are a winner and entitled to part of the pot
-	//let mut winner_flags: Vec<bool> = iter::repeat(false).take(self.players.len()).collect();
-	//let mut Vec<bool> = iter::repeat(false).take(self.players.len()).collect();	
-	let hand_results =  self.players.iter()
-	    .map(|player| self.determine_best_hand(player)).collect::<Vec<HandResult>>();
-	let mut best_indices = HashSet::<usize>::new();
+	let mut best_indices = HashSet::<usize>::new();	
+	if let Street::ShowDown = self.street {
+	    // if we made it to show down, there are multiple plauers left, so we need to see who
+	    // has the best hand.
+	    println!("Multiple active players made it to showdown!");	    
+	    let hand_results =  self.players.iter()
+		.map(|player| self.determine_best_hand(player)).collect::<Vec<Option<HandResult>>>();
 
-	let mut best_idx = 0;
-	best_indices.insert(best_idx);	
-	for (i, current_result) in hand_results.iter().skip(1).enumerate() {
-	    if *current_result > hand_results[best_idx] {
-		best_indices.clear();
-		best_indices.insert(i); // only one best hand now
-		best_idx = i;
+	    let mut best_idx = 0;
+	    best_indices.insert(best_idx);	
+	    for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
+		i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
+		println!("Index = {}, Current result = {:?}", i, current_result);
+		
+		if let None = current_result {
+		    println!("no hand result at index {:?}", i);
+		    continue;
+		}
+		if *current_result > hand_results[best_idx] {
+		    println!("new best hand at index {:?}", i);
+		    best_indices.clear();
+		    best_indices.insert(i); // only one best hand now
+		    best_idx = i;
+		}
+		else if *current_result == hand_results[best_idx] {
+		    println!("equally good hand at index {:?}", i);		    
+		    best_indices.insert(i); // another index that also has the best hand
+		}
+		else {
+		    println!("hand worse at index {:?}", i);		    		    
+		    continue;
+		}
 	    }
-	    else if *current_result == hand_results[best_idx] {
-		best_indices.insert(i); // another index that also has the best hand
+	} else {
+	    for(i, player) in self.players.iter().enumerate() {
+		// TODO: make this more functional/rusty
+		if player.is_active {
+		    println!("found an active player remaining");
+		    best_indices.insert(i);
+		} else {
+		    println!("found an NON active player remaining");
+		}
 	    }
-	    else {
-		continue;
-	    }
+	    assert!(best_indices.len() == 1); // if we didn't make it to show down, there better be only one player left			    
+	    
 	}
 
 	// divy the pot to all the winners	
@@ -360,13 +443,48 @@ impl <'a> GameHand<'a> {
 
 
     /// Given a player, we need to determine which 5 cards make the best hand for this player
-    fn determine_best_hand(&self, player: &Player) -> HandResult {
-	// TODO: during testing, the best hand is just gunna be the flop + the players two cards
-	// iterate over all possible 7 choose 5 (21) hands, construct a HandResult, and keep track of the best
-	let mut full_hand: Vec<Card> = self.flop.clone().unwrap();	
-	full_hand.append(& mut player.hole_cards.clone());
-	println!("full hand = {:?}", full_hand);
-	HandResult::from_5_cards(full_hand)
+    fn determine_best_hand(&self, player: &Player) -> Option<HandResult> {
+	if !player.is_active {
+	    // if the player isn't active, then can't have a best hand
+	    return None;
+	}
+	
+
+	if let Street::ShowDown = self.street {
+	    // we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
+	    let mut best_result: Option<HandResult> = None;
+	    let mut hand_count = 0;
+	    for exclude_idx1 in 0..7 {
+		//println!("exclude 1 = {}", exclude_idx1);
+		for exclude_idx2 in exclude_idx1+1..7 {
+		    //println!("exclude 2 = {}", exclude_idx2);		    
+		    let mut possible_hand = Vec::with_capacity(5);
+		    hand_count += 1;
+		    for (idx, card) in player.hole_cards.iter()
+			.chain(self.flop.as_ref().unwrap().iter())
+			.chain(iter::once(&self.turn.unwrap()))
+			.chain(iter::once(&self.river.unwrap())).enumerate() {
+			    if idx != exclude_idx1 && idx != exclude_idx2  {
+				//println!("pushing!");
+				possible_hand.push(*card);
+			    }
+			}
+		    // we have built a hand of five cards, now evaluate it
+		    let current_result = HandResult::analyze_hand(possible_hand);
+		    match best_result {
+			None => best_result = Some(current_result),			
+			Some(result) if current_result > result  => best_result = Some(current_result),
+			_ => ()
+		    }
+		}
+	    }
+	    assert!(hand_count == 21); // 7 choose 5
+	    println!("Looked at {} possible hands", hand_count);
+	    best_result
+	} else {
+	    None
+	}
+	    
     }
         
     fn play(&mut self) {
@@ -378,7 +496,7 @@ impl <'a> GameHand<'a> {
 	self.deal_hands();
 	
 	println!("self.players = {:?}", self.players);	
-	while self.street != Street::End {
+	while self.street != Street::ShowDown {
 	    //println!("\nStreet is {:?}", self.street);
 	    self.play_street();
 	    if self.num_active == 1 {
@@ -446,7 +564,7 @@ impl <'a> GameHand<'a> {
 		    // get an validate an action from the player
 		    match GameHand::get_and_validate_action(&player, street_bet, player_cumulative) {
 			PlayerAction::Fold => {
-			    println!("Player folds!");			    
+			    println!("Player {:?} folds!", player.name);
 			    player.deactivate();	    
 			    self.num_active -= 1;
 			}
@@ -503,8 +621,8 @@ impl <'a> GameHand<'a> {
 	
 	let num = rand::thread_rng().gen_range(0..100);
 	match num {
-	    0..=15 => PlayerAction::Fold,
-	    16..=39 => PlayerAction::Check,
+	    0..=10 => PlayerAction::Fold,
+	    11..=39 => PlayerAction::Check,
 	    40..=70 => {
 		let amount = rand::thread_rng().gen_range(1..player.money as u32);		
 		PlayerAction::Bet(amount as f64) // bet random amount
