@@ -1,12 +1,12 @@
-use std::iter;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use rand::Rng;
 use rand::seq::SliceRandom;
+use std::collections::HashSet;
+use std::cmp::Ordering;
 
-#[derive(Debug, Copy, Clone, EnumIter)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
 enum Rank {
-    ACE = 1,
     TWO = 2,
     THREE = 3,
     FOUR = 4,
@@ -19,10 +19,10 @@ enum Rank {
     JACK = 11,
     QUEEN = 12,
     KING = 13,
-
+    ACE = 14,
 }
 
-#[derive(Debug, Copy, Clone, EnumIter)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone, EnumIter)]
 enum Suit {
     CLUB,
     DIAMOND,
@@ -30,10 +30,107 @@ enum Suit {
     SPADE
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Eq, Debug, Copy, Clone)]
 struct Card {
     rank: Rank,
     suit: Suit,
+}
+
+/// We simply compare Cards based on their rank field.
+impl Ord for Card {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.rank.cmp(&other.rank)
+    }
+}
+
+impl PartialOrd for Card {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Card {
+    fn eq(&self, other: &Self) -> bool {
+        self.rank == other.rank
+    }
+}
+
+
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
+enum HandRanking {
+    HIGHCARD = 1,
+    TWOPAIR = 2,
+    THREEOFAKIND = 3,
+    STRAIGHT = 4,
+    FLUSH = 5,
+    FULLHOUSE = 6,
+    FOUROFAKIND = 7,
+    STRAGHTFLUSH = 8,
+    ROYALFLUSH = 9,
+}
+
+/// The hand result has the HandRanking, for quick comparisons, then the cads that make
+/// up that HandRanking, along with the remaining kicker cards for tie breaking (sorted)
+/// There is also a field "value", which gives a value of the hand that can be used to quickly
+/// compare it against other hands. The HandRanking, then each of the constituent cards, then the kickers,
+/// are each represented by 4 bits, so a better hand will have a higher value.
+/// e.g. a hand of Q, Q, Q, 9, 4 would look like
+/// {
+/// hand_ranking: HandRanking::THREEOFAKIND,
+/// contsituent_cards: [Q, Q, Q],
+/// kickers: [9, 4]
+/// value = [3] | [12] | [12] | [12] | [9] | [4] == [0000] | [0000] | [0011] | [1100] | [1100] | [1100] | [1001] | [0100]
+/// Note: value has eight leading 0s since we only need 24 bits to represent it.
+/// }
+
+
+#[derive(Debug, Eq)]
+struct HandResult {
+    hand_ranking: HandRanking,
+    constituent_cards: Vec<Card>,
+    kickers: Vec<Card>,
+    value: u32, // the absolute value of this hand, which can be used to compare against another hand
+}
+
+/// We simply compare HandResults based on their value field.
+impl Ord for HandResult {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for HandResult {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for HandResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl HandResult {
+    /// Given a hand of 5 cards, we return a HandResult, which tells
+    /// us the hand randking, the constituent cards, kickers, and hand score
+    fn from_5_cards(five_cards: Vec<Card>) -> Self {
+	// TODO: determine real result
+	assert!(five_cards.len() == 5);
+	println!("five cards = {:?}", five_cards);
+	let hand_ranking = HandRanking::STRAIGHT;
+	let mut constituent_cards = five_cards[..3].to_vec();
+	constituent_cards.sort();
+	let mut kickers = five_cards[3..].to_vec();
+	kickers.sort();
+	let value = 888; // TODO
+	Self {
+	    hand_ranking,
+	    constituent_cards,
+	    kickers,
+	    value
+	}
+    }
 }
 
 struct Deck {
@@ -86,7 +183,7 @@ enum PlayerAction {
 #[derive(Debug)]
 struct Player {
     name: String,
-    hand: Vec<Card>,    
+    hole_cards: Vec<Card>,    
     is_active: bool,
     money: f64,
 }
@@ -95,7 +192,7 @@ impl Player {
     fn new(name: String) -> Self {
 	Player {
 	    name: name,
-	    hand: Vec::<Card>::with_capacity(2),
+	    hole_cards: Vec::<Card>::with_capacity(2),
 	    is_active: true,
 	    money: 1000.0, // let them start with 1000 for now
 	}
@@ -153,15 +250,18 @@ impl <'a> GameHand<'a> {
 	match self.street {
 	    Street::Preflop => {
 	    	self.street = Street::Flop;
-		self.deal_flop();		
+		self.deal_flop();
+		println!("\nFlop = {:?}", self.flop);
 	    },
 	    Street::Flop => {
 	    	self.street = Street::Turn;
-		self.deal_turn();		
+		self.deal_turn();
+		println!("\nTurn = {:?}", self.turn);		
 	    }
 	    Street::Turn => {
 	    	self.street = Street::River;
-		self.deal_river();		
+		self.deal_river();
+		println!("\nRiver = {:?}", self.river);				
 	    }
 	    Street::River => {
 	    	self.street = Street::End;
@@ -176,7 +276,7 @@ impl <'a> GameHand<'a> {
 	    if player.is_active {
 		for _ in 0..2 {
 		    if let Some(card) = self.deck.draw_card() {
-			player.hand.push(card)
+			player.hole_cards.push(card)
 		    } else {
 			panic!();
 		    }
@@ -206,54 +306,80 @@ impl <'a> GameHand<'a> {
     }
 
     fn finish(&mut self) {
+
+	/*
 	let mut remaining = Vec::<&mut Player>::new();
 	for player in self.players.iter_mut() {
+	    // TODO: make this more functional/rsuty
 	    if player.is_active {
 		println!("found an active player remaining");
 		remaining.push(player);
 	    }
 	}
-	// winners is a vec of bools the same length of the remaining where we keep track of
+	 */
+	// winners is a vec of bools the same length of the players where we keep track of
 	// which ones are a winner and entitled to part of the pot
-	//let mut winner_flags = [false; remaining.len()];
-	let mut winner_flags: Vec<bool> = iter::repeat(false).take(remaining.len()).collect();
-	match remaining.len() {
-	    1 => {
-		winner_flags[0] = true;
+	//let mut winner_flags: Vec<bool> = iter::repeat(false).take(self.players.len()).collect();
+	//let mut Vec<bool> = iter::repeat(false).take(self.players.len()).collect();	
+	let hand_results =  self.players.iter()
+	    .map(|player| self.determine_best_hand(player)).collect::<Vec<HandResult>>();
+	let mut best_indices = HashSet::<usize>::new();
+
+	let mut best_idx = 0;
+	best_indices.insert(best_idx);	
+	for (i, current_result) in hand_results.iter().skip(1).enumerate() {
+	    if *current_result > hand_results[best_idx] {
+		best_indices.clear();
+		best_indices.insert(i); // only one best hand now
+		best_idx = i;
 	    }
-	    _ => {
-		// TODO: how do we pick a winner from multiple ppl at showdown
-		winner_flags[0] = true;		
+	    else if *current_result == hand_results[best_idx] {
+		best_indices.insert(i); // another index that also has the best hand
+	    }
+	    else {
+		continue;
 	    }
 	}
+
 	// divy the pot to all the winners	
-	let num_winners = winner_flags.iter().filter(|flag| **flag).count();
+	let num_winners = best_indices.len();
 	let payout = self.pot as f64 / num_winners as f64;
 	
-	for (player, is_winner) in remaining.iter_mut().zip(winner_flags.iter()) {
-	    if *is_winner {
-		player.pay(payout);
-	    }
+	for idx in best_indices.iter() {
+	    let winning_player = & mut
+		self.players[*idx];
+	    winning_player.pay(payout);
 	}
 
 	// take the players' cards
 	for player in self.players.iter_mut() {
 	    // todo: is there any issue with calling drain if they dont have any cards?
-	    player.hand.drain(..);		
+	    player.hole_cards.drain(..);		
 	}
     }
 
+
+    /// Given a player, we need to determine which 5 cards make the best hand for this player
+    fn determine_best_hand(&self, player: &Player) -> HandResult {
+	// TODO: during testing, the best hand is just gunna be the flop + the players two cards
+	// iterate over all possible 7 choose 5 (21) hands, construct a HandResult, and keep track of the best
+	let mut full_hand: Vec<Card> = self.flop.clone().unwrap();	
+	full_hand.append(& mut player.hole_cards.clone());
+	println!("full hand = {:?}", full_hand);
+	HandResult::from_5_cards(full_hand)
+    }
+        
     fn play(&mut self) {
 	println!("inside of play()");
 	self.deck.shuffle();
-	for card in self.deck.cards.iter() {
-	    println!("{:?}", card);
-	}
+	//for card in self.deck.cards.iter() {
+	//   println!("{:?}", card);
+	//}
 	self.deal_hands();
 	
 	println!("self.players = {:?}", self.players);	
 	while self.street != Street::End {
-	    println!("\nStreet is {:?}", self.street);
+	    //println!("\nStreet is {:?}", self.street);
 	    self.play_street();
 	    if self.num_active == 1 {
 		// if the game is over from players folding
@@ -283,24 +409,27 @@ impl <'a> GameHand<'a> {
 	let mut cumulative_bets = vec![0.0; self.players.len()]; // each index keeps track of that players' contribution this street
 
 	// TODO: if preflop then collect blinds
-	if self.street is Preflop
+	/*
+	if self.street == Street::Preflop {
 	    let (left, right) = self.players.split_at_mut(starting_idx);
 	    for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
-	
+	    }
+	}
+	 */
 	
 	let starting_idx = self.get_starting_idx(); // which player starts the betting
 	let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
 	// if num_settled == self.active, then we are good to go to the next street 
 	
-	let mut loop_count = 0;
+	let mut _loop_count = 0;
 	'street: loop {
 	    /*
 	    if loop_count > 2 {
 		break;
 	    }
 	     */
-	    loop_count += 1;
-	    println!("loop count = {}", loop_count);
+	    // loop_count += 1;
+	    //println!("loop count = {}", loop_count);
 	    
 	    // iterate over the players from the starting index to the end of the vec, and then from the beginning back to the starting index
 	    let (left, right) = self.players.split_at_mut(starting_idx);
@@ -312,7 +441,7 @@ impl <'a> GameHand<'a> {
 			 street_bet,
 			 player_cumulative);
 		if player.is_active {
-		    println!("Player is active");		    
+		    //println!("Player is active");		    
 		    // this loop can keep going while it waits for a proper action
 		    // get an validate an action from the player
 		    match GameHand::get_and_validate_action(&player, street_bet, player_cumulative) {
@@ -375,8 +504,11 @@ impl <'a> GameHand<'a> {
 	let num = rand::thread_rng().gen_range(0..100);
 	match num {
 	    0..=15 => PlayerAction::Fold,
-	    15..=39 => PlayerAction::Check,
-	    40..=70 => PlayerAction::Bet(player.money), // bet it all baby!
+	    16..=39 => PlayerAction::Check,
+	    40..=70 => {
+		let amount = rand::thread_rng().gen_range(1..player.money as u32);		
+		PlayerAction::Bet(amount as f64) // bet random amount
+	    },
 	    _ => PlayerAction::Call,
 	}
     }
