@@ -60,14 +60,15 @@ impl PartialEq for Card {
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
 enum HandRanking {
     HIGHCARD = 1,
-    TWOPAIR = 2,
-    THREEOFAKIND = 3,
-    STRAIGHT = 4,
-    FLUSH = 5,
-    FULLHOUSE = 6,
-    FOUROFAKIND = 7,
-    STRAGHTFLUSH = 8,
-    ROYALFLUSH = 9,
+    PAIR = 2,    
+    TWOPAIR = 3,
+    THREEOFAKIND = 4,
+    STRAIGHT = 5,
+    FLUSH = 6,
+    FULLHOUSE = 7,
+    FOUROFAKIND = 8,
+    STRAIGHTFLUSH = 9,
+    ROYALFLUSH = 10,
 }
 
 /// The hand result has the HandRanking, for quick comparisons, then the cads that make
@@ -83,8 +84,6 @@ enum HandRanking {
 /// value = [3] | [12] | [12] | [12] | [9] | [4] == [0000] | [0000] | [0011] | [1100] | [1100] | [1100] | [1001] | [0100]
 /// Note: value has eight leading 0s since we only need 24 bits to represent it.
 /// }
-
-
 #[derive(Debug, Eq)]
 struct HandResult {
     hand_ranking: HandRanking,
@@ -117,7 +116,67 @@ impl HandResult {
     /// Given a hand ranking, along with the constituent cards and the kickers, this function returns a numerical score
     /// that determines the hand's value compared to any other hand
     fn score_hand (hand_ranking: HandRanking, constituent_cards: & Vec<Card>, kickers: & Vec<Card>) -> u32 {
-	888
+	let mut value = hand_ranking as u32;
+	value = value << 20; // shift it into the most sifnificant area we need
+	match hand_ranking {
+	    HandRanking::HIGHCARD
+		| HandRanking::PAIR
+		| HandRanking::THREEOFAKIND
+		| HandRanking::STRAIGHT
+		| HandRanking::FLUSH
+		| HandRanking::FOUROFAKIND
+		| HandRanking::STRAIGHT
+		| HandRanking::STRAIGHTFLUSH
+		| HandRanking::ROYALFLUSH => {
+		    // These handrankings are all uniquely identified by a single constituent card
+		    // first add the rank of the constituent
+		    let mut extra = constituent_cards.last().unwrap().rank as u32;
+		    extra = extra << 16;
+		    value += extra;
+		},
+	    HandRanking::TWOPAIR  => {
+		// a two pair is valued by its higher pair, then lower pair
+		let mut extra = constituent_cards.last().unwrap().rank as u32;
+		extra = extra << 16;
+		value += extra;
+
+		// the lower pair is sorted to the front
+		extra = constituent_cards[0].rank as u32;
+		extra = extra << 12;
+		value += extra;		    
+	    },
+	    HandRanking::FULLHOUSE => {
+		// a full house is valued first by the three of a kind, then the pair
+		// the three of a kind will always exist as the middle element, regardless of the sort order
+		let mut extra = constituent_cards[2].rank as u32;
+		extra = extra << 16;
+		value += extra;
+
+		// the pair will be either at the beginning or the end of the constituent_cards, we need to check.
+		// this depends on the sort.
+		// e.g. could be [ 2, 2, 2, 6, 6 ], OR [ 2, 2, 6, 6, 6 ]
+		let mut second_extra = constituent_cards[0].rank as u32;
+		if second_extra == extra {
+		    // the first card was the same as the middle card, i.e. we grabbed another card in the three of a kind.
+		    // So grab the last card in the list, which will necessarily be part of the pair
+		    second_extra = constituent_cards.last().unwrap().rank as u32;
+		}
+		second_extra = second_extra << 12;
+		value += second_extra;
+	    }
+	}
+	
+	// next add the value of the kicker(s), in order
+	// Note: for rankings without kickers, this loop simply won't happen
+	let mut shift_amount = 12;
+	for i in (0..kickers.len()).rev() {
+	    let mut extra = kickers[i].rank as u32;
+	    extra << shift_amount;
+	    value += extra;
+	    shift_amount -= 4;
+	}
+	
+	value
     }
 
     /// Given a hand of 5 cards, we return a HandResult, which tells
@@ -125,7 +184,7 @@ impl HandResult {
     fn analyze_hand(mut five_cards: Vec<Card>) -> Self {
 	assert!(five_cards.len() == 5);
 	five_cards.sort(); // first sort by Rank
-	println!("five cards = {:?}", five_cards);
+	//println!("five cards = {:?}", five_cards);
 	
 	let hand_ranking: HandRanking;
 
@@ -152,46 +211,90 @@ impl HandResult {
 	if is_straight {
 	    println!("is_straight = {}", is_straight);
 	}
-	println!("rank counts = {:?}", rank_counts);
+	//println!("rank counts = {:?}", rank_counts);
+	let mut constituent_cards = Vec::new();
 
-	if is_flush {
-	    if is_straight {
-		if let Rank::ACE = five_cards[4].rank {
-		    hand_ranking = HandRanking::ROYALFLUSH;
-		}
-		else {
-		    hand_ranking = HandRanking::STRAGHTFLUSH;		    
-		}
-	    }
-	    else {
-		hand_ranking = HandRanking::FLUSH;
-	    }
-	}
-	else if is_straight {
-	    hand_ranking = HandRanking::STRAIGHT;
-	}
-	else {
-	    if rank_counts.len() == 5 {
-		hand_ranking = HandRanking::HIGHCARD;
-		// TODO: constituent is high card and other four are kickers i guess?
-	    }
-	    else {
-		// TODO: we have at least one pair here. could also have full house, or three of a kind
-		if blah {
-		    hand_ranking = HandRanking::PAIR;		    
-		} else if blah2 {
-		    hand_ranking = HandRanking::TWOPAIR;		    		    
-		} else if blah3 {
-		    hand_ranking = HandRanking::THREEOFAKIND;		    		    
-		} else if blah4 {
-		    hand_ranking = HandRanking::FULLHOUSE;		    		    
-		}
-	    }
-	}
+	let mut kickers = Vec::new();
 	
-	let mut constituent_cards = five_cards[..3].to_vec();
+	if is_flush && is_straight {
+	    if let Rank::ACE = five_cards[4].rank {
+		hand_ranking = HandRanking::ROYALFLUSH;
+	    }
+	    else {
+		hand_ranking = HandRanking::STRAIGHTFLUSH;		    
+	    }
+	    constituent_cards.extend(five_cards);	    
+	} else {
+	    let mut num_fours = 0;
+	    let mut num_threes = 0;
+	    let mut num_twos = 0;	    
+	    for (rank, count) in &rank_counts {
+		//println!("rank = {:?}, count = {}", rank, count);
+		match count {
+		    4 => num_fours += 1,
+		    3 => num_threes += 1,
+		    2 => num_twos += 1,
+		    _ => ()
+		}
+	    }
+
+	    if num_fours == 1 {
+		hand_ranking = HandRanking::FOUROFAKIND;
+		for card in five_cards {
+		    match *rank_counts.get(&card.rank).unwrap()  {
+			4 => constituent_cards.push(card),
+			_ => kickers.push(card),
+		    }
+		}				
+	    }
+	    else if num_threes == 1 && num_twos == 1 {
+		hand_ranking = HandRanking::FULLHOUSE;
+		for card in five_cards {
+		    match *rank_counts.get(&card.rank).unwrap()  {
+			2 | 3 => constituent_cards.push(card),
+			_ => kickers.push(card),
+		    }
+		}		
+	    }
+	    else if is_flush {
+		hand_ranking = HandRanking::FLUSH;
+		constituent_cards.extend(five_cards);	    		
+	    } else if is_straight {
+		hand_ranking = HandRanking::STRAIGHT;
+		constituent_cards.extend(five_cards);	    		
+	    } else if num_threes == 1 {
+		hand_ranking = HandRanking::THREEOFAKIND;
+		for card in five_cards {
+		    match *rank_counts.get(&card.rank).unwrap()  {
+			3 => constituent_cards.push(card),
+			_ => kickers.push(card),
+		    }
+		}		
+	    } else if num_twos == 2 {
+		hand_ranking = HandRanking::TWOPAIR;
+		for card in five_cards {
+		    match *rank_counts.get(&card.rank).unwrap()  {
+			2 => constituent_cards.push(card),
+			_ => kickers.push(card),
+		    }
+		}		
+	    } else if num_twos == 1 {
+		hand_ranking = HandRanking::PAIR;
+		for card in five_cards {
+		    match *rank_counts.get(&card.rank).unwrap()  {
+			2 => constituent_cards.push(card),
+			_ => kickers.push(card),
+		    }
+		}				
+	    } else {
+		hand_ranking = HandRanking::HIGHCARD;
+		constituent_cards.push(five_cards[4]);
+		for &card in five_cards.iter().take(4) {
+		    kickers.push(card);
+		}
+	    }
+	}
 	constituent_cards.sort();
-	let mut kickers = five_cards[3..].to_vec();
 	kickers.sort();
 	let value = HandResult::score_hand(hand_ranking, &constituent_cards, &kickers);
 	Self {
@@ -480,6 +583,8 @@ impl <'a> GameHand<'a> {
 	    }
 	    assert!(hand_count == 21); // 7 choose 5
 	    println!("Looked at {} possible hands", hand_count);
+	    println!("player = {}", player.name);
+	    println!("best result = {:?}", best_result);
 	    best_result
 	} else {
 	    None
