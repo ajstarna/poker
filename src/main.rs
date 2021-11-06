@@ -168,12 +168,14 @@ impl HandResult {
 	
 	// next add the value of the kicker(s), in order
 	// Note: for rankings without kickers, this loop simply won't happen
-	let mut shift_amount = 12;
-	for i in (0..kickers.len()).rev() {
+	let mut shift_amount = 0;
+	// TODO: double check this logic. originally shift_amount started at 12. but that wont work for 2 pair in particular, since
+	// the second pair is being shifted 12. so if we start at 0 and go UP, i think we are good right?
+	for i in (0..kickers.len()) {
 	    let mut extra = kickers[i].rank as u32;
 	    extra << shift_amount;
 	    value += extra;
-	    shift_amount -= 4;
+	    shift_amount += 4;
 	}
 	
 	value
