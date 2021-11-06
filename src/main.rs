@@ -125,7 +125,6 @@ impl HandResult {
 		| HandRanking::STRAIGHT
 		| HandRanking::FLUSH
 		| HandRanking::FOUROFAKIND
-		| HandRanking::STRAIGHT
 		| HandRanking::STRAIGHTFLUSH
 		| HandRanking::ROYALFLUSH => {
 		    // These handrankings are all uniquely identified by a single constituent card
@@ -171,9 +170,9 @@ impl HandResult {
 	let mut shift_amount = 0;
 	// TODO: double check this logic. originally shift_amount started at 12. but that wont work for 2 pair in particular, since
 	// the second pair is being shifted 12. so if we start at 0 and go UP, i think we are good right?
-	for i in (0..kickers.len()) {
+	for i in 0..(kickers.len()) {
 	    let mut extra = kickers[i].rank as u32;
-	    extra << shift_amount;
+	    extra = extra << shift_amount;
 	    value += extra;
 	    shift_amount += 4;
 	}
@@ -230,7 +229,7 @@ impl HandResult {
 	    let mut num_fours = 0;
 	    let mut num_threes = 0;
 	    let mut num_twos = 0;	    
-	    for (rank, count) in &rank_counts {
+	    for (_, count) in &rank_counts {
 		//println!("rank = {:?}, count = {}", rank, count);
 		match count {
 		    4 => num_fours += 1,
@@ -359,7 +358,8 @@ enum PlayerAction {
 struct Player {
     name: String,
     hole_cards: Vec<Card>,    
-    is_active: bool,
+    is_active: bool, // is still playing the current hand
+    is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     money: f64,
 }
 
@@ -369,17 +369,23 @@ impl Player {
 	    name: name,
 	    hole_cards: Vec::<Card>::with_capacity(2),
 	    is_active: true,
+	    is_sitting_out: false,
 	    money: 1000.0, // let them start with 1000 for now
 	}
     }
     
     fn pay(&mut self, payment: f64) {
-	println!("getting paid inside {:?}", self);
-	self.money += payment
+	self.money += payment;
     }
 
     fn deactivate(&mut self) {
 	self.is_active = false;
+    }
+
+    /// If the player has put all their money in, but has not folded (is_active),
+    /// then they are all-in
+    fn is_all_in(&self) -> bool {
+	self.is_active && self.money == 0.0	
     }
 }
 
@@ -440,6 +446,8 @@ impl <'a> GameHand<'a> {
 	    }
 	    Street::River => {
 	    	self.street = Street::ShowDown;
+		println!("\nShowDown!");
+		
 	    }
 	    Street::ShowDown => () // we are already in the end street (from players folding during the street)
 	}
@@ -481,17 +489,18 @@ impl <'a> GameHand<'a> {
     }
 
     fn finish(&mut self) {
-
-	let mut best_indices = HashSet::<usize>::new();	
+	let mut best_indices = HashSet::<usize>::new();
+	let hand_results =  self.players.iter()
+	    .map(|player| self.determine_best_hand(player)).collect::<Vec<Option<HandResult>>>();
+	
 	if let Street::ShowDown = self.street {
 	    // if we made it to show down, there are multiple plauers left, so we need to see who
 	    // has the best hand.
 	    println!("Multiple active players made it to showdown!");	    
-	    let hand_results =  self.players.iter()
-		.map(|player| self.determine_best_hand(player)).collect::<Vec<Option<HandResult>>>();
-
 	    let mut best_idx = 0;
-	    best_indices.insert(best_idx);	
+	    best_indices.insert(best_idx);
+	    println!("starting best hand_result = {:?}", hand_results[best_idx]);
+	    // TODO: is there a chance hand_results[0] == None and we blow up?
 	    for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
 		i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
 		println!("Index = {}, Current result = {:?}", i, current_result);
@@ -500,7 +509,9 @@ impl <'a> GameHand<'a> {
 		    println!("no hand result at index {:?}", i);
 		    continue;
 		}
-		if *current_result > hand_results[best_idx] {
+		if hand_results[best_idx] == None || *current_result > hand_results[best_idx] {
+		    // TODO: this was working before the == None condition, but that seemed weird to me...
+		    // anything > None == true in Rust perhaps? I added the check to be clear when reading the code.
 		    println!("new best hand at index {:?}", i);
 		    best_indices.clear();
 		    best_indices.insert(i); // only one best hand now
@@ -516,33 +527,48 @@ impl <'a> GameHand<'a> {
 		}
 	    }
 	} else {
+	    // the hand ended before Showdown, so we simple find the one active player remaining
 	    for(i, player) in self.players.iter().enumerate() {
 		// TODO: make this more functional/rusty
 		if player.is_active {
-		    println!("found an active player remaining");
+		    //println!("found an active player remaining");
 		    best_indices.insert(i);
 		} else {
-		    println!("found an NON active player remaining");
+		    ();
+		    //println!("found an NON active player remaining");
 		}
 	    }
 	    assert!(best_indices.len() == 1); // if we didn't make it to show down, there better be only one player left			    
 	    
 	}
 
-	// divy the pot to all the winners	
+	// divy the pot to all the winners
+	// TODO: if a player was all_in (i.e. money left is 0?) then we need to figure out
+	// how much of the pot they actually get to win if multiple other players made it to showdown
 	let num_winners = best_indices.len();
 	let payout = self.pot as f64 / num_winners as f64;
 	
 	for idx in best_indices.iter() {
-	    let winning_player = & mut
-		self.players[*idx];
+	    let winning_player = & mut self.players[*idx];
+	    println!("paying out: {:?} \n  with hand result = {:?}", winning_player, hand_results[*idx]);
 	    winning_player.pay(payout);
+	    println!("after payment: {:?}", winning_player);	    	    
 	}
 
 	// take the players' cards
 	for player in self.players.iter_mut() {
 	    // todo: is there any issue with calling drain if they dont have any cards?
-	    player.hole_cards.drain(..);		
+	    player.hole_cards.drain(..);
+	    if !player.is_sitting_out {
+		if player.money == 0.0{
+		    println!("Player {} is out of money so is no longer playing in the game!", player.name);
+		    player.is_active = false;
+		    player.is_sitting_out = true;		
+		} else {
+		    // they will be active in the next hand
+		    player.is_active = true;
+		}
+	    }
 	}
     }
 
@@ -584,7 +610,7 @@ impl <'a> GameHand<'a> {
 		}
 	    }
 	    assert!(hand_count == 21); // 7 choose 5
-	    println!("Looked at {} possible hands", hand_count);
+	    //println!("Looked at {} possible hands", hand_count);
 	    println!("player = {}", player.name);
 	    println!("best result = {:?}", best_result);
 	    best_result
@@ -595,7 +621,11 @@ impl <'a> GameHand<'a> {
     }
         
     fn play(&mut self) {
-	println!("inside of play()");
+	println!("inside of play(). button_idx = {}", self.button_idx);
+	if self.num_active < 2 {
+	    println!("num_active players = {}, so we cannot play a hand!", self.num_active);
+	    return;
+	}
 	self.deck.shuffle();
 	//for card in self.deck.cards.iter() {
 	//   println!("{:?}", card);
@@ -624,7 +654,7 @@ impl <'a> GameHand<'a> {
 	// TODO: this needs to be smarter in small games
 	let mut starting_idx = self.button_idx + 1;
 	if starting_idx as usize >= self.players.len() {
-	    starting_idx += 1;
+	    starting_idx = 0;
 	}
 	starting_idx
     }
@@ -643,9 +673,19 @@ impl <'a> GameHand<'a> {
 	 */
 	
 	let starting_idx = self.get_starting_idx(); // which player starts the betting
-	let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
-	// if num_settled == self.active, then we are good to go to the next street 
+	//let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
+
+	// if a player is still active but has no remaining money (i.e. is all-in), then they are settled and ready to go to the end
+	let mut num_all_in = self.players.iter().filter(|player| player.is_all_in()).count();
+	let mut num_settled = num_all_in;
 	
+	println!("Current pot = {}", self.pot);
+	println!("Players = {:?}", self.players);
+	println!("num active players = {}", self.num_active);
+	println!("player at index {} starts the betting", starting_idx);
+	if num_settled > 0 {
+	    println!("num settled (i.e. all in players) = {}", num_settled);
+	}
 	let mut _loop_count = 0;
 	'street: loop {
 	    /*
@@ -654,18 +694,16 @@ impl <'a> GameHand<'a> {
 	    }
 	     */
 	    // loop_count += 1;
-	    //println!("loop count = {}", loop_count);
-	    
 	    // iterate over the players from the starting index to the end of the vec, and then from the beginning back to the starting index
 	    let (left, right) = self.players.split_at_mut(starting_idx);
 	    for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
 		let player_cumulative = cumulative_bets[i];
-		println!("Player = {:?}, i = {}", player, i);
-		println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-			 self.pot,
-			 street_bet,
-			 player_cumulative);
-		if player.is_active {
+		//println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+		//self.pot,
+		//treet_bet,
+		//	 player_cumulative);
+		if player.is_active && player.money > 0.0 {
+		    println!("Player = {:?}, i = {}", player, i);		
 		    //println!("Player is active");		    
 		    // this loop can keep going while it waits for a proper action
 		    // get an validate an action from the player
@@ -692,6 +730,9 @@ impl <'a> GameHand<'a> {
 				self.pot += difference;
 				cumulative_bets[i] += difference;				
 				player.money -= difference;
+				if player.is_all_in() {
+				    num_all_in += 1;
+				}
 			    }
 			    num_settled += 1;
 			},
@@ -702,11 +743,12 @@ impl <'a> GameHand<'a> {
 			    player.money -= difference;
 			    street_bet = new_bet;
 			    cumulative_bets[i] = new_bet;
-			    num_settled = 1; // since we just bet more, we are the only settled player
+			    // since we just bet more, we are the only settled player (aside from the all-ins)			    
+			    num_settled = num_all_in + 1;			    
 			}
 		    }
 		}
-		println!("num_active = {}, num_settled = {}", self.num_active, num_settled);
+		//println!("num_active = {}, num_settled = {}", self.num_active, num_settled);
 		if self.num_active == 1 {
 		    println!("Only one active player left so lets break the steet loop");
 		    break 'street;
@@ -725,14 +767,19 @@ impl <'a> GameHand<'a> {
     fn get_action_from_user(player: &Player) -> PlayerAction {
 	// will need UI here
 	// for now do a random action
-	
 	let num = rand::thread_rng().gen_range(0..100);
 	match num {
 	    0..=10 => PlayerAction::Fold,
-	    11..=39 => PlayerAction::Check,
-	    40..=70 => {
-		let amount = rand::thread_rng().gen_range(1..player.money as u32);		
-		PlayerAction::Bet(amount as f64) // bet random amount
+	    11..=45 => PlayerAction::Check,
+	    46..=70 => {
+		let amount: f64;
+		if player.money <= 100.0 {
+		    // just go all in if we are at 10% starting
+		    amount = player.money as f64;
+		} else {
+		    amount = rand::thread_rng().gen_range(1..player.money as u32) as f64;
+		}
+		PlayerAction::Bet(amount)
 	    },
 	    _ => PlayerAction::Call,
 	}
@@ -818,23 +865,37 @@ impl Game {
     }
 
     fn play_one_hand(&mut self) {
-	let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx
-	);
+	let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx);
 	game_hand.play();	    
     }
 
     fn play(&mut self) {
-	loop {
+	let num_hands = 5;
+	for i in 0..num_hands {
+	    println!("\n\n\n=================================================\n\nplaying hand {}", i);
 	    self.play_one_hand();
 	    // TODO: do we need to add or remove any players?
-	    
-	    // TODO: what happens with the button_idx  if a player leaves
-	    self.button_idx += 1; // and modulo length
-	    if self.button_idx as usize >= self.players.len() {
-		self.button_idx = 0;
+
+	    let mut loop_count = 0;
+	    'find_button: loop {
+		loop_count += 1;
+		if loop_count >= 10 {
+		    // couldn't find a valid button position. how does this happen?
+		    break;
+		}
+		self.button_idx += 1; // and modulo length
+		if self.button_idx as usize >= self.players.len() {
+		    self.button_idx = 0;
+		}
+		if self.players[self.button_idx].is_sitting_out {
+		    println!("Player at index {} is sitting out so cannot be the button", self.button_idx);
+		    continue;
+		} else {
+		    // We found a player who is not sitting out, so it is a valid
+		    // button position
+		    break;
+		}
 	    }
-	    
-	    break; // TODO: when should the game actually end
 	}
     }
 }
@@ -842,7 +903,7 @@ impl Game {
 fn main() {
     println!("Hello, world!");    
     let mut game = Game::new();
-    let num_players = 2;
+    let num_players = 5;
     for i in 0..num_players {
 	let name = format!("Mr {}", i);
 	game.add_player(Player::new(name));
