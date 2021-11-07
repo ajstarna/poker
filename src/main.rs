@@ -5,6 +5,7 @@ use rand::Rng;
 use rand::seq::SliceRandom;
 use std::collections::{HashSet, HashMap};
 use std::cmp::Ordering;
+use std::cmp;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter, Hash)]
 enum Rank {
@@ -345,8 +346,10 @@ impl Deck {
 }
 
 
-
+#[derive(Debug)]
 enum PlayerAction {
+    PostSmallBlind(f64),
+    PostBigBlind(f64),    
     Fold,
     Check,
     Bet(f64),
@@ -403,6 +406,8 @@ struct GameHand<'a> {
     players: &'a mut Vec<Player>,
     num_active: usize,
     button_idx: usize, // the button index dictates where the action starts
+    small_blind: f64,
+    big_blind: f64,
     street: Street,
     pot: f64, // current size of the pot
     flop: Option<Vec<Card>>,
@@ -411,13 +416,15 @@ struct GameHand<'a> {
 }
 
 impl <'a> GameHand<'a> {
-    fn new (deck: &'a mut Deck, players: &'a mut Vec<Player>, button_idx: usize) -> Self {
+    fn new (deck: &'a mut Deck, players: &'a mut Vec<Player>, button_idx: usize, small_blind: f64, big_blind: f64) -> Self {
 	let num_active = players.iter().filter(|player| player.is_active).count(); // active to start the hand	    	
 	GameHand {
 	    deck: deck,
 	    players: players,
 	    num_active: num_active,	    
 	    button_idx: button_idx,
+	    small_blind: small_blind,
+	    big_blind: big_blind,
 	    street: Street::Preflop,
 	    pot: 0.0,
 	    flop: None,
@@ -503,10 +510,10 @@ impl <'a> GameHand<'a> {
 	    // TODO: is there a chance hand_results[0] == None and we blow up?
 	    for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
 		i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
-		println!("Index = {}, Current result = {:?}", i, current_result);
+		//println!("Index = {}, Current result = {:?}", i, current_result);
 		
 		if let None = current_result {
-		    println!("no hand result at index {:?}", i);
+		    //println!("no hand result at index {:?}", i);
 		    continue;
 		}
 		if hand_results[best_idx] == None || *current_result > hand_results[best_idx] {
@@ -638,6 +645,7 @@ impl <'a> GameHand<'a> {
 	    self.play_street();
 	    if self.num_active == 1 {
 		// if the game is over from players folding
+		println!("\nGame is ending before showdown!");
 		break;
 	    } else {
 		// otherwise we move to the next street
@@ -664,13 +672,6 @@ impl <'a> GameHand<'a> {
 	let mut cumulative_bets = vec![0.0; self.players.len()]; // each index keeps track of that players' contribution this street
 
 	// TODO: if preflop then collect blinds
-	/*
-	if self.street == Street::Preflop {
-	    let (left, right) = self.players.split_at_mut(starting_idx);
-	    for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
-	    }
-	}
-	 */
 	
 	let starting_idx = self.get_starting_idx(); // which player starts the betting
 	//let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
@@ -686,28 +687,65 @@ impl <'a> GameHand<'a> {
 	if num_settled > 0 {
 	    println!("num settled (i.e. all in players) = {}", num_settled);
 	}
-	let mut _loop_count = 0;
+	let mut loop_count = 0;
 	'street: loop {
-	    /*
-	    if loop_count > 2 {
-		break;
+	    loop_count += 1;
+	    if loop_count > 5 {
+		println!("\n\n\n\n\nTOO MANY LOOPS MUST BE A BUG!\n\n\n\n\n");
+		panic!("too many loops");
+		
 	    }
-	     */
-	    // loop_count += 1;
 	    // iterate over the players from the starting index to the end of the vec, and then from the beginning back to the starting index
 	    let (left, right) = self.players.split_at_mut(starting_idx);
 	    for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
 		let player_cumulative = cumulative_bets[i];
-		//println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-		//self.pot,
-		//treet_bet,
-		//	 player_cumulative);
+		println!("Player = {:?}, i = {}", player, i);				
+		println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+			 self.pot,
+			 street_bet,
+			 player_cumulative);
+		//println!("num_active = {}, num_settled = {}", self.num_active, num_settled);
 		if player.is_active && player.money > 0.0 {
-		    println!("Player = {:?}, i = {}", player, i);		
-		    //println!("Player is active");		    
-		    // this loop can keep going while it waits for a proper action
-		    // get an validate an action from the player
-		    match GameHand::get_and_validate_action(&player, street_bet, player_cumulative) {
+		    let action;
+		    if self.street == Street::Preflop && i == 0 && player_cumulative == 0.0 {
+			// collect small blind!
+			action = PlayerAction::PostSmallBlind(cmp::min(self.small_blind as u32, player.money as u32) as f64);
+		    } else if self.street == Street::Preflop && i == 1 && player_cumulative == 0.0 {
+			// collect big blind!
+			action = PlayerAction::PostBigBlind(cmp::min(self.big_blind as u32, player.money as u32) as f64);
+		    } else {
+			action = GameHand::get_and_validate_action(&player, street_bet, player_cumulative);
+		    }
+			    
+		    match action {
+			PlayerAction::PostSmallBlind(amount) => {
+			    println!("Player posts small blind of {}", amount);
+			    self.pot += amount;
+			    cumulative_bets[i] += amount;				
+			    player.money -= amount;
+			    // regardless if the player couldn't afford it, the new street bet is the big blind
+			    street_bet = self.small_blind; 
+			    if player.is_all_in() {
+				num_all_in += 1;
+				num_settled = num_all_in;
+			    } else {
+				num_settled = num_all_in + 1;
+			    }
+			},
+			PlayerAction::PostBigBlind(amount) => {
+			    println!("Player posts big blind of {}", amount);
+			    self.pot += amount;
+			    cumulative_bets[i] += amount;				
+			    player.money -= amount;
+			    // regardless if the player couldn't afford it, the new street bet is the big blind
+			    street_bet = self.big_blind; 
+			    if player.is_all_in() {
+				num_all_in += 1;
+				num_settled = num_all_in;
+			    } else {
+				num_settled = num_all_in + 1;
+			    }
+			},			
 			PlayerAction::Fold => {
 			    println!("Player {:?} folds!", player.name);
 			    player.deactivate();	    
@@ -724,15 +762,12 @@ impl <'a> GameHand<'a> {
 				println!("you have to put in the rest of your chips");
 				self.pot += player.money;
 				cumulative_bets[i] += player.money;
-				player.money = 0.0;				
-				
+				player.money = 0.0;
+				num_all_in += 1;
 			    } else {				
 				self.pot += difference;
 				cumulative_bets[i] += difference;				
 				player.money -= difference;
-				if player.is_all_in() {
-				    num_all_in += 1;
-				}
 			    }
 			    num_settled += 1;
 			},
@@ -743,12 +778,19 @@ impl <'a> GameHand<'a> {
 			    player.money -= difference;
 			    street_bet = new_bet;
 			    cumulative_bets[i] = new_bet;
-			    // since we just bet more, we are the only settled player (aside from the all-ins)			    
-			    num_settled = num_all_in + 1;			    
+			    if player.is_all_in() {
+				println!("Just bet the rest of our money!");
+				num_all_in += 1;
+				num_settled = num_all_in;
+			    } else {
+				// since we just bet more, we are the only settled player (aside from the all-ins)			    
+				num_settled = num_all_in + 1;
+			    }
 			}
 		    }
 		}
-		//println!("num_active = {}, num_settled = {}", self.num_active, num_settled);
+		
+		//println!("after player: num_active = {}, num_settled = {}", self.num_active, num_settled);
 		if self.num_active == 1 {
 		    println!("Only one active player left so lets break the steet loop");
 		    break 'street;
@@ -769,9 +811,9 @@ impl <'a> GameHand<'a> {
 	// for now do a random action
 	let num = rand::thread_rng().gen_range(0..100);
 	match num {
-	    0..=10 => PlayerAction::Fold,
-	    11..=45 => PlayerAction::Check,
-	    46..=70 => {
+	    0..=20 => PlayerAction::Fold,
+	    21..=55 => PlayerAction::Check,
+	    56..=70 => {
 		let amount: f64;
 		if player.money <= 100.0 {
 		    // just go all in if we are at 10% starting
@@ -785,11 +827,14 @@ impl <'a> GameHand<'a> {
 	}
     }
 
-    fn get_and_validate_action(player: &Player, street_bet: f64, player_cumulative: f64 ) -> PlayerAction {
+    fn get_and_validate_action(player: &Player, street_bet: f64, player_cumulative: f64) -> PlayerAction {
 	// if it isnt valid based on the current bet and the amount the player has already contributed, then it loops
+	// position is our spot in the order, with 0 == small blind, etc
 	let mut action;
+
 	'valid_check: loop {
-	    action = GameHand::get_action_from_user(player);
+	    // not a blind, so get an actual choice	    
+	    action = GameHand::get_action_from_user(player);	
 	    match action {
 		PlayerAction::Fold => {		
 		    //println!("Player folds!");
@@ -833,8 +878,10 @@ impl <'a> GameHand<'a> {
 			continue;
 		    }
 		    break 'valid_check;				
-		}
+		},
+		_ => println!("Action {:?} is not valid at this time!", action),
 	    }
+	
 	}
 	action
     }
@@ -844,8 +891,8 @@ struct Game {
     deck: Deck,
     players: Vec<Player>,
     button_idx: usize, // index of the player with the button
-    small_blind: u32,
-    big_blind: u32,
+    small_blind: f64,
+    big_blind: f64,
 }
 
 
@@ -854,8 +901,8 @@ impl Game {
 	Game {
 	    deck: Deck::new(),
 	    players: Vec::<Player>::with_capacity(9),
-	    small_blind: 4,
-	    big_blind: 8,
+	    small_blind: 4.0,
+	    big_blind: 8.0,
 	    button_idx: 0
 	}
     }
@@ -865,12 +912,12 @@ impl Game {
     }
 
     fn play_one_hand(&mut self) {
-	let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx);
+	let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx, self.small_blind, self.big_blind);
 	game_hand.play();	    
     }
 
     fn play(&mut self) {
-	let num_hands = 5;
+	let num_hands = 3;
 	for i in 0..num_hands {
 	    println!("\n\n\n=================================================\n\nplaying hand {}", i);
 	    self.play_one_hand();
@@ -879,9 +926,9 @@ impl Game {
 	    let mut loop_count = 0;
 	    'find_button: loop {
 		loop_count += 1;
-		if loop_count >= 10 {
+		if loop_count >= 5 {
 		    // couldn't find a valid button position. how does this happen?
-		    break;
+		    break 'find_button;
 		}
 		self.button_idx += 1; // and modulo length
 		if self.button_idx as usize >= self.players.len() {
@@ -893,7 +940,7 @@ impl Game {
 		} else {
 		    // We found a player who is not sitting out, so it is a valid
 		    // button position
-		    break;
+		    break 'find_button;		    
 		}
 	    }
 	}
