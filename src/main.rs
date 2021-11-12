@@ -6,6 +6,7 @@ use rand::seq::SliceRandom;
 use std::collections::{HashSet, HashMap};
 use std::cmp::Ordering;
 use std::cmp;
+use std::io;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter, Hash)]
 enum Rank {
@@ -364,6 +365,7 @@ struct Player {
     is_active: bool, // is still playing the current hand
     is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     money: f64,
+    human_controlled: bool // do we need user input or let the computer control it
 }
 
 impl Player {
@@ -373,7 +375,8 @@ impl Player {
 	    hole_cards: Vec::<Card>::with_capacity(2),
 	    is_active: true,
 	    is_sitting_out: false,
-	    money: 1000.0, // let them start with 1000 for now
+	    money: 1000.0, // let them start with 1000 for now,
+	    human_controlled: false,
 	}
     }
     
@@ -671,8 +674,6 @@ impl <'a> GameHand<'a> {
 	let mut street_bet: f64 = 0.0;
 	let mut cumulative_bets = vec![0.0; self.players.len()]; // each index keeps track of that players' contribution this street
 
-	// TODO: if preflop then collect blinds
-	
 	let starting_idx = self.get_starting_idx(); // which player starts the betting
 	//let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
 
@@ -707,10 +708,10 @@ impl <'a> GameHand<'a> {
 		//println!("num_active = {}, num_settled = {}", self.num_active, num_settled);
 		if player.is_active && player.money > 0.0 {
 		    let action;
-		    if self.street == Street::Preflop && i == 0 && player_cumulative == 0.0 {
+		    if self.street == Street::Preflop && street_bet == 0.0 {
 			// collect small blind!
 			action = PlayerAction::PostSmallBlind(cmp::min(self.small_blind as u32, player.money as u32) as f64);
-		    } else if self.street == Street::Preflop && i == 1 && player_cumulative == 0.0 {
+		    } else if self.street == Street::Preflop && street_bet == self.small_blind {
 			// collect big blind!
 			action = PlayerAction::PostBigBlind(cmp::min(self.big_blind as u32, player.money as u32) as f64);
 		    } else {
@@ -809,21 +810,50 @@ impl <'a> GameHand<'a> {
     fn get_action_from_user(player: &Player) -> PlayerAction {
 	// will need UI here
 	// for now do a random action
-	let num = rand::thread_rng().gen_range(0..100);
-	match num {
-	    0..=20 => PlayerAction::Fold,
-	    21..=55 => PlayerAction::Check,
-	    56..=70 => {
-		let amount: f64;
-		if player.money <= 100.0 {
-		    // just go all in if we are at 10% starting
-		    amount = player.money as f64;
-		} else {
-		    amount = rand::thread_rng().gen_range(1..player.money as u32) as f64;
+	if player.human_controlled {
+	    println!("Please enter your action (f, ca, ch, b): ");
+	    let mut input = String::new();
+	    io::stdin().read_line(&mut input).expect("Failed to get console input");
+	    input = input.to_string().trim().to_string();
+	    match input.as_str() {
+		"f" => PlayerAction::Fold,
+		"ch" => PlayerAction::Check,
+		"ca" => PlayerAction::Call,		
+		"b" => {
+		    println!("How much to bet: ");
+		    let mut amount = String::new();
+		    io::stdin().read_line(&mut amount).expect("Failed to get console input");
+		    amount = input.to_string().trim().to_string();
+		    println!("about to parse [{}] as a f64", amount);
+		    let mut bet_amount = amount.parse::<f64>().unwrap();
+		    if bet_amount > player.money {
+			println!("You are trying to bet more than you have. Lets just go all in!");
+			bet_amount = player.money;
+		    }
+		    PlayerAction::Bet(bet_amount)
+		},
+		_ => {
+		    println!("Unknown input. We will attempt to check");
+		    PlayerAction::Check
 		}
-		PlayerAction::Bet(amount)
-	    },
-	    _ => PlayerAction::Call,
+	    }
+	} else {
+	    let num = rand::thread_rng().gen_range(0..100);
+	    match num {
+		0..=20 => PlayerAction::Fold,
+		21..=55 => PlayerAction::Check,
+		56..=70 => {
+		    let amount: f64;
+		    if player.money <= 100.0 {
+			// just go all in if we are at 10% starting
+			amount = player.money as f64;
+		    } else {
+			amount = rand::thread_rng().gen_range(1..player.money as u32) as f64;
+		    }
+		    PlayerAction::Bet(amount)
+		},
+		_ => PlayerAction::Call,
+	    }
 	}
     }
 
@@ -837,10 +867,11 @@ impl <'a> GameHand<'a> {
 	    action = GameHand::get_action_from_user(player);	
 	    match action {
 		PlayerAction::Fold => {		
-		    //println!("Player folds!");
 		    if street_bet <= player_cumulative {
 			// if the player has put in enough then no sense folding
-			//println!("you said fold but we will let you check!");
+			if player.human_controlled {
+			    println!("you said fold but we will let you check!");
+			}
 			action = PlayerAction::Check;
 		    }
 		    break 'valid_check;						    
@@ -849,15 +880,16 @@ impl <'a> GameHand<'a> {
 		    //println!("Player checks!");				
 		    if street_bet > player_cumulative {
 			// if the current bet is higher than this players bet
-			//println!("invalid action!");
+			if player.human_controlled {			
+			    println!("you cant check since there is a bet!");
+			}
 			continue;
 		    }
 		    break 'valid_check;				
 		},
 		PlayerAction::Call => {
-		    //println!("Player calls!");				
 		    if street_bet <= player_cumulative {
-			//println!("invalid action!");
+			println!("should we even be here???!");
 			continue;
 		    }
 		    break 'valid_check;				
@@ -917,12 +949,28 @@ impl Game {
     }
 
     fn play(&mut self) {
-	let num_hands = 3;
-	for i in 0..num_hands {
-	    println!("\n\n\n=================================================\n\nplaying hand {}", i);
+	let mut hand_count = 0;
+	loop {
+	    hand_count += 1;
+	    println!("\n\n\n=================================================\n\nplaying hand {}", hand_count);
+
+	    
 	    self.play_one_hand();
 	    // TODO: do we need to add or remove any players?
 
+	    println!("\nContinue playing? (y/n): ");
+	    let mut input = String::new();
+	    io::stdin().read_line(&mut input).expect("Failed to get console input");
+	    input = input.to_string().trim().to_string();
+	    match input.as_str() {
+		"y" => (),
+		"n" => std::process::exit(0),
+		_ => {
+		    println!("Unknown response. We will take that as a yes");
+		},
+	    }
+	    
+	    
 	    let mut loop_count = 0;
 	    'find_button: loop {
 		loop_count += 1;
@@ -950,10 +998,14 @@ impl Game {
 fn main() {
     println!("Hello, world!");    
     let mut game = Game::new();
-    let num_players = 5;
-    for i in 0..num_players {
+    let num_bots = 5;
+    for i in 0..num_bots {
 	let name = format!("Mr {}", i);
 	game.add_player(Player::new(name));
     }
+    let name = "Adam".to_string();
+    let mut user_player = Player::new(name);
+    user_player.human_controlled = true;
+    game.add_player(user_player);
     game.play();
 }
