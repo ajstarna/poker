@@ -10,3 +10,5 @@ edition = "2018"
 strum = "0.22"
 strum_macros = "0.22"
 rand = "0.8"
+tungstenite = "0.16.0" # for web sockets
+url = "2.2.2"
