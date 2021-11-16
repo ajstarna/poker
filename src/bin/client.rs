@@ -18,6 +18,13 @@ fn main() {
     loop {
         let msg = socket.read_message().expect("Error reading message");
         println!("Received: {}", msg);
+	break;
     }
+    socket.write_message(Message::Text("start game".into())).unwrap();
+    loop {
+        let msg = socket.read_message().expect("Error reading message");
+        println!("Received: {}", msg);
+    }
+    
     // socket.close(None);
 }

@@ -1,9 +1,11 @@
 use std::{net::TcpListener, thread::spawn};
-
 use tungstenite::{
     accept_hdr,
     handshake::server::{Request, Response},
+    Message,
 };
+
+use poker::{Player, Game};
 
 fn main() {
     //env_logger::init();
@@ -29,8 +31,26 @@ fn main() {
 
             loop {
                 let msg = websocket.read_message().unwrap();
-                if msg.is_binary() || msg.is_text() {
-                    websocket.write_message(msg).unwrap();
+		if msg == Message::Text("start game".to_string()) {
+		    let new_msg = Message::Text("about to play a game".into());
+                    websocket.write_message(new_msg).unwrap();
+		    
+		    let mut game = Game::new();
+		    let num_bots = 2;
+		    for i in 0..num_bots {
+			let name = format!("Mr {}", i);
+			game.add_player(Player::new(name));
+		    }
+		    let name = "Adam".to_string();
+		    let user_player = Player::new_human(name);
+		    game.add_player(user_player);
+		    game.play();
+		    let after_msg = Message::Text(format!("{:?}", &game.players));
+                    websocket.write_message(after_msg).unwrap();
+		    
+		} else if msg.is_binary() || msg.is_text() {
+		    let new_msg = Message::Text(format!("{} plus some stuff hah", msg));
+                    websocket.write_message(new_msg).unwrap();
                 }
             }
         });

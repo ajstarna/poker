@@ -19,7 +19,7 @@ enum PlayerAction {
 }
 
 #[derive(Debug)]
-struct Player {
+pub struct Player {
     name: String,
     hole_cards: Vec<Card>,    
     is_active: bool, // is still playing the current hand
@@ -29,7 +29,7 @@ struct Player {
 }
 
 impl Player {
-    fn new(name: String) -> Self {
+    pub fn new(name: String) -> Self {
 	Player {
 	    name: name,
 	    hole_cards: Vec::<Card>::with_capacity(2),
@@ -37,6 +37,17 @@ impl Player {
 	    is_sitting_out: false,
 	    money: 1000.0, // let them start with 1000 for now,
 	    human_controlled: false,
+	}
+    }
+
+    pub fn new_human(name: String) -> Self {
+	Player {
+	    name: name,
+	    hole_cards: Vec::<Card>::with_capacity(2),
+	    is_active: true,
+	    is_sitting_out: false,
+	    money: 1000.0, // let them start with 1000 for now,
+	    human_controlled: true,
 	}
     }
     
@@ -581,9 +592,9 @@ impl <'a> GameHand<'a> {
     }
 }
 
-struct Game {
+pub struct Game {
     deck: Deck,
-    players: Vec<Player>,
+    pub players: Vec<Player>,
     button_idx: usize, // index of the player with the button
     small_blind: f64,
     big_blind: f64,
@@ -591,7 +602,7 @@ struct Game {
 
 
 impl Game {
-    fn new() -> Self {	
+    pub fn new() -> Self {	
 	Game {
 	    deck: Deck::new(),
 	    players: Vec::<Player>::with_capacity(9),
@@ -601,25 +612,22 @@ impl Game {
 	}
     }
 
-    fn add_player(&mut self, player: Player) {
+    pub fn add_player(&mut self, player: Player) {
 	self.players.push(player)
     }
 
-    fn play_one_hand(&mut self) {
-	let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx, self.small_blind, self.big_blind);
-	game_hand.play();	    
-    }
-
-    fn play(&mut self) {
+    pub fn play(&mut self) {
 	let mut hand_count = 0;
 	loop {
 	    hand_count += 1;
 	    println!("\n\n\n=================================================\n\nplaying hand {}", hand_count);
-
-	    
-	    self.play_one_hand();
 	    // TODO: do we need to add or remove any players?
+	    
+	    let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx, self.small_blind, self.big_blind);
+	    game_hand.play();	    
 
+	    break;
+	    /*
 	    println!("\nContinue playing? (y/n): ");
 	    let mut input = String::new();
 	    io::stdin().read_line(&mut input).expect("Failed to get console input");
@@ -640,10 +648,10 @@ impl Game {
 		    // couldn't find a valid button position. how does this happen?
 		    break 'find_button;
 		}
-		self.button_idx += 1; // and modulo length
-		if self.button_idx as usize >= self.players.len() {
-		    self.button_idx = 0;
-		}
+		
+		self.button_idx += 1; 
+		self.button_idx %= self.players.len(); // and modulo length
+		
 		if self.players[self.button_idx].is_sitting_out {
 		    println!("Player at index {} is sitting out so cannot be the button", self.button_idx);
 		    continue;
@@ -653,9 +661,16 @@ impl Game {
 		    break 'find_button;		    
 		}
 	    }
+	    */
 	}
     }
 }
+
+
+
+/*
+
+Moving the actually playing to the client and server
 
 fn main() {
     println!("Hello, world!");    
@@ -666,8 +681,8 @@ fn main() {
 	game.add_player(Player::new(name));
     }
     let name = "Adam".to_string();
-    let mut user_player = Player::new(name);
-    user_player.human_controlled = true;
+    let user_player = Player::new_human(name);
     game.add_player(user_player);
     game.play();
 }
+*/
