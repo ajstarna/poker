@@ -7,6 +7,9 @@ use std::io;
 mod card;
 use crate::card::{Card, Deck, HandResult};
 
+use std::net::TcpStream;
+use tungstenite::{WebSocket, Message};
+
 #[derive(Debug)]
 enum PlayerAction {
     PostSmallBlind(f64),
@@ -593,6 +596,7 @@ impl <'a> GameHand<'a> {
 }
 
 pub struct Game {
+    websocket: WebSocket<TcpStream>,
     deck: Deck,
     pub players: Vec<Player>,
     button_idx: usize, // index of the player with the button
@@ -602,8 +606,9 @@ pub struct Game {
 
 
 impl Game {
-    pub fn new() -> Self {	
+    pub fn new(websocket: WebSocket<TcpStream>) -> Self {	
 	Game {
+	    websocket: websocket,
 	    deck: Deck::new(),
 	    players: Vec::<Player>::with_capacity(9),
 	    small_blind: 4.0,
@@ -625,6 +630,8 @@ impl Game {
 	    
 	    let mut game_hand = GameHand::new(&mut self.deck, &mut self.players, self.button_idx, self.small_blind, self.big_blind);
 	    game_hand.play();	    
+	    let after_msg = Message::Text(format!("{:?}", self.players));
+	    self.websocket.write_message(after_msg).unwrap();
 
 	    break;
 	    /*
