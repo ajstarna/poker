@@ -15,11 +15,9 @@ fn main() {
     }
 
     socket.write_message(Message::Text("Hello WebSocket".into())).unwrap();
-    loop {
-        let msg = socket.read_message().expect("Error reading message");
-        println!("Received: {}", msg);
-	break;
-    }
+    let msg = socket.read_message().expect("Error reading message");
+    println!("Received: {}", msg);
+
     socket.write_message(Message::Text("start game".into())).unwrap();
     loop {
         let msg = socket.read_message().expect("Error reading message");

@@ -34,8 +34,8 @@ fn main() {
 		if msg == Message::Text("start game".to_string()) {
 		    let new_msg = Message::Text("about to play a game".into());
                     websocket.write_message(new_msg).unwrap();
-		    
-		    let mut game = Game::new();
+		    /*
+		    let mut game = Game::new(websocket);
 		    let num_bots = 2;
 		    for i in 0..num_bots {
 			let name = format!("Mr {}", i);
@@ -46,6 +46,8 @@ fn main() {
 		    game.add_player(user_player);
 		    game.play();
 		    let after_msg = Message::Text(format!("{:?}", &game.players));
+		     */
+		    let after_msg = Message::Text("end of game area".to_string());		    
                     websocket.write_message(after_msg).unwrap();
 		    
 		} else if msg.is_binary() || msg.is_text() {
