@@ -15,7 +15,7 @@ use actix_web::{
 };
 use actix_web_actors::ws;
 
-mod server;
+mod lobby;
 mod session;
 
 async fn index() -> impl Responder {
@@ -26,7 +26,7 @@ async fn index() -> impl Responder {
 async fn chat_route(
     req: HttpRequest,
     stream: web::Payload,
-    srv: web::Data<Addr<server::GameServer>>,
+    lob: web::Data<Addr<lobby::GameLobby>>,
 ) -> Result<HttpResponse, Error> {
     ws::start(
         session::WsGameSession {
@@ -34,7 +34,7 @@ async fn chat_route(
             hb: Instant::now(),
             table: "main".to_owned(),
             name: None,
-            addr: srv.get_ref().clone(),
+            lobby_addr: lob.get_ref().clone(),
         },
         &req,
         stream,
@@ -57,14 +57,14 @@ async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(AtomicUsize::new(0));
 
     // start chat server actor
-    let server = server::GameServer::new(app_state.clone()).start();
+    let lobby = lobby::GameLobby::new(app_state.clone()).start();
 
     log::info!("starting HTTP server at http://localhost:8080");
 
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))
-            .app_data(web::Data::new(server.clone()))
+            .app_data(web::Data::new(lobby.clone()))
             .service(web::resource("/").to(index))
             .route("/count", web::get().to(get_count))
             .route("/ws", web::get().to(chat_route))

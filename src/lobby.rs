@@ -1,6 +1,6 @@
-//! `GameServer` is an actor. It maintains list of connection client session.
+//! `Gamelobby` is an actor. It maintains list of connection client session.
 //! And manages available tables. Peers send messages to other peers in same
-//! table through `GameServer`.
+//! table through `Gamelobby`.
 
 //! This file is adapted from the actix-web chat websocket example
 
@@ -68,24 +68,24 @@ pub struct Join {
     pub name: String,
 }
 
-/// `GameServer` manages chat tables and responsible for coordinating chat session.
+/// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 ///
 /// Implementation is very naïve.
 #[derive(Debug)]
-pub struct GameServer {
+pub struct GameLobby {
     sessions: HashMap<usize, Recipient<Message>>,
     tables: HashMap<String, HashSet<usize>>,
     rng: ThreadRng,
     visitor_count: Arc<AtomicUsize>,
 }
 
-impl GameServer {
-    pub fn new(visitor_count: Arc<AtomicUsize>) -> GameServer {
+impl GameLobby {
+    pub fn new(visitor_count: Arc<AtomicUsize>) -> GameLobby {
         // default table
         let mut tables = HashMap::new();
         tables.insert("main".to_owned(), HashSet::new());
 
-        GameServer {
+        GameLobby {
             sessions: HashMap::new(),
             tables,
             rng: rand::thread_rng(),
@@ -94,7 +94,7 @@ impl GameServer {
     }
 }
 
-impl GameServer {
+impl GameLobby {
     /// Send message to all users in the table
     fn send_message(&self, table: &str, message: &str, skip_id: usize) {
         if let Some(sessions) = self.tables.get(table) {
@@ -109,8 +109,8 @@ impl GameServer {
     }
 }
 
-/// Make actor from `GameServer`
-impl Actor for GameServer {
+/// Make actor from `GameLobby`
+impl Actor for GameLobby {
     /// We are going to use simple Context, we just need ability to communicate
     /// with other actors.
     type Context = Context<Self>;
@@ -119,7 +119,7 @@ impl Actor for GameServer {
 /// Handler for Connect message.
 ///
 /// Register new session and assign unique id to this session
-impl Handler<Connect> for GameServer {
+impl Handler<Connect> for GameLobby {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
@@ -147,7 +147,7 @@ impl Handler<Connect> for GameServer {
 }
 
 /// Handler for Disconnect message.
-impl Handler<Disconnect> for GameServer {
+impl Handler<Disconnect> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
@@ -172,7 +172,7 @@ impl Handler<Disconnect> for GameServer {
 }
 
 /// Handler for Message message.
-impl Handler<ClientMessage> for GameServer {
+impl Handler<ClientMessage> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
@@ -181,7 +181,7 @@ impl Handler<ClientMessage> for GameServer {
 }
 
 /// Handler for `ListTables` message.
-impl Handler<ListTables> for GameServer {
+impl Handler<ListTables> for GameLobby {
     type Result = MessageResult<ListTables>;
 
     fn handle(&mut self, _: ListTables, _: &mut Context<Self>) -> Self::Result {
@@ -197,7 +197,7 @@ impl Handler<ListTables> for GameServer {
 
 /// Join table, send disconnect message to old table
 /// send join message to new table
-impl Handler<Join> for GameServer {
+impl Handler<Join> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {

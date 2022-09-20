@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use actix::prelude::*;
 use actix_web_actors::ws;
 
-use crate::server;
+use crate::lobby;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -28,8 +28,8 @@ pub struct WsGameSession {
     /// peer name
     pub name: Option<String>,
 
-    /// Game server
-    pub addr: Addr<server::GameServer>,
+    /// Game lobby
+    pub lobby_addr: Addr<lobby::GameLobby>,
 }
 
 impl WsGameSession {
@@ -44,7 +44,7 @@ impl WsGameSession {
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
                 // notify game server
-                act.addr.do_send(server::Disconnect { id: act.id });
+                act.lobby_addr.do_send(lobby::Disconnect { id: act.id });
 
                 // stop actor
                 ctx.stop();
@@ -73,8 +73,8 @@ impl Actor for WsGameSession {
         // HttpContext::state() is instance of WsGameSessionState, state is shared
         // across all routes within application
         let addr = ctx.address();
-        self.addr
-            .send(server::Connect {
+        self.lobby_addr
+            .send(lobby::Connect {
                 addr: addr.recipient(),
             })
             .into_actor(self)
@@ -91,16 +91,16 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server
-        self.addr.do_send(server::Disconnect { id: self.id });
+        self.lobby_addr.do_send(lobby::Disconnect { id: self.id });
         Running::Stop
     }
 }
 
 /// Handle messages from game server, we simply send it to peer websocket
-impl Handler<server::Message> for WsGameSession {
+impl Handler<lobby::Message> for WsGameSession {
     type Result = ();
 
-    fn handle(&mut self, msg: server::Message, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: lobby::Message, ctx: &mut Self::Context) {
         ctx.text(msg.0);
     }
 }
@@ -135,8 +135,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                             // Send ListTables message to game server and wait for
                             // response
                             println!("List tables");
-                            self.addr
-                                .send(server::ListTables)
+                            self.lobby_addr
+                                .send(lobby::ListTables)
                                 .into_actor(self)
                                 .then(|res, _, ctx| {
                                     match res {
@@ -157,7 +157,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                         "/join" => {
                             if v.len() == 2 {
                                 self.table = v[1].to_owned();
-                                self.addr.do_send(server::Join {
+                                self.lobby_addr.do_send(lobby::Join {
                                     id: self.id,
                                     name: self.table.clone(),
                                 });
@@ -183,7 +183,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                         m.to_owned()
                     };
                     // send message to game server
-                    self.addr.do_send(server::ClientMessage {
+                    self.lobby_addr.do_send(lobby::ClientMessage {
                         id: self.id,
                         msg,
                         table: self.table.clone(),
