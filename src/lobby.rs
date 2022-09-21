@@ -4,8 +4,6 @@
 
 //! This file is adapted from the actix-web chat websocket example
 
-
-
 use std::{
     collections::{HashMap, HashSet},
     sync::{
@@ -14,81 +12,30 @@ use std::{
     },
 };
 
-use actix::prelude::*;
+use actix::prelude::{Actor, Context, Handler, Recipient, MessageResult};
 use rand::{self, rngs::ThreadRng, Rng};
+use crate::messages::{WsMessage, Connect, Disconnect, ClientMessage, ListTables, Join};
 
-/// Game server sends this messages to session
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Message(pub String);
-
-/// Message for chat server communications
-
-/// New chat session is created
-#[derive(Message)]
-#[rtype(usize)]
-pub struct Connect {
-    pub addr: Recipient<Message>,
-}
-
-/// Session is disconnected
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Disconnect {
-    pub id: usize,
-}
-
-/// Send message to specific table
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct ClientMessage {
-    /// Id of the client session
-    pub id: usize,
-    /// Peer message
-    pub msg: String,
-    /// Table name
-    pub table: String,
-}
-
-/// List of available tables
-pub struct ListTables;
-
-impl actix::Message for ListTables {
-    type Result = Vec<String>;
-}
-
-/// Join table, if table does not exists create new one.
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Join {
-    /// Client ID
-    pub id: usize,
-
-    /// Table name
-    pub name: String,
-}
+use uuid::Uuid;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
-///
-/// Implementation is very naïve.
 #[derive(Debug)]
 pub struct GameLobby {
-    sessions: HashMap<usize, Recipient<Message>>,
-    tables: HashMap<String, HashSet<usize>>,
-    rng: ThreadRng,
+    // map from session id to the connection
+    sessions: HashMap<Uuid, Recipient<WsMessage>>,
+
+    // map from table name to a set of session ids
+    tables: HashMap<String, HashSet<Uuid>>,
+    
     visitor_count: Arc<AtomicUsize>,
 }
 
 impl GameLobby {
     pub fn new(visitor_count: Arc<AtomicUsize>) -> GameLobby {
-        // default table
-        let mut tables = HashMap::new();
-        tables.insert("main".to_owned(), HashSet::new());
-
+ 
         GameLobby {
             sessions: HashMap::new(),
-            tables,
-            rng: rand::thread_rng(),
+            tables: HashMap::new(),
             visitor_count,
         }
     }
@@ -96,12 +43,12 @@ impl GameLobby {
 
 impl GameLobby {
     /// Send message to all users in the table
-    fn send_message(&self, table: &str, message: &str, skip_id: usize) {
-        if let Some(sessions) = self.tables.get(table) {
-            for id in sessions {
-                if *id != skip_id {
+    fn send_message(&self, table: &str, message: &str, skip_id: Option<Uuid>) {
+        if let Some(session_ids) = self.tables.get(table) {
+            for id in session_ids {
+                if skip_id.is_none() | (*id != skip_id.unwrap()) {
                     if let Some(addr) = self.sessions.get(id) {
-                        addr.do_send(Message(message.to_owned()));
+                        addr.do_send(WsMessage(message.to_owned()));
                     }
                 }
             }
@@ -120,16 +67,13 @@ impl Actor for GameLobby {
 ///
 /// Register new session and assign unique id to this session
 impl Handler<Connect> for GameLobby {
-    type Result = usize;
+    type Result = MessageResult<Connect>; // use MessageResult so that we can return a Uuid
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
         println!("Someone joined");
 
-        // notify all users in same table
-        self.send_message("main", "Someone joined", 0);
-
         // register session with random id
-        let id = self.rng.gen::<usize>();
+        let id = uuid::Uuid::new_v4(); // .rng.gen::<usize>();
         self.sessions.insert(id, msg.addr);
 
         // auto join session to main table
@@ -139,10 +83,10 @@ impl Handler<Connect> for GameLobby {
             .insert(id);
 
         let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
-        self.send_message("main", &format!("Total visitors {count}"), 0);
+        self.send_message("main", &format!("Total visitors {count}"), None);
 
         // send id back
-        id
+        MessageResult(id)
     }
 }
 
@@ -154,7 +98,6 @@ impl Handler<Disconnect> for GameLobby {
         println!("Someone disconnected");
 
         let mut tables: Vec<String> = Vec::new();
-
         // remove address
         if self.sessions.remove(&msg.id).is_some() {
             // remove session from all tables
@@ -166,7 +109,7 @@ impl Handler<Disconnect> for GameLobby {
         }
         // send message to other users
         for table in tables {
-            self.send_message(&table, "Someone disconnected", 0);
+            self.send_message(&table, "Someone disconnected", None);
         }
     }
 }
@@ -176,7 +119,7 @@ impl Handler<ClientMessage> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        self.send_message(&msg.table, msg.msg.as_str(), msg.id);
+        self.send_message(&msg.table, msg.msg.as_str(), Some(msg.id));
     }
 }
 
@@ -212,7 +155,7 @@ impl Handler<Join> for GameLobby {
         }
         // send message to other users
         for table in tables {
-            self.send_message(&table, "Someone disconnected", 0);
+            self.send_message(&table, "Someone disconnected", None);
         }
 
         self.tables
@@ -220,6 +163,6 @@ impl Handler<Join> for GameLobby {
             .or_insert_with(HashSet::new)
             .insert(id);
 
-        self.send_message(&name, "Someone connected", id);
+        self.send_message(&name, "Someone connected", Some(id));
     }
 }

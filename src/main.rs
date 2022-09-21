@@ -17,25 +17,20 @@ use actix_web_actors::ws;
 
 mod lobby;
 mod session;
+mod messages;
 
 async fn index() -> impl Responder {
     NamedFile::open_async("./static/index.html").await.unwrap()
 }
 
 /// Entry point for our websocket route
-async fn chat_route(
+async fn ws_route(
     req: HttpRequest,
     stream: web::Payload,
     lob: web::Data<Addr<lobby::GameLobby>>,
 ) -> Result<HttpResponse, Error> {
     ws::start(
-        session::WsGameSession {
-            id: 0,
-            hb: Instant::now(),
-            table: "main".to_owned(),
-            name: None,
-            lobby_addr: lob.get_ref().clone(),
-        },
+        session::WsGameSession::new(lob.get_ref().clone()),
         &req,
         stream,
     )
@@ -67,7 +62,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(lobby.clone()))
             .service(web::resource("/").to(index))
             .route("/count", web::get().to(get_count))
-            .route("/ws", web::get().to(chat_route))
+            .route("/ws", web::get().to(ws_route))
             .service(Files::new("/static", "./static"))
             .wrap(Logger::default())
     })

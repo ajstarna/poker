@@ -5,7 +5,10 @@ use std::time::{Duration, Instant};
 use actix::prelude::*;
 use actix_web_actors::ws;
 
+use uuid::Uuid;
+
 use crate::lobby;
+use crate::messages;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -16,23 +19,33 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct WsGameSession {
     /// unique session id
-    pub id: usize,
+    pub id: Uuid,
 
     /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
     /// otherwise we drop connection.
     pub hb: Instant,
 
-    /// joined table
-    pub table: String,
+    /// joined table (if at one)
+    pub table: Option<String>,
 
     /// peer name
     pub name: Option<String>,
 
-    /// Game lobby
+    /// Game lobby address
     pub lobby_addr: Addr<lobby::GameLobby>,
 }
 
 impl WsGameSession {
+    pub fn new(lobby_addr: Addr<lobby::GameLobby>) -> Self {
+	Self {
+	    id: Uuid::new_v4(),
+	    hb: Instant::now(),
+	    table: None,
+	    name: None,
+	    lobby_addr,
+	}
+    }
+    
     /// helper method that sends ping to client every 5 seconds (HEARTBEAT_INTERVAL).
     ///
     /// also this method checks heartbeats from client
@@ -44,7 +57,7 @@ impl WsGameSession {
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
                 // notify game server
-                act.lobby_addr.do_send(lobby::Disconnect { id: act.id });
+                act.lobby_addr.do_send(messages::Disconnect { id: act.id });
 
                 // stop actor
                 ctx.stop();
@@ -74,7 +87,7 @@ impl Actor for WsGameSession {
         // across all routes within application
         let addr = ctx.address();
         self.lobby_addr
-            .send(lobby::Connect {
+            .send(messages::Connect {
                 addr: addr.recipient(),
             })
             .into_actor(self)
@@ -91,16 +104,16 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server
-        self.lobby_addr.do_send(lobby::Disconnect { id: self.id });
+        self.lobby_addr.do_send(messages::Disconnect { id: self.id });
         Running::Stop
     }
 }
 
 /// Handle messages from game server, we simply send it to peer websocket
-impl Handler<lobby::Message> for WsGameSession {
+impl Handler<messages::WsMessage> for WsGameSession {
     type Result = ();
 
-    fn handle(&mut self, msg: lobby::Message, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: messages::WsMessage, ctx: &mut Self::Context) {
         ctx.text(msg.0);
     }
 }
@@ -136,7 +149,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                             // response
                             println!("List tables");
                             self.lobby_addr
-                                .send(lobby::ListTables)
+                                .send(messages::ListTables)
                                 .into_actor(self)
                                 .then(|res, _, ctx| {
                                     match res {
@@ -156,11 +169,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                         }
                         "/join" => {
                             if v.len() == 2 {
-                                self.table = v[1].to_owned();
-                                self.lobby_addr.do_send(lobby::Join {
+				let name = v[1].to_owned();
+                                self.lobby_addr.do_send(messages::Join {
                                     id: self.id,
-                                    name: self.table.clone(),
+                                    name: name.clone(),
                                 });
+                                self.table = Some(name);				
 
                                 ctx.text("joined");
                             } else {
@@ -183,11 +197,17 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                         m.to_owned()
                     };
                     // send message to game server
-                    self.lobby_addr.do_send(lobby::ClientMessage {
-                        id: self.id,
-                        msg,
-                        table: self.table.clone(),
-                    })
+		    if let Some(table_name) = &self.table {
+			self.lobby_addr.do_send(messages::ClientMessage {
+                            id: self.id,
+                            msg,
+                            table: table_name.clone(),
+			})
+		    } else {
+			// cannot send a message if not at a table
+			// TODO: send a warning message or something
+		    }
+			    
                 }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
