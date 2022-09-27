@@ -2,8 +2,8 @@ mod logic;
 
 use std::{
     sync::{
-	atomic::{AtomicUsize, Ordering},
-	Arc,
+        atomic::{AtomicUsize, Ordering},
+        Arc,
     },
     time::Instant,
 };
@@ -16,8 +16,8 @@ use actix_web::{
 use actix_web_actors::ws;
 
 mod lobby;
-mod session;
 mod messages;
+mod session;
 
 async fn index() -> impl Responder {
     NamedFile::open_async("./static/index.html").await.unwrap()
@@ -41,7 +41,6 @@ async fn get_count(count: web::Data<AtomicUsize>) -> impl Responder {
     let current_count = count.load(Ordering::SeqCst);
     format!("Visitors: {current_count}")
 }
-
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -72,17 +71,15 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-
 fn play() {
-    println!("Hello, world!");    
+    println!("Hello, world!");
     let mut game = logic::Game::new();
     let num_bots = 5;
     for i in 0..num_bots {
-	let name = format!("Mr {}", i);
-	game.add_bot(name);
+        let name = format!("Mr {}", i);
+        game.add_bot(name);
     }
     let user_name = "Adam".to_string();
     game.add_user(user_name);
     game.play();
 }
-

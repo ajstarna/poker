@@ -28,7 +28,7 @@ pub struct WsGameSession {
     /// joined table (if at one)
     pub table: Option<String>,
 
-    /// peer name
+    /// user name
     pub name: Option<String>,
 
     /// Game lobby address
@@ -37,15 +37,15 @@ pub struct WsGameSession {
 
 impl WsGameSession {
     pub fn new(lobby_addr: Addr<lobby::GameLobby>) -> Self {
-	Self {
-	    id: Uuid::new_v4(),
-	    hb: Instant::now(),
-	    table: None,
-	    name: None,
-	    lobby_addr,
-	}
+        Self {
+            id: Uuid::new_v4(),
+            hb: Instant::now(),
+            table: None,
+            name: None,
+            lobby_addr,
+        }
     }
-    
+
     /// helper method that sends ping to client every 5 seconds (HEARTBEAT_INTERVAL).
     ///
     /// also this method checks heartbeats from client
@@ -104,7 +104,8 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server
-        self.lobby_addr.do_send(messages::Disconnect { id: self.id });
+        self.lobby_addr
+            .do_send(messages::Disconnect { id: self.id });
         Running::Stop
     }
 }
@@ -142,54 +143,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                 let m = text.trim();
                 // we check for /sss type of messages
                 if m.starts_with('/') {
-                    let v: Vec<&str> = m.splitn(2, ' ').collect();
-                    match v[0] {
-                        "/list" => {
-                            // Send ListTables message to game server and wait for
-                            // response
-                            println!("List tables");
-                            self.lobby_addr
-                                .send(messages::ListTables)
-                                .into_actor(self)
-                                .then(|res, _, ctx| {
-                                    match res {
-                                        Ok(tables) => {
-                                            for table in tables {
-                                                ctx.text(table);
-                                            }
-                                        }
-                                        _ => println!("Something is wrong"),
-                                    }
-                                    fut::ready(())
-                                })
-                                .wait(ctx)
-                            // .wait(ctx) pauses all events in context,
-                            // so actor wont receive any new messages until it get list
-                            // of tables back
-                        }
-                        "/join" => {
-                            if v.len() == 2 {
-				let name = v[1].to_owned();
-                                self.lobby_addr.do_send(messages::Join {
-                                    id: self.id,
-                                    name: name.clone(),
-                                });
-                                self.table = Some(name);				
-
-                                ctx.text("joined");
-                            } else {
-                                ctx.text("!!! table name is required");
-                            }
-                        }
-                        "/name" => {
-                            if v.len() == 2 {
-                                self.name = Some(v[1].to_owned());
-                            } else {
-                                ctx.text("!!! name is required");
-                            }
-                        }
-                        _ => ctx.text(format!("!!! unknown command: {m:?}")),
-                    }
+                    // handle the game specific/user commands
+                    self.handle_game_specific_command(m, ctx);
                 } else {
                     let msg = if let Some(ref name) = self.name {
                         format!("{name}: {m}")
@@ -197,17 +152,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                         m.to_owned()
                     };
                     // send message to game server
-		    if let Some(table_name) = &self.table {
-			self.lobby_addr.do_send(messages::ClientMessage {
+                    if let Some(table_name) = &self.table {
+                        self.lobby_addr.do_send(messages::ClientChatMessage {
                             id: self.id,
                             msg,
                             table: table_name.clone(),
-			})
-		    } else {
-			// cannot send a message if not at a table
-			// TODO: send a warning message or something
-		    }
-			    
+                        })
+                    } else {
+                        // cannot send a message if not at a table
+                        // TODO: send a warning message or something
+                    }
                 }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
@@ -219,6 +173,64 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                 ctx.stop();
             }
             ws::Message::Nop => (),
+        }
+    }
+    
+}
+
+impl WsGameSession {
+    fn handle_game_specific_command(
+	&mut self,
+	message: &str,
+	ctx: &mut <WsGameSession as Actor>::Context
+    ) {
+        let v: Vec<&str> = message.splitn(2, ' ').collect();
+        match v[0] {
+            "/list" => {
+                // Send ListTables message to game server and wait for
+                // response
+                println!("List tables");
+                self.lobby_addr
+                    .send(messages::ListTables)
+                    .into_actor(self)
+                    .then(|res, _, ctx| {
+                        match res {
+                            Ok(tables) => {
+                                for table in tables {
+                                    ctx.text(table);
+                                }
+                            }
+                            _ => println!("Something is wrong"),
+                        }
+                        fut::ready(())
+                    })
+                    .wait(ctx)
+                // .wait(ctx) pauses all events in context,
+                // so actor wont receive any new messages until it get list
+                // of tables back
+            }
+            "/join" => {
+                if v.len() == 2 {
+                    let table_name = v[1].to_owned();
+                    self.lobby_addr.do_send(messages::Join {
+                        id: self.id,
+                        table_name: table_name.clone(),
+			player_name: self.name.clone(),
+                    });
+                    self.table = Some(table_name);
+                    ctx.text("joined");
+                } else {
+                    ctx.text("!!! table name is required");
+                }
+            }
+            "/name" => {
+                if v.len() == 2 {
+                    self.name = Some(v[1].to_owned());
+                } else {
+                    ctx.text("!!! name is required");
+                }
+            }
+            _ => ctx.text(format!("!!! unknown command: {message:?}")),
         }
     }
 }

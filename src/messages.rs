@@ -1,5 +1,5 @@
-use actix::prelude::{Message, Recipient};/// Game server sends this messages to session
-
+use actix::prelude::{Message, Recipient};
+/// Game server sends this messages to session
 use uuid::Uuid;
 
 #[derive(Message)]
@@ -25,7 +25,7 @@ pub struct Disconnect {
 /// Send message to specific table
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct ClientMessage {
+pub struct ClientChatMessage {
     /// Id of the client session
     pub id: Uuid,
     /// Peer message
@@ -49,6 +49,7 @@ pub struct Join {
     pub id: Uuid,
 
     /// Table name
-    pub name: String,
-}
+    pub table_name: String,
 
+    pub player_name: Option<String>,    
+}

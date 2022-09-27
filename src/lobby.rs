@@ -12,10 +12,9 @@ use std::{
     },
 };
 
-use actix::prelude::{Actor, Context, Handler, Recipient, MessageResult};
-use rand::{self, rngs::ThreadRng, Rng};
-use crate::messages::{WsMessage, Connect, Disconnect, ClientMessage, ListTables, Join};
-
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
+use crate::logic::Game;
+use actix::prelude::{Actor, Context, Handler, MessageResult, Recipient};
 use uuid::Uuid;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
@@ -25,17 +24,23 @@ pub struct GameLobby {
     sessions: HashMap<Uuid, Recipient<WsMessage>>,
 
     // map from table name to a set of session ids
-    tables: HashMap<String, HashSet<Uuid>>,
+    tables_to_session_ids: HashMap<String, HashSet<Uuid>>,
+
+    // a map from session id to the table that it currently is in
+    players_to_table:  HashMap<Uuid, String>,
+    
+    tables_to_game: HashMap<String, Game>,
     
     visitor_count: Arc<AtomicUsize>,
 }
 
 impl GameLobby {
     pub fn new(visitor_count: Arc<AtomicUsize>) -> GameLobby {
- 
         GameLobby {
             sessions: HashMap::new(),
-            tables: HashMap::new(),
+            tables_to_session_ids: HashMap::new(),
+	    players_to_table: HashMap::new(),
+            tables_to_game: HashMap::new(),	    
             visitor_count,
         }
     }
@@ -44,7 +49,7 @@ impl GameLobby {
 impl GameLobby {
     /// Send message to all users in the table
     fn send_message(&self, table: &str, message: &str, skip_id: Option<Uuid>) {
-        if let Some(session_ids) = self.tables.get(table) {
+        if let Some(session_ids) = self.tables_to_session_ids.get(table) {
             for id in session_ids {
                 if skip_id.is_none() | (*id != skip_id.unwrap()) {
                     if let Some(addr) = self.sessions.get(id) {
@@ -77,11 +82,11 @@ impl Handler<Connect> for GameLobby {
         self.sessions.insert(id, msg.addr);
 
         // auto join session to main table
-        self.tables
+        self.tables_to_session_ids
             .entry("main".to_owned())
             .or_insert_with(HashSet::new)
             .insert(id);
-
+	self.players_to_table.insert(id, "main".to_owned());
         let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
         self.send_message("main", &format!("Total visitors {count}"), None);
 
@@ -101,7 +106,7 @@ impl Handler<Disconnect> for GameLobby {
         // remove address
         if self.sessions.remove(&msg.id).is_some() {
             // remove session from all tables
-            for (name, sessions) in &mut self.tables {
+            for (name, sessions) in &mut self.tables_to_session_ids {
                 if sessions.remove(&msg.id) {
                     tables.push(name.to_owned());
                 }
@@ -115,10 +120,10 @@ impl Handler<Disconnect> for GameLobby {
 }
 
 /// Handler for Message message.
-impl Handler<ClientMessage> for GameLobby {
+impl Handler<ClientChatMessage> for GameLobby {
     type Result = ();
 
-    fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
         self.send_message(&msg.table, msg.msg.as_str(), Some(msg.id));
     }
 }
@@ -130,7 +135,7 @@ impl Handler<ListTables> for GameLobby {
     fn handle(&mut self, _: ListTables, _: &mut Context<Self>) -> Self::Result {
         let mut tables = Vec::new();
 
-        for key in self.tables.keys() {
+        for key in self.tables_to_session_ids.keys() {
             tables.push(key.to_owned())
         }
 
@@ -144,25 +149,45 @@ impl Handler<Join> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join { id, name } = msg;
-        let mut tables = Vec::new();
+        let Join { id, table_name, player_name } = msg;
 
-        // remove session from all tables
-        for (n, sessions) in &mut self.tables {
-            if sessions.remove(&id) {
-                tables.push(n.to_owned());
-            }
-        }
-        // send message to other users
-        for table in tables {
-            self.send_message(&table, "Someone disconnected", None);
-        }
+	if self.tables_to_session_ids.contains_key(&table_name) {
+	    // for now, you cannot actually join (or create) a table that already exists
+	    return;
+	}
 
-        self.tables
-            .entry(name.clone())
+
+	if let Some(table_name) = self.players_to_table.get(&id) {
+	    // we already exist at a table, so leave it
+	    // we can unwrap since the mappings must always be in sync
+	    let sessions = self.tables_to_session_ids.get_mut(table_name).unwrap();
+	    sessions.remove(&id);
+            self.send_message(&table_name, "Someone disconnected", None);	    
+	}
+
+	// update the mapping to find the player at a table
+	self.players_to_table.insert(id, table_name.clone());
+	    
+        self.tables_to_session_ids
+            .entry(table_name.clone())
             .or_insert_with(HashSet::new)
             .insert(id);
 
-        self.send_message(&name, "Someone connected", Some(id));
+        self.send_message(&table_name, "Someone connected", Some(id));
+
+	let mut game = Game::new();
+	if let Some(player_name) = player_name {
+	    game.add_user(player_name);	  
+	} else {
+	    game.add_user("player".to_string());	    	    
+	}
+
+	let num_bots = 5;
+	for i in 0..num_bots {
+            let name = format!("Mr {}", i);
+            game.add_bot(name);
+	}
+	    
+	self.tables_to_game.insert(table_name.clone(), game);
     }
 }
