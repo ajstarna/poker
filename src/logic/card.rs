@@ -9,27 +9,27 @@ use strum_macros::EnumIter;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter, Hash)]
 enum Rank {
-    TWO = 2,
-    THREE = 3,
-    FOUR = 4,
-    FIVE = 5,
-    SIX = 6,
-    SEVEN = 7,
-    EIGHT = 8,
-    NINE = 9,
-    TEN = 10,
-    JACK = 11,
-    QUEEN = 12,
-    KING = 13,
-    ACE = 14,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eeight = 8,
+    Nine = 9,
+    Ten = 10,
+    Jack = 11,
+    Queen = 12,
+    King = 13,
+    Ace = 14,
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone, EnumIter)]
 enum Suit {
-    CLUB,
-    DIAMOND,
-    HEART,
-    SPADE,
+    Club,
+    Diamond,
+    Heart,
+    Spade,
 }
 
 #[derive(Eq, Debug, Copy, Clone)]
@@ -59,16 +59,16 @@ impl PartialEq for Card {
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
 enum HandRanking {
-    HIGHCARD = 1,
-    PAIR = 2,
-    TWOPAIR = 3,
-    THREEOFAKIND = 4,
-    STRAIGHT = 5,
-    FLUSH = 6,
-    FULLHOUSE = 7,
-    FOUROFAKIND = 8,
-    STRAIGHTFLUSH = 9,
-    ROYALFLUSH = 10,
+    HighCard = 1,
+    Pair = 2,
+    TwoPair = 3,
+    ThreeOfAKind = 4,
+    Straight = 5,
+    Flush = 6,
+    FullHouse = 7,
+    FourOfAKind = 8,
+    StraightFlush = 9,
+    RoyalFlush = 10,
 }
 
 /// The hand result has the HandRanking, for quick comparisons, then the cads that make
@@ -78,7 +78,7 @@ enum HandRanking {
 /// are each represented by 4 bits, so a better hand will have a higher value.
 /// e.g. a hand of Q, Q, Q, 9, 4 would look like
 /// {
-/// hand_ranking: HandRanking::THREEOFAKIND,
+/// hand_ranking: HandRanking::ThreeOfAKind,
 /// contsituent_cards: [Q, Q, Q],
 /// kickers: [9, 4]
 /// value = [3] | [12] | [12] | [12] | [9] | [4] == [0000] | [0000] | [0011] | [1100] | [1100] | [1100] | [1001] | [0100]
@@ -120,38 +120,38 @@ impl HandResult {
         kickers: &Vec<Card>,
     ) -> u32 {
         let mut value = hand_ranking as u32;
-        value = value << 20; // shift it into the most sifnificant area we need
+        value <<= 20; // shift it into the most sifnificant area we need
         match hand_ranking {
-            HandRanking::HIGHCARD
-            | HandRanking::PAIR
-            | HandRanking::THREEOFAKIND
-            | HandRanking::STRAIGHT
-            | HandRanking::FLUSH
-            | HandRanking::FOUROFAKIND
-            | HandRanking::STRAIGHTFLUSH
-            | HandRanking::ROYALFLUSH => {
+            HandRanking::HighCard
+            | HandRanking::Pair
+            | HandRanking::ThreeOfAKind
+            | HandRanking::Straight
+            | HandRanking::Flush
+            | HandRanking::FourOfAKind
+            | HandRanking::StraightFlush
+            | HandRanking::RoyalFlush => {
                 // These handrankings are all uniquely identified by a single constituent card
                 // first add the rank of the constituent
                 let mut extra = constituent_cards.last().unwrap().rank as u32;
-                extra = extra << 16;
+                extra <<= 16;
                 value += extra;
             }
-            HandRanking::TWOPAIR => {
+            HandRanking::TwoPair => {
                 // a two pair is valued by its higher pair, then lower pair
                 let mut extra = constituent_cards.last().unwrap().rank as u32;
-                extra = extra << 16;
+                extra <<= 16;
                 value += extra;
 
                 // the lower pair is sorted to the front
                 extra = constituent_cards[0].rank as u32;
-                extra = extra << 12;
+                extra <<= 12;
                 value += extra;
             }
-            HandRanking::FULLHOUSE => {
+            HandRanking::FullHouse => {
                 // a full house is valued first by the three of a kind, then the pair
                 // the three of a kind will always exist as the middle element, regardless of the sort order
                 let mut extra = constituent_cards[2].rank as u32;
-                extra = extra << 16;
+                extra <<= 16;
                 value += extra;
 
                 // the pair will be either at the beginning or the end of the constituent_cards, we need to check.
@@ -163,7 +163,7 @@ impl HandResult {
                     // So grab the last card in the list, which will necessarily be part of the pair
                     second_extra = constituent_cards.last().unwrap().rank as u32;
                 }
-                second_extra = second_extra << 12;
+                second_extra <<= 12;
                 value += second_extra;
             }
         }
@@ -175,7 +175,7 @@ impl HandResult {
         // the second pair is being shifted 12. so if we start at 0 and go UP, i think we are good right?
         for i in 0..(kickers.len()) {
             let mut extra = kickers[i].rank as u32;
-            extra = extra << shift_amount;
+            extra <<= shift_amount;
             value += extra;
             shift_amount += 4;
         }
@@ -204,7 +204,7 @@ impl HandResult {
                 is_flush = false;
             }
             if card.rank as usize != first_rank + i {
-                // TODO: we need to handle ACE being high or low
+                // TODO: we need to handle Ace being high or low
                 is_straight = false;
             }
         }
@@ -223,17 +223,17 @@ impl HandResult {
         let mut kickers = Vec::new();
 
         if is_flush && is_straight {
-            if let Rank::ACE = five_cards[4].rank {
-                hand_ranking = HandRanking::ROYALFLUSH;
+            if let Rank::Ace = five_cards[4].rank {
+                hand_ranking = HandRanking::RoyalFlush;
             } else {
-                hand_ranking = HandRanking::STRAIGHTFLUSH;
+                hand_ranking = HandRanking::StraightFlush;
             }
             constituent_cards.extend(five_cards);
         } else {
             let mut num_fours = 0;
             let mut num_threes = 0;
             let mut num_twos = 0;
-            for (_, count) in &rank_counts {
+            for count in rank_counts.values() {
                 //println!("rank = {:?}, count = {}", rank, count);
                 match count {
                     4 => num_fours += 1,
@@ -244,7 +244,7 @@ impl HandResult {
             }
 
             if num_fours == 1 {
-                hand_ranking = HandRanking::FOUROFAKIND;
+                hand_ranking = HandRanking::FourOfAKind;
                 for card in five_cards {
                     match *rank_counts.get(&card.rank).unwrap() {
                         4 => constituent_cards.push(card),
@@ -252,7 +252,7 @@ impl HandResult {
                     }
                 }
             } else if num_threes == 1 && num_twos == 1 {
-                hand_ranking = HandRanking::FULLHOUSE;
+                hand_ranking = HandRanking::FullHouse;
                 for card in five_cards {
                     match *rank_counts.get(&card.rank).unwrap() {
                         2 | 3 => constituent_cards.push(card),
@@ -260,13 +260,13 @@ impl HandResult {
                     }
                 }
             } else if is_flush {
-                hand_ranking = HandRanking::FLUSH;
+                hand_ranking = HandRanking::Flush;
                 constituent_cards.extend(five_cards);
             } else if is_straight {
-                hand_ranking = HandRanking::STRAIGHT;
+                hand_ranking = HandRanking::Straight;
                 constituent_cards.extend(five_cards);
             } else if num_threes == 1 {
-                hand_ranking = HandRanking::THREEOFAKIND;
+                hand_ranking = HandRanking::ThreeOfAKind;
                 for card in five_cards {
                     match *rank_counts.get(&card.rank).unwrap() {
                         3 => constituent_cards.push(card),
@@ -274,7 +274,7 @@ impl HandResult {
                     }
                 }
             } else if num_twos == 2 {
-                hand_ranking = HandRanking::TWOPAIR;
+                hand_ranking = HandRanking::TwoPair;
                 for card in five_cards {
                     match *rank_counts.get(&card.rank).unwrap() {
                         2 => constituent_cards.push(card),
@@ -282,7 +282,7 @@ impl HandResult {
                     }
                 }
             } else if num_twos == 1 {
-                hand_ranking = HandRanking::PAIR;
+                hand_ranking = HandRanking::Pair;
                 for card in five_cards {
                     match *rank_counts.get(&card.rank).unwrap() {
                         2 => constituent_cards.push(card),
@@ -290,7 +290,7 @@ impl HandResult {
                     }
                 }
             } else {
-                hand_ranking = HandRanking::HIGHCARD;
+                hand_ranking = HandRanking::HighCard;
                 constituent_cards.push(five_cards[4]);
                 for &card in five_cards.iter().take(4) {
                     kickers.push(card);

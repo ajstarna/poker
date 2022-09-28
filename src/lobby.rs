@@ -165,7 +165,7 @@ impl Handler<Join> for GameLobby {
             // we can unwrap since the mappings must always be in sync
             let sessions = self.tables_to_session_ids.get_mut(table_name).unwrap();
             sessions.remove(&id);
-            self.send_message(&table_name, "Someone disconnected", None);
+            self.send_message(table_name, "Someone disconnected", None);
         }
 
         // update the mapping to find the player at a table
@@ -191,6 +191,6 @@ impl Handler<Join> for GameLobby {
             game.add_bot(name);
         }
 
-        self.tables_to_game.insert(table_name.clone(), game);
+        self.tables_to_game.insert(table_name, game);
     }
 }

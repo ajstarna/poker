@@ -88,12 +88,12 @@ impl<'a> GameHand<'a> {
     ) -> Self {
         let num_active = players.iter().filter(|player| player.is_active).count(); // active to start the hand
         GameHand {
-            deck: deck,
-            players: players,
-            num_active: num_active,
-            button_idx: button_idx,
-            small_blind: small_blind,
-            big_blind: big_blind,
+            deck,
+            players,
+            num_active,
+            button_idx,
+            small_blind,
+            big_blind,
             street: Street::Preflop,
             pot: 0.0,
             flop: None,
@@ -181,7 +181,7 @@ impl<'a> GameHand<'a> {
                 i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
                         //println!("Index = {}, Current result = {:?}", i, current_result);
 
-                if let None = current_result {
+                if current_result.is_none() {
                     //println!("no hand result at index {:?}", i);
                     continue;
                 }
@@ -347,12 +347,15 @@ impl<'a> GameHand<'a> {
 
     fn play_street(&mut self) {
         let mut street_bet: f64 = 0.0;
-        let mut cumulative_bets = vec![0.0; self.players.len()]; // each index keeps track of that players' contribution this street
+	// each index keeps track of that players' contribution this street	
+        let mut cumulative_bets = vec![0.0; self.players.len()]; 
 
         let starting_idx = self.get_starting_idx(); // which player starts the betting
-                                                    //let mut num_settled = 0; // keeps track of how many players have either checked through or called the last bet (or made the last bet)
+        //let mut num_settled = 0;
+	// keeps track of how many players have either checked through or called the last bet (or made the last bet)
 
-        // if a player is still active but has no remaining money (i.e. is all-in), then they are settled and ready to go to the end
+        // if a player is still active but has no remaining money (i.e. is all-in),
+	// then they are settled and ready to go to the end
         let mut num_all_in = self
             .players
             .iter()
@@ -398,7 +401,7 @@ impl<'a> GameHand<'a> {
                         ) as f64);
                     } else {
                         action = GameHand::get_and_validate_action(
-                            &player,
+                            player,
                             street_bet,
                             player_cumulative,
                         );
@@ -535,13 +538,12 @@ impl<'a> GameHand<'a> {
                 0..=20 => PlayerAction::Fold,
                 21..=55 => PlayerAction::Check,
                 56..=70 => {
-                    let amount: f64;
-                    if player.money <= 100.0 {
+                    let amount: f64 = if player.money <= 100.0 {
                         // just go all in if we are at 10% starting
-                        amount = player.money as f64;
+                        player.money as f64
                     } else {
-                        amount = rand::thread_rng().gen_range(1..player.money as u32) as f64;
-                    }
+                        rand::thread_rng().gen_range(1..player.money as u32) as f64
+                    };
                     PlayerAction::Bet(amount)
                 }
                 _ => PlayerAction::Call,
