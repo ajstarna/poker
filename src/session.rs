@@ -175,14 +175,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
             ws::Message::Nop => (),
         }
     }
-    
 }
 
 impl WsGameSession {
     fn handle_game_specific_command(
-	&mut self,
-	message: &str,
-	ctx: &mut <WsGameSession as Actor>::Context
+        &mut self,
+        message: &str,
+        ctx: &mut <WsGameSession as Actor>::Context,
     ) {
         let v: Vec<&str> = message.splitn(2, ' ').collect();
         match v[0] {
@@ -215,7 +214,7 @@ impl WsGameSession {
                     self.lobby_addr.do_send(messages::Join {
                         id: self.id,
                         table_name: table_name.clone(),
-			player_name: self.name.clone(),
+                        player_name: self.name.clone(),
                     });
                     self.table = Some(table_name);
                     ctx.text("joined");

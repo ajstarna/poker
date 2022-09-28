@@ -51,5 +51,5 @@ pub struct Join {
     /// Table name
     pub table_name: String,
 
-    pub player_name: Option<String>,    
+    pub player_name: Option<String>,
 }

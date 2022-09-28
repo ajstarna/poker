@@ -12,8 +12,8 @@ use std::{
     },
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
 use crate::logic::Game;
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
 use actix::prelude::{Actor, Context, Handler, MessageResult, Recipient};
 use uuid::Uuid;
 
@@ -27,10 +27,10 @@ pub struct GameLobby {
     tables_to_session_ids: HashMap<String, HashSet<Uuid>>,
 
     // a map from session id to the table that it currently is in
-    players_to_table:  HashMap<Uuid, String>,
-    
+    players_to_table: HashMap<Uuid, String>,
+
     tables_to_game: HashMap<String, Game>,
-    
+
     visitor_count: Arc<AtomicUsize>,
 }
 
@@ -39,8 +39,8 @@ impl GameLobby {
         GameLobby {
             sessions: HashMap::new(),
             tables_to_session_ids: HashMap::new(),
-	    players_to_table: HashMap::new(),
-            tables_to_game: HashMap::new(),	    
+            players_to_table: HashMap::new(),
+            tables_to_game: HashMap::new(),
             visitor_count,
         }
     }
@@ -86,7 +86,7 @@ impl Handler<Connect> for GameLobby {
             .entry("main".to_owned())
             .or_insert_with(HashSet::new)
             .insert(id);
-	self.players_to_table.insert(id, "main".to_owned());
+        self.players_to_table.insert(id, "main".to_owned());
         let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
         self.send_message("main", &format!("Total visitors {count}"), None);
 
@@ -149,25 +149,28 @@ impl Handler<Join> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join { id, table_name, player_name } = msg;
+        let Join {
+            id,
+            table_name,
+            player_name,
+        } = msg;
 
-	if self.tables_to_session_ids.contains_key(&table_name) {
-	    // for now, you cannot actually join (or create) a table that already exists
-	    return;
-	}
+        if self.tables_to_session_ids.contains_key(&table_name) {
+            // for now, you cannot actually join (or create) a table that already exists
+            return;
+        }
 
+        if let Some(table_name) = self.players_to_table.get(&id) {
+            // we already exist at a table, so leave it
+            // we can unwrap since the mappings must always be in sync
+            let sessions = self.tables_to_session_ids.get_mut(table_name).unwrap();
+            sessions.remove(&id);
+            self.send_message(&table_name, "Someone disconnected", None);
+        }
 
-	if let Some(table_name) = self.players_to_table.get(&id) {
-	    // we already exist at a table, so leave it
-	    // we can unwrap since the mappings must always be in sync
-	    let sessions = self.tables_to_session_ids.get_mut(table_name).unwrap();
-	    sessions.remove(&id);
-            self.send_message(&table_name, "Someone disconnected", None);	    
-	}
+        // update the mapping to find the player at a table
+        self.players_to_table.insert(id, table_name.clone());
 
-	// update the mapping to find the player at a table
-	self.players_to_table.insert(id, table_name.clone());
-	    
         self.tables_to_session_ids
             .entry(table_name.clone())
             .or_insert_with(HashSet::new)
@@ -175,19 +178,19 @@ impl Handler<Join> for GameLobby {
 
         self.send_message(&table_name, "Someone connected", Some(id));
 
-	let mut game = Game::new();
-	if let Some(player_name) = player_name {
-	    game.add_user(player_name);	  
-	} else {
-	    game.add_user("player".to_string());	    	    
-	}
+        let mut game = Game::new();
+        if let Some(player_name) = player_name {
+            game.add_user(player_name);
+        } else {
+            game.add_user("player".to_string());
+        }
 
-	let num_bots = 5;
-	for i in 0..num_bots {
+        let num_bots = 5;
+        for i in 0..num_bots {
             let name = format!("Mr {}", i);
             game.add_bot(name);
-	}
-	    
-	self.tables_to_game.insert(table_name.clone(), game);
+        }
+
+        self.tables_to_game.insert(table_name.clone(), game);
     }
 }
