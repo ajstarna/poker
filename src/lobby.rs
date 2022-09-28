@@ -41,10 +41,11 @@ pub struct GameLobby {
 /*
 
 TODO: is this all it would be???
-the game would need to know its own name
 each player would have its own connection, so the lobby would just relay commands to the proper game based on the sesssion id and thats it?
 struct GameLobby {
-players_to_game: HashMap<Uuid, Game>
+players_to_tables: HashMap<Uuid, String> // 
+tables_to_games: HashMap<String, Game> // i guess we still need to have a mapping from the name, for when ppl wanna join ur game by name
+
 }
 */
 
