@@ -30,12 +30,23 @@ pub struct GameLobby {
     players_to_table: HashMap<Uuid, String>,
 
 
-    //TODO: i am pretty sure we wanna move the sessions into the Game itself,
+    TODO: i am pretty sure we wanna move the sessions into the Game itself,
     // that way i guess the game can write the messages
+    And we can get rid of almost all the redundant HashMaps that need to stay in sync?
     tables_to_game: HashMap<String, Game>,
 
     visitor_count: Arc<AtomicUsize>,
 }
+
+/*
+
+TODO: is this all it would be???
+the game would need to know its own name
+each player would have its own connection, so the lobby would just relay commands to the proper game based on the sesssion id and thats it?
+struct GameLobby {
+players_to_game: HashMap<Uuid, Game>
+}
+*/
 
 impl GameLobby {
     pub fn new(visitor_count: Arc<AtomicUsize>) -> GameLobby {
@@ -51,6 +62,9 @@ impl GameLobby {
 
 impl GameLobby {
     /// Send message to all users in the table
+    TODO i think this method should be in the game too?  After it owns the connections
+	So each player shouldhave their id and their connection?
+	So the lobby would simply have the mapping from ids to their games basically?
     fn send_message(&self, table: &str, message: &str, skip_id: Option<Uuid>) {
         if let Some(session_ids) = self.tables_to_session_ids.get(table) {
             for id in session_ids {
@@ -64,6 +78,7 @@ impl GameLobby {
     }
 
     fn set_player_action(&self, ) {
+	tell the game that this player is at that the player has entered a move. the game sets player.current_action
     }
 }
 
