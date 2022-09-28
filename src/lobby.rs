@@ -12,7 +12,7 @@ use std::{
     },
 };
 
-use crate::logic::Game;
+use crate::{logic::Game, messages::PlayerActionMessage};
 use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
 use actix::prelude::{Actor, Context, Handler, MessageResult, Recipient};
 use uuid::Uuid;
@@ -29,6 +29,9 @@ pub struct GameLobby {
     // a map from session id to the table that it currently is in
     players_to_table: HashMap<Uuid, String>,
 
+
+    //TODO: i am pretty sure we wanna move the sessions into the Game itself,
+    // that way i guess the game can write the messages
     tables_to_game: HashMap<String, Game>,
 
     visitor_count: Arc<AtomicUsize>,
@@ -58,6 +61,9 @@ impl GameLobby {
                 }
             }
         }
+    }
+
+    fn set_player_action(&self, ) {
     }
 }
 
@@ -161,7 +167,7 @@ impl Handler<Join> for GameLobby {
         }
 
         if let Some(table_name) = self.players_to_table.get(&id) {
-            // we already exist at a table, so leave it
+            // we already exist at a table, so we must leave that table
             // we can unwrap since the mappings must always be in sync
             let sessions = self.tables_to_session_ids.get_mut(table_name).unwrap();
             sessions.remove(&id);
@@ -192,5 +198,15 @@ impl Handler<Join> for GameLobby {
         }
 
         self.tables_to_game.insert(table_name, game);
+    }
+}
+
+
+/// Handler for Message message.
+impl Handler<PlayerActionMessage> for GameLobby {
+    type Result = ();
+
+    fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
+        self.set_player_action(&msg.table, msg.player_action., Some(msg.id));
     }
 }

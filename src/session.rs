@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::lobby;
 use crate::messages;
+use crate::logic::player::PlayerAction;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -228,6 +229,14 @@ impl WsGameSession {
                 } else {
                     ctx.text("!!! name is required");
                 }
+            }
+            "/check" => {
+                let table_name = v[1].to_owned();
+                self.lobby_addr.do_send(messages::PlayerActionMessage {
+		    PlayerAction::Check
+                });
+                self.table = Some(table_name);
+                ctx.text("joined");
             }
             _ => ctx.text(format!("!!! unknown command: {message:?}")),
         }

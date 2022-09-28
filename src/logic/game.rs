@@ -5,54 +5,9 @@ use std::io;
 use std::iter;
 
 use super::card::{Card, Deck, HandResult};
+use super::player::{PlayerAction, Player};
 
-#[derive(Debug)]
-enum PlayerAction {
-    PostSmallBlind(f64),
-    PostBigBlind(f64),
-    Fold,
-    Check,
-    Bet(f64),
-    Call,
-    //Raise(u32), // i guess a raise is just a bet really?
-}
-
-#[derive(Debug)]
-struct Player {
-    name: String,
-    hole_cards: Vec<Card>,
-    is_active: bool,      // is still playing the current hand
-    is_sitting_out: bool, // if sitting out, then they are not active for any future hand
-    money: f64,
-    human_controlled: bool, // do we need user input or let the computer control it
-}
-
-impl Player {
-    fn new(name: String, human_controlled: bool) -> Self {
-        Player {
-            name,
-            hole_cards: Vec::<Card>::with_capacity(2),
-            is_active: true,
-            is_sitting_out: false,
-            money: 1000.0, // let them start with 1000 for now,
-            human_controlled,
-        }
-    }
-
-    fn pay(&mut self, payment: f64) {
-        self.money += payment;
-    }
-
-    fn deactivate(&mut self) {
-        self.is_active = false;
-    }
-
-    /// If the player has put all their money in, but has not folded (is_active),
-    /// then they are all-in
-    fn is_all_in(&self) -> bool {
-        self.is_active && self.money == 0.0
-    }
-}
+use uuid::Uuid;
 
 #[derive(Debug, PartialEq)]
 enum Street {
@@ -497,10 +452,20 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn get_action_from_user(player: &Player) -> PlayerAction {
+    fn get_action_from_player(player: &mut Player) -> PlayerAction {
         // will need UI here
         // for now do a random action
         if player.human_controlled {
+	    if player.current_action.is_some() {
+		println!("Player: {:?} has action {:?}", player.name, player.current_action);
+		let action = player.current_action;
+		player.current_action = None; // set it back to None
+		action.unwrap()
+	    } else {
+                println!("No action available for {:?}. We will attempt to check", player.name);
+                PlayerAction::Check
+	    }
+	    /*
             println!("You: {:?}", player);
             println!("Please enter your action (f, ca, ch, b): ");
             let mut input = String::new();
@@ -531,7 +496,7 @@ impl<'a> GameHand<'a> {
                     println!("Unknown input. We will attempt to check");
                     PlayerAction::Check
                 }
-            }
+	     */
         } else {
             let num = rand::thread_rng().gen_range(0..100);
             match num {
@@ -562,7 +527,7 @@ impl<'a> GameHand<'a> {
 
         'valid_check: loop {
             // not a blind, so get an actual choice
-            action = GameHand::get_action_from_user(player);
+            action = GameHand::get_action_from_player(player);
             match action {
                 PlayerAction::Fold => {
                     if street_bet <= player_cumulative {
@@ -639,12 +604,13 @@ impl Game {
         }
     }
 
-    pub fn add_user(&mut self, name: String) {
-        self.players.push(Player::new(name, true))
+    pub fn add_user(&mut self, name: String, id: Uuid) {
+        self.players.push(Player::new(name, id, true))
     }
 
     pub fn add_bot(&mut self, name: String) {
-        self.players.push(Player::new(name, false))
+	let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
+        self.players.push(Player::new(name, bot_id, false))
     }
 
     fn play_one_hand(&mut self) {
