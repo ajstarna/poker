@@ -119,16 +119,12 @@ impl Handler<Disconnect> for GameLobby {
             // the player was at a table, so tell the Game that the player left
             if let Some(game) = self.tables_to_game.get_mut(&table_name) {
                 game.remove_player(msg.id);
+		game.send_message("Someone disconnected");
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game
             }
         }
-        /*
-        // send message to other users
-        for table in tables {
-            self.send_message(&table, "Someone disconnected", None);
-        }*/
     }
 }
 
@@ -178,7 +174,7 @@ impl Handler<Join> for GameLobby {
                 let game = self.tables_to_game.get_mut(old_table_name).unwrap();
 
                 game.remove_player(id);
-                //self.send_message(table_name, "Someone disconnected", None);
+                game.send_message("Someone disconnected");
             }
         }
 
@@ -188,8 +184,6 @@ impl Handler<Join> for GameLobby {
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());
 
-        // self.send_message(&table_name, "Someone connected", Some(id));
-
         let mut game = Game::new();
         game.add_user(player_settings);
 
@@ -198,8 +192,10 @@ impl Handler<Join> for GameLobby {
             let name = format!("Mr {}", i);
             game.add_bot(name);
         }
-
+	
+        game.send_message("Someone connected");	
         self.tables_to_game.insert(table_name, game);
+
     }
 }
 

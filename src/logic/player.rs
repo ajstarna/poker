@@ -39,7 +39,7 @@ pub struct Player {
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     pub money: f64,
     pub human_controlled: bool, // do we need user input or let the computer control it
-    pub current_action: Option<PlayerAction>, // this action can be set from the websocket, so should be there when we need it
+    pub current_action: Option<PlayerAction>, // this action is set by the connection
 }
 
 impl Player {

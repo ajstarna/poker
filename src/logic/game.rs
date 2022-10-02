@@ -6,6 +6,7 @@ use std::iter;
 
 use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerSettings};
+use crate::messages::WsMessage;
 
 use uuid::Uuid;
 
@@ -62,21 +63,21 @@ impl<'a> GameHand<'a> {
             Street::Preflop => {
                 self.street = Street::Flop;
                 self.deal_flop();
-                println!("\n========================================\nFlop = {:?}\n========================================", self.flop);
+                println!("\n================================\nFlop = {:?}\n================================", self.flop);
             }
             Street::Flop => {
                 self.street = Street::Turn;
                 self.deal_turn();
-                println!("\n========================================\nTurn = {:?}\n========================================", self.turn);
+                println!("\n================================\nTurn = {:?}\n================================", self.turn);
             }
             Street::Turn => {
                 self.street = Street::River;
                 self.deal_river();
-                println!("\n========================================\nRiver = {:?}\n========================================", self.river);
+                println!("\n================================\nRiver = {:?}\n================================", self.river);
             }
             Street::River => {
                 self.street = Street::ShowDown;
-                println!("\n========================================\nShowDown!\n========================================");
+                println!("\n================================\nShowDown!\n================================");
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
@@ -608,12 +609,26 @@ impl Game {
         self.players.push(Player::new(player_settings, true))
     }
 
-    pub fn remove_player(&mut self, id: Uuid) {}
+    /// remove the player from the vec of players with the given id
+    pub fn remove_player(&mut self, id: Uuid) {
+	self.players.retain(|p| p.player_settings.id != id);
+    }
 
     pub fn add_bot(&mut self, name: String) {
         self.players.push(Player::new_bot(name));
     }
 
+    /// given a message, send it to all players in the game that have a Recipient address
+    pub fn send_message(&self, message: &str) {
+	for player in &self.players {
+	    if player.human_controlled {
+		if let Some(addr) = &player.player_settings.player_addr {
+		    addr.do_send(WsMessage(message.to_owned()));
+		}
+	    }
+	}
+    }
+    
     fn play_one_hand(&mut self) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -676,4 +691,43 @@ impl Game {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::PlayerSettings;
+
+    #[test]
+    fn add_bot() {
+	let mut game = Game::new();
+        let name = "Mr Bot".to_string();
+        game.add_bot(name);
+	assert_eq!(game.players.len(), 1);
+	assert!(!game.players[0].human_controlled);		
+    }
+
+    #[test]
+    fn add_user_no_connection() {
+	let mut game = Game::new();
+	let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+	let settings = PlayerSettings::new(id, Some(name), None);
+        game.add_user(settings);
+	assert_eq!(game.players.len(), 1);
+	assert!(game.players[0].human_controlled);	
+    }
+
+    #[test]
+    fn remove_player() {
+	let mut game = Game::new();
+	let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+	let settings = PlayerSettings::new(id, Some(name), None);
+        game.add_user(settings);
+	assert_eq!(game.players.len(), 1);
+	game.remove_player(id);
+	assert!(game.players.is_empty());
+    }
+    
 }
