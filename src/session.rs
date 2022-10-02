@@ -210,7 +210,7 @@ impl WsGameSession {
                     let table_name = v[1].to_owned();
                     self.lobby_addr.do_send(messages::Join {
                         id: self.id,
-                        table_name: table_name.clone(),
+                        table_name,
                     });
                     //self.table = Some(table_name);
                     ctx.text("joined");

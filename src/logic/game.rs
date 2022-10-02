@@ -163,7 +163,6 @@ impl<'a> GameHand<'a> {
                     //println!("found an active player remaining");
                     best_indices.insert(i);
                 } else {
-                    ();
                     //println!("found an NON active player remaining");
                 }
             }

@@ -117,7 +117,7 @@ impl HandResult {
     fn score_hand(
         hand_ranking: HandRanking,
         constituent_cards: &Vec<Card>,
-        kickers: &Vec<Card>,
+        kickers: &[Card],
     ) -> u32 {
         let mut value = hand_ranking as u32;
         value <<= 20; // shift it into the most sifnificant area we need
@@ -173,8 +173,8 @@ impl HandResult {
         let mut shift_amount = 0;
         // TODO: double check this logic. originally shift_amount started at 12. but that wont work for 2 pair in particular, since
         // the second pair is being shifted 12. so if we start at 0 and go UP, i think we are good right?
-        for i in 0..(kickers.len()) {
-            let mut extra = kickers[i].rank as u32;
+        for kicker in kickers {
+            let mut extra = kicker.rank as u32;
             extra <<= shift_amount;
             value += extra;
             shift_amount += 4;
