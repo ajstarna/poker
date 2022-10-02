@@ -1,7 +1,9 @@
 use super::card::Card;
 use uuid::Uuid;
+use crate::messages::WsMessage;
+use actix::prelude::Recipient;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
     PostSmallBlind(f64),
     PostBigBlind(f64),
@@ -11,24 +13,39 @@ pub enum PlayerAction {
     Call,
     //Raise(u32), // i guess a raise is just a bet really?
 }
+/// this struct holds the player name and recipient address
+#[derive(Debug)]
+pub struct PlayerSettings {
+    pub id: Uuid, 
+    pub name: Option<String>,
+    pub player_addr:  Option<Recipient<WsMessage>>,    
+}
+
+impl PlayerSettings {
+    pub fn new(id: Uuid, name: Option<String>, player_addr: Option<Recipient<WsMessage>>) -> Self {
+	Self {
+	    id,
+	    name,
+	    player_addr,	    
+	}
+    }
+}
 
 #[derive(Debug)]
 pub struct Player {
-    name: String,
-    id: Uuid, // the session id to uniquely identify the player    
-    hole_cards: Vec<Card>,
-    is_active: bool,      // is still playing the current hand
-    is_sitting_out: bool, // if sitting out, then they are not active for any future hand
-    money: f64,
-    human_controlled: bool, // do we need user input or let the computer control it
-    current_action: Option<PlayerAction>, // this action can be set from the websocket, so should be there when we need it
+    pub player_settings: PlayerSettings,
+    pub hole_cards: Vec<Card>,
+    pub is_active: bool,      // is still playing the current hand
+    pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
+    pub money: f64,
+    pub human_controlled: bool, // do we need user input or let the computer control it
+    pub current_action: Option<PlayerAction>, // this action can be set from the websocket, so should be there when we need it
 }
 
 impl Player {
-    pub fn new(name: String, id: Uuid, human_controlled: bool) -> Self {
+    pub fn new(player_settings: PlayerSettings, human_controlled: bool) -> Self {
         Player {
-            name,
-	    id,	    
+	    player_settings,
             hole_cards: Vec::<Card>::with_capacity(2),
             is_active: true,
             is_sitting_out: false,
@@ -38,17 +55,23 @@ impl Player {
         }
     }
 
-    fn pay(&mut self, payment: f64) {
+    pub fn new_bot(name: String) -> Self {
+	let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
+	let player_settings = PlayerSettings::new(bot_id, Some(name), None); // recipient add == None
+	Self::new(player_settings, false)
+    }
+    
+    pub fn pay(&mut self, payment: f64) {
         self.money += payment;
     }
 
-    fn deactivate(&mut self) {
+    pub fn deactivate(&mut self) {
         self.is_active = false;
     }
 
     /// If the player has put all their money in, but has not folded (is_active),
     /// then they are all-in
-    fn is_all_in(&self) -> bool {
+    pub fn is_all_in(&self) -> bool {
         self.is_active && self.money == 0.0
     }
 }

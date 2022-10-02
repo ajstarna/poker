@@ -27,10 +27,11 @@ pub struct WsGameSession {
     pub hb: Instant,
 
     /// joined table (if at one)
-    pub table: Option<String>,
+    // ADAM: rfemoving this. should the session need to know anything excect how to contact the gamelobby
+    //pub table: Option<String>,
 
     /// user name
-    pub name: Option<String>,
+    //pub name: Option<String>,
 
     /// Game lobby address
     pub lobby_addr: Addr<lobby::GameLobby>,
@@ -41,8 +42,8 @@ impl WsGameSession {
         Self {
             id: Uuid::new_v4(),
             hb: Instant::now(),
-            table: None,
-            name: None,
+            //table: None,
+            //name: None,
             lobby_addr,
         }
     }
@@ -147,22 +148,20 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                     // handle the game specific/user commands
                     self.handle_game_specific_command(m, ctx);
                 } else {
-                    let msg = if let Some(ref name) = self.name {
-                        format!("{name}: {m}")
-                    } else {
-                        m.to_owned()
-                    };
+		    // note: this logic of appending the name to the message
+		    // needs to happen inside the game now i guess?
+                    //let msg = if let Some(ref name) = self.name {
+                    //    format!("{name}: {m}")
+                    //} else {
+                    let msg = m.to_owned();
+                    //};
                     // send message to game server
-                    if let Some(table_name) = &self.table {
-                        self.lobby_addr.do_send(messages::ClientChatMessage {
-                            id: self.id,
-                            msg,
-                            table: table_name.clone(),
-                        })
-                    } else {
-                        // cannot send a message if not at a table
-                        // TODO: send a warning message or something
-                    }
+		    // note: we used to check if we were at a table here
+                    self.lobby_addr.do_send(messages::ClientChatMessage {
+                        id: self.id,
+                        msg,
+                    })
+			
                 }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
@@ -212,12 +211,12 @@ impl WsGameSession {
             "/join" => {
                 if v.len() == 2 {
                     let table_name = v[1].to_owned();
-                    self.lobby_addr.do_send(messages::Join {
-                        id: self.id,
-                        table_name: table_name.clone(),
-                        player_name: self.name.clone(),
-                    });
-                    self.table = Some(table_name);
+                    self.lobby_addr.do_send(
+			messages::Join {
+                            id: self.id,
+                            table_name: table_name.clone(),
+			});
+                    //self.table = Some(table_name);
                     ctx.text("joined");
                 } else {
                     ctx.text("!!! table name is required");
@@ -225,18 +224,17 @@ impl WsGameSession {
             }
             "/name" => {
                 if v.len() == 2 {
-                    self.name = Some(v[1].to_owned());
+		    // TODO need a new message to set our name 
+                    //self.name = Some(v[1].to_owned());
                 } else {
                     ctx.text("!!! name is required");
                 }
             }
             "/check" => {
-                let table_name = v[1].to_owned();
                 self.lobby_addr.do_send(messages::PlayerActionMessage {
-		    PlayerAction::Check
+		    id: self.id, 
+		    player_action: PlayerAction::Check,
                 });
-                self.table = Some(table_name);
-                ctx.text("joined");
             }
             _ => ctx.text(format!("!!! unknown command: {message:?}")),
         }

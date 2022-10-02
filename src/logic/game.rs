@@ -5,7 +5,7 @@ use std::io;
 use std::iter;
 
 use super::card::{Card, Deck, HandResult};
-use super::player::{PlayerAction, Player};
+use super::player::{PlayerAction, PlayerSettings, Player};
 
 use uuid::Uuid;
 
@@ -193,8 +193,8 @@ impl<'a> GameHand<'a> {
             if !player.is_sitting_out {
                 if player.money == 0.0 {
                     println!(
-                        "Player {} is out of money so is no longer playing in the game!",
-                        player.name
+                        "Player {:?} is out of money so is no longer playing in the game!",
+                        player.player_settings.name
                     );
                     player.is_active = false;
                     player.is_sitting_out = true;
@@ -249,7 +249,7 @@ impl<'a> GameHand<'a> {
             }
             assert!(hand_count == 21); // 7 choose 5
                                        //println!("Looked at {} possible hands", hand_count);
-            println!("player = {}", player.name);
+            println!("player = {:?}", player.player_settings.name);
             println!("best result = {:?}", best_result);
             best_result
         } else {
@@ -339,28 +339,27 @@ impl<'a> GameHand<'a> {
 			 self.pot,
 			 street_bet,
 			 player_cumulative);
-                println!("Player = {:?}, i = {}", player.name, i);
+                println!("Player = {:?}, i = {}", player.player_settings.name, i);
                 if player.is_active && player.money > 0.0 {
-                    let action;
-                    if self.street == Street::Preflop && street_bet == 0.0 {
+                    let action = if self.street == Street::Preflop && street_bet == 0.0 {
                         // collect small blind!
-                        action = PlayerAction::PostSmallBlind(cmp::min(
-                            self.small_blind as u32,
-                            player.money as u32,
-                        ) as f64);
+                         PlayerAction::PostSmallBlind(cmp::min(
+                             self.small_blind as u32,
+                             player.money as u32,
+                         ) as f64)
                     } else if self.street == Street::Preflop && street_bet == self.small_blind {
                         // collect big blind!
-                        action = PlayerAction::PostBigBlind(cmp::min(
+                        PlayerAction::PostBigBlind(cmp::min(
                             self.big_blind as u32,
                             player.money as u32,
-                        ) as f64);
+                        ) as f64)
                     } else {
-                        action = GameHand::get_and_validate_action(
+                        GameHand::get_and_validate_action(
                             player,
                             street_bet,
                             player_cumulative,
-                        );
-                    }
+                        )
+                    };
 
                     match action {
                         PlayerAction::PostSmallBlind(amount) => {
@@ -392,7 +391,7 @@ impl<'a> GameHand<'a> {
                             }
                         }
                         PlayerAction::Fold => {
-                            println!("Player {:?} folds!", player.name);
+                            println!("Player {:?} folds!", player.player_settings.name);
                             player.deactivate();
                             self.num_active -= 1;
                         }
@@ -457,12 +456,12 @@ impl<'a> GameHand<'a> {
         // for now do a random action
         if player.human_controlled {
 	    if player.current_action.is_some() {
-		println!("Player: {:?} has action {:?}", player.name, player.current_action);
+		println!("Player: {:?} has action {:?}", player.player_settings.name, player.current_action);
 		let action = player.current_action;
 		player.current_action = None; // set it back to None
 		action.unwrap()
 	    } else {
-                println!("No action available for {:?}. We will attempt to check", player.name);
+                println!("No action available for {:?}. We will attempt to check", player.player_settings.name);
                 PlayerAction::Check
 	    }
 	    /*
@@ -517,7 +516,7 @@ impl<'a> GameHand<'a> {
     }
 
     fn get_and_validate_action(
-        player: &Player,
+        player: &mut Player,
         street_bet: f64,
         player_cumulative: f64,
     ) -> PlayerAction {
@@ -604,13 +603,15 @@ impl Game {
         }
     }
 
-    pub fn add_user(&mut self, name: String, id: Uuid) {
-        self.players.push(Player::new(name, id, true))
+    pub fn add_user(&mut self, player_settings: PlayerSettings) {
+        self.players.push(Player::new(player_settings, true))
     }
 
+    pub fn remove_player(&mut self, id: Uuid) {
+    }
+    
     pub fn add_bot(&mut self, name: String) {
-	let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
-        self.players.push(Player::new(name, bot_id, false))
+        self.players.push(Player::new_bot(name));
     }
 
     fn play_one_hand(&mut self) {

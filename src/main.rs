@@ -15,6 +15,8 @@ use actix_web::{
 };
 use actix_web_actors::ws;
 
+use uuid::Uuid;
+
 mod lobby;
 mod messages;
 mod session;
@@ -81,7 +83,8 @@ fn play() {
         let name = format!("Mr {}", i);
         game.add_bot(name);
     }
-    let user_name = "Adam".to_string();
-    game.add_user(user_name);
+    //let user_id = Uuid::new_v4();
+    //let user_name = "Adam".to_string();
+    //game.add_user(user_name, user_id);
     game.play();
 }
