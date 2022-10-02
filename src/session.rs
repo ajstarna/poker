@@ -7,7 +7,7 @@ use actix_web_actors::ws;
 
 use uuid::Uuid;
 
-use crate::lobby;
+use crate::hub;
 use crate::logic::player::PlayerAction;
 use crate::messages;
 
@@ -27,24 +27,24 @@ pub struct WsGameSession {
     pub hb: Instant,
 
     /// joined table (if at one)
-    // ADAM: rfemoving this. should the session need to know anything excect how to contact the gamelobby
+    // ADAM: rfemoving this. should the session need to know anything excect how to contact the gamehub
     //pub table: Option<String>,
 
     /// user name
     //pub name: Option<String>,
 
-    /// Game lobby address
-    pub lobby_addr: Addr<lobby::GameLobby>,
+    /// Game hub address
+    pub hub_addr: Addr<hub::GameHub>,
 }
 
 impl WsGameSession {
-    pub fn new(lobby_addr: Addr<lobby::GameLobby>) -> Self {
+    pub fn new(hub_addr: Addr<hub::GameHub>) -> Self {
         Self {
             id: Uuid::new_v4(),
             hb: Instant::now(),
             //table: None,
             //name: None,
-            lobby_addr,
+            hub_addr,
         }
     }
 
@@ -59,7 +59,7 @@ impl WsGameSession {
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
                 // notify game server
-                act.lobby_addr.do_send(messages::Disconnect { id: act.id });
+                act.hub_addr.do_send(messages::Disconnect { id: act.id });
 
                 // stop actor
                 ctx.stop();
@@ -88,7 +88,7 @@ impl Actor for WsGameSession {
         // HttpContext::state() is instance of WsGameSessionState, state is shared
         // across all routes within application
         let addr = ctx.address();
-        self.lobby_addr
+        self.hub_addr
             .send(messages::Connect {
                 addr: addr.recipient(),
             })
@@ -106,7 +106,7 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server
-        self.lobby_addr
+        self.hub_addr
             .do_send(messages::Disconnect { id: self.id });
         Running::Stop
     }
@@ -157,7 +157,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                     //};
                     // send message to game server
                     // note: we used to check if we were at a table here
-                    self.lobby_addr
+                    self.hub_addr
                         .do_send(messages::ClientChatMessage { id: self.id, msg })
                 }
             }
@@ -186,7 +186,7 @@ impl WsGameSession {
                 // Send ListTables message to game server and wait for
                 // response
                 println!("List tables");
-                self.lobby_addr
+                self.hub_addr
                     .send(messages::ListTables)
                     .into_actor(self)
                     .then(|res, _, ctx| {
@@ -208,7 +208,7 @@ impl WsGameSession {
             "/join" => {
                 if v.len() == 2 {
                     let table_name = v[1].to_owned();
-                    self.lobby_addr.do_send(messages::Join {
+                    self.hub_addr.do_send(messages::Join {
                         id: self.id,
                         table_name,
                     });
@@ -227,7 +227,7 @@ impl WsGameSession {
                 }
             }
             "/check" => {
-                self.lobby_addr.do_send(messages::PlayerActionMessage {
+                self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,
                     player_action: PlayerAction::Check,
                 });

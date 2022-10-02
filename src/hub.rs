@@ -1,6 +1,6 @@
-//! `Gamelobby` is an actor. It maintains list of connection client session.
-//! And manages available tables. Peers send messages to other peers in same
-//! table through `Gamelobby`.
+//! `GameHub` is an actor. It keeps track of the current tables/games
+//! and manages PlayerSettings structs (which include Ws Recipients)
+//! When a WsMessage comes in from a WsGameSession, the GameHub routes the message to the proper Game
 
 //! This file is adapted from the actix-web chat websocket example
 
@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
-pub struct GameLobby {
+pub struct GameHub {
     // map from session id to the PlayerSettings for players that have connected but are not yet at a table
     main_lobby_connections: HashMap<Uuid, PlayerSettings>,
 
@@ -37,9 +37,9 @@ pub struct GameLobby {
     visitor_count: Arc<AtomicUsize>,
 }
 
-impl GameLobby {
-    pub fn new(visitor_count: Arc<AtomicUsize>) -> GameLobby {
-        GameLobby {
+impl GameHub {
+    pub fn new(visitor_count: Arc<AtomicUsize>) -> GameHub {
+        GameHub {
             //sessions: HashMap::new(),
             //tables_to_session_ids: HashMap::new(),
             main_lobby_connections: HashMap::new(),
@@ -50,7 +50,7 @@ impl GameLobby {
     }
 }
 
-impl GameLobby {
+impl GameHub {
     /// Send message to all users in the table where the given player id is at
     fn send_message(&self, id: Uuid, message: &str) {
         /*
@@ -66,8 +66,8 @@ impl GameLobby {
     }
 }
 
-/// Make actor from `GameLobby`
-impl Actor for GameLobby {
+/// Make actor from `GameHub`
+impl Actor for GameHub {
     /// We are going to use simple Context, we just need ability to communicate
     /// with other actors.
     type Context = Context<Self>;
@@ -76,7 +76,7 @@ impl Actor for GameLobby {
 /// Handler for Connect message.
 ///
 /// Register new session and assign unique id to this session
-impl Handler<Connect> for GameLobby {
+impl Handler<Connect> for GameHub {
     type Result = MessageResult<Connect>; // use MessageResult so that we can return a Uuid
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
@@ -107,7 +107,7 @@ impl Handler<Connect> for GameLobby {
 */
 
 /// Handler for Disconnect message.
-impl Handler<Disconnect> for GameLobby {
+impl Handler<Disconnect> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
@@ -129,7 +129,7 @@ impl Handler<Disconnect> for GameLobby {
 }
 
 /// Handler for Message message.
-impl Handler<ClientChatMessage> for GameLobby {
+impl Handler<ClientChatMessage> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
@@ -138,7 +138,7 @@ impl Handler<ClientChatMessage> for GameLobby {
 }
 
 /// Handler for `ListTables` message.
-impl Handler<ListTables> for GameLobby {
+impl Handler<ListTables> for GameHub {
     type Result = MessageResult<ListTables>;
 
     fn handle(&mut self, _: ListTables, _: &mut Context<Self>) -> Self::Result {
@@ -154,7 +154,7 @@ impl Handler<ListTables> for GameLobby {
 
 /// Join table, send disconnect message to old table
 /// send join message to new table
-impl Handler<Join> for GameLobby {
+impl Handler<Join> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
@@ -200,7 +200,7 @@ impl Handler<Join> for GameLobby {
 }
 
 /// Handler for Message message.
-impl Handler<PlayerActionMessage> for GameLobby {
+impl Handler<PlayerActionMessage> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {}
