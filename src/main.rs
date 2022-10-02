@@ -58,7 +58,7 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting HTTP server at http://localhost:8080");
 
     play(); // TODO: remove this. for now just getting rid of dead code warnings
-    
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))

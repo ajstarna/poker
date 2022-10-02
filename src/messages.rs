@@ -1,7 +1,7 @@
+use crate::logic::player::PlayerAction;
 use actix::prelude::{Message, Recipient};
 /// Game server sends this messages to session
 use uuid::Uuid;
-use crate::logic::player::PlayerAction;
 
 #[derive(Message)]
 #[rtype(result = "()")]
@@ -58,6 +58,6 @@ pub struct Join {
 pub struct PlayerActionMessage {
     // Client ID
     pub id: Uuid,
-    
+
     pub player_action: PlayerAction,
 }

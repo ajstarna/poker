@@ -8,8 +8,8 @@ use actix_web_actors::ws;
 use uuid::Uuid;
 
 use crate::lobby;
-use crate::messages;
 use crate::logic::player::PlayerAction;
+use crate::messages;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -148,20 +148,17 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                     // handle the game specific/user commands
                     self.handle_game_specific_command(m, ctx);
                 } else {
-		    // note: this logic of appending the name to the message
-		    // needs to happen inside the game now i guess?
+                    // note: this logic of appending the name to the message
+                    // needs to happen inside the game now i guess?
                     //let msg = if let Some(ref name) = self.name {
                     //    format!("{name}: {m}")
                     //} else {
                     let msg = m.to_owned();
                     //};
                     // send message to game server
-		    // note: we used to check if we were at a table here
-                    self.lobby_addr.do_send(messages::ClientChatMessage {
-                        id: self.id,
-                        msg,
-                    })
-			
+                    // note: we used to check if we were at a table here
+                    self.lobby_addr
+                        .do_send(messages::ClientChatMessage { id: self.id, msg })
                 }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
@@ -211,11 +208,10 @@ impl WsGameSession {
             "/join" => {
                 if v.len() == 2 {
                     let table_name = v[1].to_owned();
-                    self.lobby_addr.do_send(
-			messages::Join {
-                            id: self.id,
-                            table_name: table_name.clone(),
-			});
+                    self.lobby_addr.do_send(messages::Join {
+                        id: self.id,
+                        table_name: table_name.clone(),
+                    });
                     //self.table = Some(table_name);
                     ctx.text("joined");
                 } else {
@@ -224,7 +220,7 @@ impl WsGameSession {
             }
             "/name" => {
                 if v.len() == 2 {
-		    // TODO need a new message to set our name 
+                    // TODO need a new message to set our name
                     //self.name = Some(v[1].to_owned());
                 } else {
                     ctx.text("!!! name is required");
@@ -232,8 +228,8 @@ impl WsGameSession {
             }
             "/check" => {
                 self.lobby_addr.do_send(messages::PlayerActionMessage {
-		    id: self.id, 
-		    player_action: PlayerAction::Check,
+                    id: self.id,
+                    player_action: PlayerAction::Check,
                 });
             }
             _ => ctx.text(format!("!!! unknown command: {message:?}")),

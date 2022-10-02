@@ -5,7 +5,7 @@ use std::io;
 use std::iter;
 
 use super::card::{Card, Deck, HandResult};
-use super::player::{PlayerAction, PlayerSettings, Player};
+use super::player::{Player, PlayerAction, PlayerSettings};
 
 use uuid::Uuid;
 
@@ -302,15 +302,15 @@ impl<'a> GameHand<'a> {
 
     fn play_street(&mut self) {
         let mut street_bet: f64 = 0.0;
-	// each index keeps track of that players' contribution this street	
-        let mut cumulative_bets = vec![0.0; self.players.len()]; 
+        // each index keeps track of that players' contribution this street
+        let mut cumulative_bets = vec![0.0; self.players.len()];
 
         let starting_idx = self.get_starting_idx(); // which player starts the betting
-        //let mut num_settled = 0;
-	// keeps track of how many players have either checked through or called the last bet (or made the last bet)
+                                                    //let mut num_settled = 0;
+                                                    // keeps track of how many players have either checked through or called the last bet (or made the last bet)
 
         // if a player is still active but has no remaining money (i.e. is all-in),
-	// then they are settled and ready to go to the end
+        // then they are settled and ready to go to the end
         let mut num_all_in = self
             .players
             .iter()
@@ -343,10 +343,10 @@ impl<'a> GameHand<'a> {
                 if player.is_active && player.money > 0.0 {
                     let action = if self.street == Street::Preflop && street_bet == 0.0 {
                         // collect small blind!
-                         PlayerAction::PostSmallBlind(cmp::min(
-                             self.small_blind as u32,
-                             player.money as u32,
-                         ) as f64)
+                        PlayerAction::PostSmallBlind(cmp::min(
+                            self.small_blind as u32,
+                            player.money as u32,
+                        ) as f64)
                     } else if self.street == Street::Preflop && street_bet == self.small_blind {
                         // collect big blind!
                         PlayerAction::PostBigBlind(cmp::min(
@@ -354,11 +354,7 @@ impl<'a> GameHand<'a> {
                             player.money as u32,
                         ) as f64)
                     } else {
-                        GameHand::get_and_validate_action(
-                            player,
-                            street_bet,
-                            player_cumulative,
-                        )
+                        GameHand::get_and_validate_action(player, street_bet, player_cumulative)
                     };
 
                     match action {
@@ -455,47 +451,53 @@ impl<'a> GameHand<'a> {
         // will need UI here
         // for now do a random action
         if player.human_controlled {
-	    if player.current_action.is_some() {
-		println!("Player: {:?} has action {:?}", player.player_settings.name, player.current_action);
-		let action = player.current_action;
-		player.current_action = None; // set it back to None
-		action.unwrap()
-	    } else {
-                println!("No action available for {:?}. We will attempt to check", player.player_settings.name);
+            if player.current_action.is_some() {
+                println!(
+                    "Player: {:?} has action {:?}",
+                    player.player_settings.name, player.current_action
+                );
+                let action = player.current_action;
+                player.current_action = None; // set it back to None
+                action.unwrap()
+            } else {
+                println!(
+                    "No action available for {:?}. We will attempt to check",
+                    player.player_settings.name
+                );
                 PlayerAction::Check
-	    }
-	    /*
-            println!("You: {:?}", player);
-            println!("Please enter your action (f, ca, ch, b): ");
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .expect("Failed to get console input");
-            input = input.to_string().trim().to_string();
-            match input.as_str() {
-                "f" => PlayerAction::Fold,
-                "ch" => PlayerAction::Check,
-                "ca" => PlayerAction::Call,
-                "b" => {
-                    println!("How much to bet: ");
-                    let mut amount = String::new();
-                    io::stdin()
-                        .read_line(&mut amount)
-                        .expect("Failed to get console input");
-                    amount = amount.to_string().trim().to_string();
-                    println!("about to parse [{}] as a f64", amount);
-                    let mut bet_amount = amount.parse::<f64>().unwrap();
-                    if bet_amount > player.money {
-                        println!("You are trying to bet more than you have. Lets just go all in!");
-                        bet_amount = player.money;
-                    }
-                    PlayerAction::Bet(bet_amount)
-                }
-                _ => {
-                    println!("Unknown input. We will attempt to check");
-                    PlayerAction::Check
-                }
-	     */
+            }
+        /*
+           println!("You: {:?}", player);
+           println!("Please enter your action (f, ca, ch, b): ");
+           let mut input = String::new();
+           io::stdin()
+               .read_line(&mut input)
+               .expect("Failed to get console input");
+           input = input.to_string().trim().to_string();
+           match input.as_str() {
+               "f" => PlayerAction::Fold,
+               "ch" => PlayerAction::Check,
+               "ca" => PlayerAction::Call,
+               "b" => {
+                   println!("How much to bet: ");
+                   let mut amount = String::new();
+                   io::stdin()
+                       .read_line(&mut amount)
+                       .expect("Failed to get console input");
+                   amount = amount.to_string().trim().to_string();
+                   println!("about to parse [{}] as a f64", amount);
+                   let mut bet_amount = amount.parse::<f64>().unwrap();
+                   if bet_amount > player.money {
+                       println!("You are trying to bet more than you have. Lets just go all in!");
+                       bet_amount = player.money;
+                   }
+                   PlayerAction::Bet(bet_amount)
+               }
+               _ => {
+                   println!("Unknown input. We will attempt to check");
+                   PlayerAction::Check
+               }
+        */
         } else {
             let num = rand::thread_rng().gen_range(0..100);
             match num {
@@ -607,9 +609,8 @@ impl Game {
         self.players.push(Player::new(player_settings, true))
     }
 
-    pub fn remove_player(&mut self, id: Uuid) {
-    }
-    
+    pub fn remove_player(&mut self, id: Uuid) {}
+
     pub fn add_bot(&mut self, name: String) {
         self.players.push(Player::new_bot(name));
     }

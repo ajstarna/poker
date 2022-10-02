@@ -12,8 +12,11 @@ use std::{
     },
 };
 
-use crate::{logic::{Game, PlayerSettings}, messages::PlayerActionMessage};
 use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
+use crate::{
+    logic::{Game, PlayerSettings},
+    messages::PlayerActionMessage,
+};
 use actix::prelude::{Actor, Context, Handler, MessageResult, Recipient};
 use uuid::Uuid;
 
@@ -39,7 +42,7 @@ impl GameLobby {
         GameLobby {
             //sessions: HashMap::new(),
             //tables_to_session_ids: HashMap::new(),
-	    main_lobby_connections: HashMap::new(),
+            main_lobby_connections: HashMap::new(),
             players_to_table: HashMap::new(),
             tables_to_game: HashMap::new(),
             visitor_count,
@@ -50,7 +53,7 @@ impl GameLobby {
 impl GameLobby {
     /// Send message to all users in the table where the given player id is at
     fn send_message(&self, id: Uuid, message: &str) {
-	/*
+        /*
         if let Some(session_ids) = self.tables_to_session_ids.get(table) {
             for id in session_ids {
                 if skip_id.is_none() | (*id != skip_id.unwrap()) {
@@ -81,9 +84,9 @@ impl Handler<Connect> for GameLobby {
 
         // register session with random id
         let id = uuid::Uuid::new_v4();
-	// create a settings with name==None to start
-	let player_settings = PlayerSettings::new(id, None, Some(msg.addr));
-	
+        // create a settings with name==None to start
+        let player_settings = PlayerSettings::new(id, None, Some(msg.addr));
+
         self.main_lobby_connections.insert(id, player_settings); // put them in the main lobby to wait to join a table
 
         //self.players_to_table.insert(id, "main".to_owned());
@@ -110,18 +113,18 @@ impl Handler<Disconnect> for GameLobby {
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
         println!("Someone disconnected");
 
-	self.main_lobby_connections.remove(&msg.id); // attempt to remove from the main lobby
+        self.main_lobby_connections.remove(&msg.id); // attempt to remove from the main lobby
 
-	if let Some(table_name) = self.players_to_table.remove(&msg.id) {
-	    // the player was at a table, so tell the Game that the player left
-	    if let Some(game) = self.tables_to_game.get_mut(&table_name) {
-		game.remove_player(msg.id);
-	    } else {
-		// TODO: this should never happen. the player is allegedly at a table, but we
-		// have no record of it in tables_to_game
-	    }
-	}
-	/*
+        if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+            // the player was at a table, so tell the Game that the player left
+            if let Some(game) = self.tables_to_game.get_mut(&table_name) {
+                game.remove_player(msg.id);
+            } else {
+                // TODO: this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_game
+            }
+        }
+        /*
         // send message to other users
         for table in tables {
             self.send_message(&table, "Someone disconnected", None);
@@ -159,38 +162,34 @@ impl Handler<Join> for GameLobby {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join {
-            id,
-            table_name,
-        } = msg;
+        let Join { id, table_name } = msg;
 
         if self.tables_to_game.contains_key(&table_name) {
             // for now, you cannot actually join (or create) a table that already exists
             return;
         }
 
-	// TODO: if our player_settings.name is None, then we can't join a table!
+        // TODO: if our player_settings.name is None, then we can't join a table!
 
-	
         if let Some(old_table_name) = self.players_to_table.get(&id) {
-	    if *old_table_name != table_name {
-		// we already exist at a table, so we must leave that table
-		// we can unwrap since the mappings must always be in sync
-		let game = self.tables_to_game.get_mut(old_table_name).unwrap();
-		
-		game.remove_player(id);
-		//self.send_message(table_name, "Someone disconnected", None);
-	    }
+            if *old_table_name != table_name {
+                // we already exist at a table, so we must leave that table
+                // we can unwrap since the mappings must always be in sync
+                let game = self.tables_to_game.get_mut(old_table_name).unwrap();
+
+                game.remove_player(id);
+                //self.send_message(table_name, "Someone disconnected", None);
+            }
         }
 
-	// unwrap since how can they join a table if they were not in the lobby already?
-	let player_settings = self.main_lobby_connections.remove(&id).unwrap();
-	
+        // unwrap since how can they join a table if they were not in the lobby already?
+        let player_settings = self.main_lobby_connections.remove(&id).unwrap();
+
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());
 
         // self.send_message(&table_name, "Someone connected", Some(id));
-	
+
         let mut game = Game::new();
         game.add_user(player_settings);
 
@@ -204,12 +203,9 @@ impl Handler<Join> for GameLobby {
     }
 }
 
-
 /// Handler for Message message.
 impl Handler<PlayerActionMessage> for GameLobby {
     type Result = ();
 
-    fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
-
-    }
+    fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {}
 }

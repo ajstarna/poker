@@ -1,7 +1,7 @@
 use super::card::Card;
-use uuid::Uuid;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
+use uuid::Uuid;
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
@@ -16,18 +16,18 @@ pub enum PlayerAction {
 /// this struct holds the player name and recipient address
 #[derive(Debug)]
 pub struct PlayerSettings {
-    pub id: Uuid, 
+    pub id: Uuid,
     pub name: Option<String>,
-    pub player_addr:  Option<Recipient<WsMessage>>,    
+    pub player_addr: Option<Recipient<WsMessage>>,
 }
 
 impl PlayerSettings {
     pub fn new(id: Uuid, name: Option<String>, player_addr: Option<Recipient<WsMessage>>) -> Self {
-	Self {
-	    id,
-	    name,
-	    player_addr,	    
-	}
+        Self {
+            id,
+            name,
+            player_addr,
+        }
     }
 }
 
@@ -45,22 +45,22 @@ pub struct Player {
 impl Player {
     pub fn new(player_settings: PlayerSettings, human_controlled: bool) -> Self {
         Player {
-	    player_settings,
+            player_settings,
             hole_cards: Vec::<Card>::with_capacity(2),
             is_active: true,
             is_sitting_out: false,
             money: 1000.0, // let them start with 1000 for now,
             human_controlled,
-	    current_action: None,
+            current_action: None,
         }
     }
 
     pub fn new_bot(name: String) -> Self {
-	let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
-	let player_settings = PlayerSettings::new(bot_id, Some(name), None); // recipient add == None
-	Self::new(player_settings, false)
+        let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
+        let player_settings = PlayerSettings::new(bot_id, Some(name), None); // recipient add == None
+        Self::new(player_settings, false)
     }
-    
+
     pub fn pay(&mut self, payment: f64) {
         self.money += payment;
     }

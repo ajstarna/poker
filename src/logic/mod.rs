@@ -1,6 +1,6 @@
 mod card;
-pub mod player;
 pub mod game;
+pub mod player;
 
 pub use game::Game;
 pub use player::PlayerSettings;
