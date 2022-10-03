@@ -614,6 +614,7 @@ impl Game {
 	self.players.retain(|p| p.player_settings.id != id);
     }
 
+    /// find a player with the given id, and set their name to be the given name
     pub fn set_player_name(&mut self, id: Uuid, name: &str) {
 	for player in self.players.iter_mut() {
 	    if player.player_settings.id == id {
