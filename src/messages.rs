@@ -53,6 +53,14 @@ pub struct Join {
     pub table_name: String,
 }
 
+/// Session wants to the set the player's name
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PlayerName {
+    pub id: Uuid,
+    pub name: String,
+}
+
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct PlayerActionMessage {

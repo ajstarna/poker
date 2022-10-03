@@ -221,7 +221,12 @@ impl WsGameSession {
             "/name" => {
                 if v.len() == 2 {
                     // TODO need a new message to set our name
-                    //self.name = Some(v[1].to_owned());
+                    let name = v[1].to_owned();
+                    self.hub_addr.do_send(messages::PlayerName {
+			id: self.id,
+			name,
+                    });
+		    
                 } else {
                     ctx.text("!!! name is required");
                 }
@@ -230,6 +235,24 @@ impl WsGameSession {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,
                     player_action: PlayerAction::Check,
+                });
+            }
+	    "/fold" => {
+                self.hub_addr.do_send(messages::PlayerActionMessage {
+                    id: self.id,
+                    player_action: PlayerAction::Fold,
+                });
+            }
+	    "/call" => {
+                self.hub_addr.do_send(messages::PlayerActionMessage {
+                    id: self.id,
+                    player_action: PlayerAction::Call,
+                });
+            }
+	    "/bet" => {
+                self.hub_addr.do_send(messages::PlayerActionMessage {
+                    id: self.id,
+                    player_action: PlayerAction::Call,
                 });
             }
             _ => ctx.text(format!("!!! unknown command: {message:?}")),

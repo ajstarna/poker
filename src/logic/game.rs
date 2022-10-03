@@ -614,6 +614,14 @@ impl Game {
 	self.players.retain(|p| p.player_settings.id != id);
     }
 
+    pub fn set_player_name(&mut self, id: Uuid, name: &str) {
+	for player in self.players.iter_mut() {
+	    if player.player_settings.id == id {
+		player.player_settings.name = Some(name.to_string());
+	    }
+	}
+    }
+    
     pub fn add_bot(&mut self, name: String) {
         self.players.push(Player::new_bot(name));
     }
@@ -731,3 +739,5 @@ mod tests {
     }
     
 }
+
+

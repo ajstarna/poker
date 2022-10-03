@@ -5,19 +5,19 @@
 //! This file is adapted from the actix-web chat websocket example
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::AtomicUsize,
         Arc,
     },
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, WsMessage};
+use crate::messages::{ClientChatMessage, Connect, Disconnect, PlayerName, Join, ListTables};
 use crate::{
     logic::{Game, PlayerSettings},
     messages::PlayerActionMessage,
 };
-use actix::prelude::{Actor, Context, Handler, MessageResult, Recipient};
+use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
@@ -50,21 +50,6 @@ impl GameHub {
     }
 }
 
-impl GameHub {
-    /// Send message to all users in the table where the given player id is at
-    fn send_message(&self, id: Uuid, message: &str) {
-        /*
-        if let Some(session_ids) = self.tables_to_session_ids.get(table) {
-            for id in session_ids {
-                if skip_id.is_none() | (*id != skip_id.unwrap()) {
-                    if let Some(addr) = self.sessions.get(id) {
-                        addr.do_send(WsMessage(message.to_owned()));
-                    }
-                }
-            }
-        }*/
-    }
-}
 
 /// Make actor from `GameHub`
 impl Actor for GameHub {
@@ -98,14 +83,6 @@ impl Handler<Connect> for GameHub {
     }
 }
 
-/*
-    main_lobby_connections: HashMap<Uuid, PlayerSettings>,
-    // a map from session id to the table that it currently is in
-    players_to_table: HashMap<Uuid, String>,
-    tables_to_game: HashMap<String, Game>,
-    visitor_count: Arc<AtomicUsize>,
-*/
-
 /// Handler for Disconnect message.
 impl Handler<Disconnect> for GameHub {
     type Result = ();
@@ -133,7 +110,15 @@ impl Handler<ClientChatMessage> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
-        self.send_message(msg.id, msg.msg.as_str());
+        if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+            // the player was at a table, so tell the Game to relay the message
+            if let Some(game) = self.tables_to_game.get_mut(&table_name) {
+		game.send_message(msg.msg.as_str());
+            } else {
+                // TODO: this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_game		
+	    }
+	}
     }
 }
 
@@ -149,6 +134,29 @@ impl Handler<ListTables> for GameHub {
         }
 
         MessageResult(tables)
+    }
+}
+
+/// Handler for Message message.
+impl Handler<PlayerName> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: PlayerName, _: &mut Context<Self>) {
+	// if the player is the main lobby, find them and set their name
+        if let Some(player_settings) = self.main_lobby_connections.get_mut(&msg.id) {
+	    player_settings.name = Some(msg.name);
+	} else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+	    // otherwise, find which game they are in, and tell the game there has been a name change		    
+            // the player was at a table, so tell the Game that the player left
+            if let Some(game) = self.tables_to_game.get_mut(&table_name) {
+                game.set_player_name(msg.id, &msg.name);
+            } else {
+                // TODO: this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_game
+	    }
+	} else {
+	    // player id not found anywhere. this should never happen
+	}
     }
 }
 
