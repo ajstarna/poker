@@ -60,26 +60,38 @@ impl<'a> GameHand<'a> {
         }
     }
 
+    /// given a message, send it to all players in the game that have a Recipient address
+    /// kinda gross to have the same method in GameHand and Game hmmm...
+    pub fn send_message(&self, message: &str) {
+	for player in self.players {
+	    if player.human_controlled {
+		if let Some(addr) = &player.player_settings.player_addr {
+		    addr.do_send(WsMessage(message.to_owned()));
+		}
+	    }
+	}
+    }
+    
     fn transition(&mut self) {
         match self.street {
             Street::Preflop => {
                 self.street = Street::Flop;
                 self.deal_flop();
-                println!("\n================================\nFlop = {:?}\n================================", self.flop);
+                println!("\n===========================\nFlop = {:?}\n===========================", self.flop);
             }
             Street::Flop => {
                 self.street = Street::Turn;
                 self.deal_turn();
-                println!("\n================================\nTurn = {:?}\n================================", self.turn);
+                println!("\n==========================\nTurn = {:?}\n==========================", self.turn);
             }
             Street::Turn => {
                 self.street = Street::River;
                 self.deal_river();
-                println!("\n================================\nRiver = {:?}\n================================", self.river);
+                println!("\n==========================\nRiver = {:?}\n==========================", self.river);
             }
             Street::River => {
                 self.street = Street::ShowDown;
-                println!("\n================================\nShowDown!\n================================");
+                println!("\n==========================\nShowDown!\n================================");
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
@@ -260,7 +272,8 @@ impl<'a> GameHand<'a> {
     }
 
     fn play(&mut self) {
-        println!("inside of play(). button_idx = {}", self.button_idx);
+        println!("inside of play(). button_idx = {:?}", self.button_idx);
+        self.send_message(&format!("inside of play(). button_idx = {:?}",self.button_idx));	
         if self.num_active < 2 {
             println!(
                 "num_active players = {}, so we cannot play a hand!",
@@ -269,18 +282,16 @@ impl<'a> GameHand<'a> {
             return;
         }
         self.deck.shuffle();
-        //for card in self.deck.cards.iter() {
-        //   println!("{:?}", card);
-        //}
         self.deal_hands();
 
         println!("self.players = {:?}", self.players);
+        self.send_message(&format!("self.players = {:?}", self.players));
         while self.street != Street::ShowDown {
-            //println!("\nStreet is {:?}", self.street);
             self.play_street();
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
+		self.send_message("\nGame is ending before showdown!");
                 break;
             } else {
                 // otherwise we move to the next street
@@ -308,8 +319,8 @@ impl<'a> GameHand<'a> {
         let mut cumulative_bets = vec![0.0; self.players.len()];
 
         let starting_idx = self.get_starting_idx(); // which player starts the betting
-                                                    //let mut num_settled = 0;
-                                                    // keeps track of how many players have either checked through or called the last bet (or made the last bet)
+        // keeps track of how many players have either checked through or called
+	// the last bet (or made the last bet)
 
         // if a player is still active but has no remaining money (i.e. is all-in),
         // then they are settled and ready to go to the end
@@ -321,10 +332,16 @@ impl<'a> GameHand<'a> {
         let mut num_settled = num_all_in;
 
         println!("Current pot = {}", self.pot);
+	self.send_message(&format!("Current pot = {}", self.pot));
+	
         println!("num active players = {}", self.num_active);
+	self.send_message(&format!("num active players = {}", self.num_active));
+	
         println!("player at index {} starts the betting", starting_idx);
+	self.send_message(&format!("player at index {} starts the betting", starting_idx));
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
+	    self.send_message(&format!("num settled (i.e. all in players) = {}", num_settled));
         }
         let mut loop_count = 0;
         'street: loop {
@@ -333,7 +350,8 @@ impl<'a> GameHand<'a> {
                 println!("\n\n\n\n\nTOO MANY LOOPS MUST BE A BUG!\n\n\n\n\n");
                 panic!("too many loops");
             }
-            // iterate over the players from the starting index to the end of the vec, and then from the beginning back to the starting index
+            // iterate over the players from the starting index to the end of the vec,
+	    // and then from the beginning back to the starting index
             let (left, right) = self.players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
                 let player_cumulative = cumulative_bets[i];
@@ -341,6 +359,12 @@ impl<'a> GameHand<'a> {
 			 self.pot,
 			 street_bet,
 			 player_cumulative);
+		self.send_message(
+		    &format!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+			     self.pot,
+			     street_bet,
+			     player_cumulative));
+					   
                 println!("Player = {:?}, i = {}", player.player_settings.name, i);
                 if player.is_active && player.money > 0.0 {
                     let action = if self.street == Street::Preflop && street_bet == 0.0 {
@@ -651,6 +675,7 @@ impl Game {
             // TODO: do we need to add or remove any players?
 
             println!("\nContinue playing? (y/n): ");
+            self.send_message("\nContinue playing? (y/n): ");	    
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
