@@ -8,6 +8,8 @@ use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerSettings};
 use crate::messages::WsMessage;
 
+use std::{thread, time};
+
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq)]
@@ -447,7 +449,7 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn get_action_from_player(player: &mut Player) -> PlayerAction {
+    fn get_action_from_player(player: &mut Player) -> Option<PlayerAction> {
         // will need UI here
         // for now do a random action
         if player.human_controlled {
@@ -458,51 +460,19 @@ impl<'a> GameHand<'a> {
                 );
                 let action = player.current_action;
                 player.current_action = None; // set it back to None
-                action.unwrap()
+		action
             } else {
                 println!(
-                    "No action available for {:?}. We will attempt to check",
+                    "No action available for {:?}",
                     player.player_settings.name
                 );
-                PlayerAction::Check
+                None
             }
-        /*
-           println!("You: {:?}", player);
-           println!("Please enter your action (f, ca, ch, b): ");
-           let mut input = String::new();
-           io::stdin()
-               .read_line(&mut input)
-               .expect("Failed to get console input");
-           input = input.to_string().trim().to_string();
-           match input.as_str() {
-               "f" => PlayerAction::Fold,
-               "ch" => PlayerAction::Check,
-               "ca" => PlayerAction::Call,
-               "b" => {
-                   println!("How much to bet: ");
-                   let mut amount = String::new();
-                   io::stdin()
-                       .read_line(&mut amount)
-                       .expect("Failed to get console input");
-                   amount = amount.to_string().trim().to_string();
-                   println!("about to parse [{}] as a f64", amount);
-                   let mut bet_amount = amount.parse::<f64>().unwrap();
-                   if bet_amount > player.money {
-                       println!("You are trying to bet more than you have. Lets just go all in!");
-                       bet_amount = player.money;
-                   }
-                   PlayerAction::Bet(bet_amount)
-               }
-               _ => {
-                   println!("Unknown input. We will attempt to check");
-                   PlayerAction::Check
-               }
-        */
         } else {
             let num = rand::thread_rng().gen_range(0..100);
             match num {
-                0..=20 => PlayerAction::Fold,
-                21..=55 => PlayerAction::Check,
+                0..=20 => Some(PlayerAction::Fold),
+                21..=55 => Some(PlayerAction::Check),
                 56..=70 => {
                     let amount: f64 = if player.money <= 100.0 {
                         // just go all in if we are at 10% starting
@@ -510,9 +480,9 @@ impl<'a> GameHand<'a> {
                     } else {
                         rand::thread_rng().gen_range(1..player.money as u32) as f64
                     };
-                    PlayerAction::Bet(amount)
+                    Some(PlayerAction::Bet(amount))
                 }
-                _ => PlayerAction::Call,
+                _ => Some(PlayerAction::Call),
             }
         }
     }
@@ -522,25 +492,34 @@ impl<'a> GameHand<'a> {
         street_bet: f64,
         player_cumulative: f64,
     ) -> PlayerAction {
-        // if it isnt valid based on the current bet and the amount the player has already contributed, then it loops
+        // if it isnt valid based on the current bet and the amount the player has already contributed,
+	// then it loops
         // position is our spot in the order, with 0 == small blind, etc
-        let mut action;
-
-        'valid_check: loop {
+        let mut action = None;
+	let mut attempts = 0;
+	let one_second = time::Duration::from_secs(1); // how long to wait between trying again
+	while attempts < 5 && action.is_none() {
             // not a blind, so get an actual choice
-            action = GameHand::get_action_from_player(player);
-            match action {
-                PlayerAction::Fold => {
+	    if player.human_controlled {
+		// we don't need to count the attempts at getting a response from a computer
+		// TODO: the computer can give a better than random guess at a move
+		// Currently it might try to check when it has to call for example,
+		attempts += 1;
+	    }
+	    println!("Attempting to get player action on attempt {:?}", attempts);
+            match GameHand::get_action_from_player(player) {
+                Some(PlayerAction::Fold) => {
                     if street_bet <= player_cumulative {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
                         }
-                        action = PlayerAction::Check;
-                    }
-                    break 'valid_check;
+                        action = Some(PlayerAction::Check);
+                    } else {
+			action = Some(PlayerAction::Fold);
+		    }
                 }
-                PlayerAction::Check => {
+                Some(PlayerAction::Check) => {
                     //println!("Player checks!");
                     if street_bet > player_cumulative {
                         // if the current bet is higher than this players bet
@@ -549,9 +528,9 @@ impl<'a> GameHand<'a> {
                         }
                         continue;
                     }
-                    break 'valid_check;
+		    action = Some(PlayerAction::Check);
                 }
-                PlayerAction::Call => {
+                Some(PlayerAction::Call) => {
                     if street_bet <= player_cumulative {
                         if street_bet != 0.0 {
                             // if the street bet isn't 0 then this makes no sense
@@ -559,9 +538,9 @@ impl<'a> GameHand<'a> {
                         }
                         continue;
                     }
-                    break 'valid_check;
+		    action = Some(PlayerAction::Call);
                 }
-                PlayerAction::Bet(new_bet) => {
+                Some(PlayerAction::Bet(new_bet)) => {
                     //println!("Player bets {}!", new_bet);
                     if street_bet < player_cumulative {
                         // will this case happen?
@@ -576,12 +555,22 @@ impl<'a> GameHand<'a> {
                         //println!("the new bet has to be larger than the current bet!");
                         continue;
                     }
-                    break 'valid_check;
+		    action = Some(PlayerAction::Bet(new_bet));
                 }
-                _ => println!("Action {:?} is not valid at this time!", action),
+                _ => {
+		    println!("Action is not valid at this time!");
+		    // we give the user a second to place their action
+		    thread::sleep(one_second);
+		}
             }
-        }
-        action
+	}
+	// if we got a valid action, then we can return it,
+	// otherwise, we just return Fold
+	if let Some(final_action) = action {
+	    final_action
+	} else {
+	    PlayerAction::Fold
+	}
     }
 }
 

@@ -14,7 +14,7 @@ use actix_web::{
     middleware::Logger, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_actors::ws;
-
+use uuid::Uuid;
 
 mod hub;
 mod messages;
@@ -82,5 +82,7 @@ fn play() {
         let name = format!("Mr {}", i);
         game.add_bot(name);
     }
+    let player_settings = logic::PlayerSettings::new(Uuid::new_v4(), Some("Adam".to_string()), None);
+    game.add_user(player_settings);
     game.play();
 }
