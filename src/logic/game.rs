@@ -62,8 +62,10 @@ impl<'a> GameHand<'a> {
 
     /// given a message, send it to all players in the game that have a Recipient address
     /// kinda gross to have the same method in GameHand and Game hmmm...
+    TODO struggling with ownership here
+	how can i send message to all the payers as we iterate through the players mutably during a hand 
     pub fn send_message(&self, message: &str) {
-	for player in self.players {
+	for player in self.players.iter() {
 	    if player.human_controlled {
 		if let Some(addr) = &player.player_settings.player_addr {
 		    addr.do_send(WsMessage(message.to_owned()));
@@ -359,11 +361,6 @@ impl<'a> GameHand<'a> {
 			 self.pot,
 			 street_bet,
 			 player_cumulative);
-		self.send_message(
-		    &format!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-			     self.pot,
-			     street_bet,
-			     player_cumulative));
 					   
                 println!("Player = {:?}, i = {}", player.player_settings.name, i);
                 if player.is_active && player.money > 0.0 {
