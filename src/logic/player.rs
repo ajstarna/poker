@@ -2,6 +2,7 @@ use super::card::Card;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use uuid::Uuid;
+use std::collections::HashMap;
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
@@ -15,13 +16,13 @@ pub enum PlayerAction {
 }
 /// this struct holds the player name and recipient address
 #[derive(Debug)]
-pub struct PlayerSettings {
+pub struct PlayerConfig {
     pub id: Uuid,
     pub name: Option<String>,
     pub player_addr: Option<Recipient<WsMessage>>,
 }
 
-impl PlayerSettings {
+impl PlayerConfig {
     pub fn new(id: Uuid, name: Option<String>, player_addr: Option<Recipient<WsMessage>>) -> Self {
         Self {
             id,
@@ -29,11 +30,20 @@ impl PlayerSettings {
             player_addr,
         }
     }
+
+    /// given a message, send it to all players in the HashMap that have a Recipient address    
+    pub fn send_group_message<T>(message: &str, ids_to_configs: &HashMap<T, PlayerConfig>) {
+	for player_config in ids_to_configs.values() {
+            if let Some(addr) = &player_config.player_addr {
+                addr.do_send(WsMessage(message.to_owned()));
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Player {
-    pub player_settings: PlayerSettings,
+    pub id: Uuid,    
     pub hole_cards: Vec<Card>,
     pub is_active: bool,      // is still playing the current hand
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
@@ -43,9 +53,9 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(player_settings: PlayerSettings, human_controlled: bool) -> Self {
+    pub fn new(id: Uuid, human_controlled: bool) -> Self {
         Player {
-            player_settings,
+            id,
             hole_cards: Vec::<Card>::with_capacity(2),
             is_active: true,
             is_sitting_out: false,
@@ -57,8 +67,7 @@ impl Player {
 
     pub fn new_bot(name: String) -> Self {
         let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
-        let player_settings = PlayerSettings::new(bot_id, Some(name), None); // recipient add == None
-        Self::new(player_settings, false)
+        Self::new(bot_id, false)
     }
 
     pub fn pay(&mut self, payment: f64) {

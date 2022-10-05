@@ -3,4 +3,4 @@ pub mod game;
 pub mod player;
 
 pub use game::Game;
-pub use player::PlayerSettings;
+pub use player::PlayerConfig;

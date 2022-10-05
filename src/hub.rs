@@ -1,5 +1,5 @@
 //! `GameHub` is an actor. It keeps track of the current tables/games
-//! and manages PlayerSettings structs (which include Ws Recipients)
+//! and manages PlayerConfig structs (which include Ws Recipients)
 //! When a WsMessage comes in from a WsGameSession, the GameHub routes the message to the proper Game
 
 //! This file is adapted from the actix-web chat websocket example
@@ -11,7 +11,7 @@ use std::{
 
 use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName};
 use crate::{
-    logic::{Game, PlayerSettings},
+    logic::{Game, PlayerConfig},
     messages::PlayerActionMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -20,8 +20,8 @@ use uuid::Uuid;
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
 pub struct GameHub {
-    // map from session id to the PlayerSettings for players that have connected but are not yet at a table
-    main_lobby_connections: HashMap<Uuid, PlayerSettings>,
+    // map from session id to the PlayerConfig for players that have connected but are not yet at a table
+    main_lobby_connections: HashMap<Uuid, PlayerConfig>,
 
     // map from table name to a set of session ids
     //tables_to_session_ids: HashMap<String, HashSet<Uuid>>,
@@ -65,10 +65,10 @@ impl Handler<Connect> for GameHub {
 
         // register session with random id
         let id = uuid::Uuid::new_v4();
-        // create a settings with name==None to start
-        let player_settings = PlayerSettings::new(id, None, Some(msg.addr));
+        // create a config with name==None to start
+        let player_config = PlayerConfig::new(id, None, Some(msg.addr));
 
-        self.main_lobby_connections.insert(id, player_settings); // put them in the main lobby to wait to join a table
+        self.main_lobby_connections.insert(id, player_config); // put them in the main lobby to wait to join a table
 
         //self.players_to_table.insert(id, "main".to_owned());
         //let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
@@ -139,8 +139,8 @@ impl Handler<PlayerName> for GameHub {
 
     fn handle(&mut self, msg: PlayerName, _: &mut Context<Self>) {
         // if the player is the main lobby, find them and set their name
-        if let Some(player_settings) = self.main_lobby_connections.get_mut(&msg.id) {
-            player_settings.name = Some(msg.name);
+        if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
+            player_config.name = Some(msg.name);
         } else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change
             // the player was at a table, so tell the Game that the player left
@@ -169,7 +169,7 @@ impl Handler<Join> for GameHub {
             return;
         }
 
-        // TODO: if our player_settings.name is None, then we can't join a table!
+        // TODO: if our player_config.name is None, then we can't join a table!
 
         if let Some(old_table_name) = self.players_to_table.get(&id) {
             if *old_table_name != table_name {
@@ -183,13 +183,13 @@ impl Handler<Join> for GameHub {
         }
 
         // unwrap since how can they join a table if they were not in the lobby already?
-        let player_settings = self.main_lobby_connections.remove(&id).unwrap();
+        let player_config = self.main_lobby_connections.remove(&id).unwrap();
 
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());
 
         let mut game = Game::new();
-        game.add_user(player_settings);
+        game.add_user(player_config);
 
         let num_bots = 5;
         for i in 0..num_bots {
