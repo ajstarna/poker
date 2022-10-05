@@ -62,45 +62,57 @@ impl<'a> GameHand<'a> {
 
     /// given a message, send it to all players in the game that have a Recipient address
     /// kinda gross to have the same method in GameHand and Game hmmm...
-    TODO struggling with ownership here
-	how can i send message to all the payers as we iterate through the players mutably during a hand 
+    //TODO struggling with ownership here
+    //how can i send message to all the payers as we iterate through the players mutably during a hand
+    //Would it help to pass the players into the game hand each time?
     pub fn send_message(&self, message: &str) {
-	for player in self.players.iter() {
-	    if player.human_controlled {
-		if let Some(addr) = &player.player_settings.player_addr {
-		    addr.do_send(WsMessage(message.to_owned()));
-		}
-	    }
-	}
+        for player in self.players.iter() {
+            if player.human_controlled {
+                if let Some(addr) = &player.player_settings.player_addr {
+                    addr.do_send(WsMessage(message.to_owned()));
+                }
+            }
+        }
     }
-    
+
     fn transition(&mut self) {
         match self.street {
             Street::Preflop => {
                 self.street = Street::Flop;
                 self.deal_flop();
-                println!("\n===========================\nFlop = {:?}\n===========================", self.flop);
+                println!(
+                    "\n===========================\nFlop = {:?}\n===========================",
+                    self.flop
+                );
             }
             Street::Flop => {
                 self.street = Street::Turn;
                 self.deal_turn();
-                println!("\n==========================\nTurn = {:?}\n==========================", self.turn);
+                println!(
+                    "\n==========================\nTurn = {:?}\n==========================",
+                    self.turn
+                );
             }
             Street::Turn => {
                 self.street = Street::River;
                 self.deal_river();
-                println!("\n==========================\nRiver = {:?}\n==========================", self.river);
+                println!(
+                    "\n==========================\nRiver = {:?}\n==========================",
+                    self.river
+                );
             }
             Street::River => {
                 self.street = Street::ShowDown;
-                println!("\n==========================\nShowDown!\n================================");
+                println!(
+                    "\n==========================\nShowDown!\n================================"
+                );
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
     }
 
-    fn deal_hands(&mut self) {
-        for player in self.players.iter_mut() {
+    fn deal_hands(&mut self, players: &mut Vec<Player>) {
+        for player in players.iter_mut() {
             if player.is_active {
                 for _ in 0..2 {
                     if let Some(card) = self.deck.draw_card() {
@@ -133,10 +145,9 @@ impl<'a> GameHand<'a> {
         self.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self, players: &mut Vec<Player>) {
         let mut best_indices = HashSet::<usize>::new();
-        let hand_results = self
-            .players
+        let hand_results = players
             .iter()
             .map(|player| self.determine_best_hand(player))
             .collect::<Vec<Option<HandResult>>>();
@@ -174,7 +185,7 @@ impl<'a> GameHand<'a> {
             }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
-            for (i, player) in self.players.iter().enumerate() {
+            for (i, player) in players.iter().enumerate() {
                 // TODO: make this more functional/rusty
                 if player.is_active {
                     //println!("found an active player remaining");
@@ -193,7 +204,7 @@ impl<'a> GameHand<'a> {
         let payout = self.pot as f64 / num_winners as f64;
 
         for idx in best_indices.iter() {
-            let winning_player = &mut self.players[*idx];
+            let winning_player = &mut players[*idx];
             println!(
                 "paying out: {:?} \n  with hand result = {:?}",
                 winning_player, hand_results[*idx]
@@ -203,7 +214,7 @@ impl<'a> GameHand<'a> {
         }
 
         // take the players' cards
-        for player in self.players.iter_mut() {
+        for player in players.iter_mut() {
             // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
             if !player.is_sitting_out {
@@ -273,9 +284,12 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn play(&mut self) {
+    fn play(&mut self, players: &mut Vec<Player>) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-        self.send_message(&format!("inside of play(). button_idx = {:?}",self.button_idx));	
+        self.send_message(&format!(
+            "inside of play(). button_idx = {:?}",
+            self.button_idx
+        ));
         if self.num_active < 2 {
             println!(
                 "num_active players = {}, so we cannot play a hand!",
@@ -284,16 +298,16 @@ impl<'a> GameHand<'a> {
             return;
         }
         self.deck.shuffle();
-        self.deal_hands();
+        self.deal_hands(players);
 
-        println!("self.players = {:?}", self.players);
-        self.send_message(&format!("self.players = {:?}", self.players));
+        println!("players = {:?}", players);
+        self.send_message(&format!("players = {:?}", players));
         while self.street != Street::ShowDown {
-            self.play_street();
+            self.play_street(players);
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
-		self.send_message("\nGame is ending before showdown!");
+                self.send_message("\nGame is ending before showdown!");
                 break;
             } else {
                 // otherwise we move to the next street
@@ -315,14 +329,14 @@ impl<'a> GameHand<'a> {
         starting_idx
     }
 
-    fn play_street(&mut self) {
+    fn play_street(&mut self, players: &mut Vec<Player>) {
         let mut street_bet: f64 = 0.0;
         // each index keeps track of that players' contribution this street
-        let mut cumulative_bets = vec![0.0; self.players.len()];
+        let mut cumulative_bets = vec![0.0; players.len()];
 
         let starting_idx = self.get_starting_idx(); // which player starts the betting
-        // keeps track of how many players have either checked through or called
-	// the last bet (or made the last bet)
+                                                    // keeps track of how many players have either checked through or called
+                                                    // the last bet (or made the last bet)
 
         // if a player is still active but has no remaining money (i.e. is all-in),
         // then they are settled and ready to go to the end
@@ -334,16 +348,22 @@ impl<'a> GameHand<'a> {
         let mut num_settled = num_all_in;
 
         println!("Current pot = {}", self.pot);
-	self.send_message(&format!("Current pot = {}", self.pot));
-	
+        self.send_message(&format!("Current pot = {}", self.pot));
+
         println!("num active players = {}", self.num_active);
-	self.send_message(&format!("num active players = {}", self.num_active));
-	
+        self.send_message(&format!("num active players = {}", self.num_active));
+
         println!("player at index {} starts the betting", starting_idx);
-	self.send_message(&format!("player at index {} starts the betting", starting_idx));
+        self.send_message(&format!(
+            "player at index {} starts the betting",
+            starting_idx
+        ));
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
-	    self.send_message(&format!("num settled (i.e. all in players) = {}", num_settled));
+            self.send_message(&format!(
+                "num settled (i.e. all in players) = {}",
+                num_settled
+            ));
         }
         let mut loop_count = 0;
         'street: loop {
@@ -353,32 +373,23 @@ impl<'a> GameHand<'a> {
                 panic!("too many loops");
             }
             // iterate over the players from the starting index to the end of the vec,
-	    // and then from the beginning back to the starting index
-            let (left, right) = self.players.split_at_mut(starting_idx);
+            // and then from the beginning back to the starting index
+            let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
 			 street_bet,
 			 player_cumulative);
-					   
+
                 println!("Player = {:?}, i = {}", player.player_settings.name, i);
                 if player.is_active && player.money > 0.0 {
-                    let action = if self.street == Street::Preflop && street_bet == 0.0 {
-                        // collect small blind!
-                        PlayerAction::PostSmallBlind(cmp::min(
-                            self.small_blind as u32,
-                            player.money as u32,
-                        ) as f64)
-                    } else if self.street == Street::Preflop && street_bet == self.small_blind {
-                        // collect big blind!
-                        PlayerAction::PostBigBlind(cmp::min(
-                            self.big_blind as u32,
-                            player.money as u32,
-                        ) as f64)
-                    } else {
-                        GameHand::get_and_validate_action(player, street_bet, player_cumulative)
-                    };
+                    let action = GameHand::get_and_validate_action(
+                        player,
+                        self.street,
+                        street_bet,
+                        player_cumulative,
+                    );
 
                     match action {
                         PlayerAction::PostSmallBlind(amount) => {
@@ -481,12 +492,9 @@ impl<'a> GameHand<'a> {
                 );
                 let action = player.current_action;
                 player.current_action = None; // set it back to None
-		action
+                action
             } else {
-                println!(
-                    "No action available for {:?}",
-                    player.player_settings.name
-                );
+                println!("No action available for {:?}", player.player_settings.name);
                 None
             }
         } else {
@@ -510,24 +518,37 @@ impl<'a> GameHand<'a> {
 
     fn get_and_validate_action(
         player: &mut Player,
+        street: Street,
         street_bet: f64,
         player_cumulative: f64,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
-	// then it loops
+        // then it loops
         // position is our spot in the order, with 0 == small blind, etc
+        if street == Street::Preflop && street_bet == 0.0 {
+            // collect small blind!
+            return PlayerAction::PostSmallBlind(cmp::min(
+                self.small_blind as u32,
+                player.money as u32,
+            ) as f64);
+        } else if self.street == Street::Preflop && street_bet == self.small_blind {
+            // collect big blind!
+            return PlayerAction::PostBigBlind(
+                cmp::min(self.big_blind as u32, player.money as u32) as f64,
+            );
+        }
         let mut action = None;
-	let mut attempts = 0;
-	let one_second = time::Duration::from_secs(1); // how long to wait between trying again
-	while attempts < 5 && action.is_none() {
+        let mut attempts = 0;
+        let one_second = time::Duration::from_secs(1); // how long to wait between trying again
+        while attempts < 5 && action.is_none() {
             // not a blind, so get an actual choice
-	    if player.human_controlled {
-		// we don't need to count the attempts at getting a response from a computer
-		// TODO: the computer can give a better than random guess at a move
-		// Currently it might try to check when it has to call for example,
-		attempts += 1;
-	    }
-	    println!("Attempting to get player action on attempt {:?}", attempts);
+            if player.human_controlled {
+                // we don't need to count the attempts at getting a response from a computer
+                // TODO: the computer can give a better than random guess at a move
+                // Currently it might try to check when it has to call for example,
+                attempts += 1;
+            }
+            println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player) {
                 Some(PlayerAction::Fold) => {
                     if street_bet <= player_cumulative {
@@ -537,8 +558,8 @@ impl<'a> GameHand<'a> {
                         }
                         action = Some(PlayerAction::Check);
                     } else {
-			action = Some(PlayerAction::Fold);
-		    }
+                        action = Some(PlayerAction::Fold);
+                    }
                 }
                 Some(PlayerAction::Check) => {
                     //println!("Player checks!");
@@ -549,7 +570,7 @@ impl<'a> GameHand<'a> {
                         }
                         continue;
                     }
-		    action = Some(PlayerAction::Check);
+                    action = Some(PlayerAction::Check);
                 }
                 Some(PlayerAction::Call) => {
                     if street_bet <= player_cumulative {
@@ -559,7 +580,7 @@ impl<'a> GameHand<'a> {
                         }
                         continue;
                     }
-		    action = Some(PlayerAction::Call);
+                    action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
                     //println!("Player bets {}!", new_bet);
@@ -576,22 +597,22 @@ impl<'a> GameHand<'a> {
                         //println!("the new bet has to be larger than the current bet!");
                         continue;
                     }
-		    action = Some(PlayerAction::Bet(new_bet));
+                    action = Some(PlayerAction::Bet(new_bet));
                 }
                 _ => {
-		    println!("Action is not valid at this time!");
-		    // we give the user a second to place their action
-		    thread::sleep(one_second);
-		}
+                    println!("Action is not valid at this time!");
+                    // we give the user a second to place their action
+                    thread::sleep(one_second);
+                }
             }
-	}
-	// if we got a valid action, then we can return it,
-	// otherwise, we just return Fold
-	if let Some(final_action) = action {
-	    final_action
-	} else {
-	    PlayerAction::Fold
-	}
+        }
+        // if we got a valid action, then we can return it,
+        // otherwise, we just return Fold
+        if let Some(final_action) = action {
+            final_action
+        } else {
+            PlayerAction::Fold
+        }
     }
 }
 
@@ -621,33 +642,33 @@ impl Game {
 
     /// remove the player from the vec of players with the given id
     pub fn remove_player(&mut self, id: Uuid) {
-	self.players.retain(|p| p.player_settings.id != id);
+        self.players.retain(|p| p.player_settings.id != id);
     }
 
     /// find a player with the given id, and set their name to be the given name
     pub fn set_player_name(&mut self, id: Uuid, name: &str) {
-	for player in self.players.iter_mut() {
-	    if player.player_settings.id == id {
-		player.player_settings.name = Some(name.to_string());
-	    }
-	}
+        for player in self.players.iter_mut() {
+            if player.player_settings.id == id {
+                player.player_settings.name = Some(name.to_string());
+            }
+        }
     }
-    
+
     pub fn add_bot(&mut self, name: String) {
         self.players.push(Player::new_bot(name));
     }
 
     /// given a message, send it to all players in the game that have a Recipient address
     pub fn send_message(&self, message: &str) {
-	for player in &self.players {
-	    if player.human_controlled {
-		if let Some(addr) = &player.player_settings.player_addr {
-		    addr.do_send(WsMessage(message.to_owned()));
-		}
-	    }
-	}
+        for player in &self.players {
+            if player.human_controlled {
+                if let Some(addr) = &player.player_settings.player_addr {
+                    addr.do_send(WsMessage(message.to_owned()));
+                }
+            }
+        }
     }
-    
+
     fn play_one_hand(&mut self) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -672,7 +693,7 @@ impl Game {
             // TODO: do we need to add or remove any players?
 
             println!("\nContinue playing? (y/n): ");
-            self.send_message("\nContinue playing? (y/n): ");	    
+            self.send_message("\nContinue playing? (y/n): ");
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
@@ -715,41 +736,38 @@ impl Game {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::PlayerSettings;
+    use super::*;
 
     #[test]
     fn add_bot() {
-	let mut game = Game::new();
+        let mut game = Game::new();
         let name = "Mr Bot".to_string();
         game.add_bot(name);
-	assert_eq!(game.players.len(), 1);
-	assert!(!game.players[0].human_controlled);		
+        assert_eq!(game.players.len(), 1);
+        assert!(!game.players[0].human_controlled);
     }
 
     #[test]
     fn add_user_no_connection() {
-	let mut game = Game::new();
-	let id = uuid::Uuid::new_v4();
+        let mut game = Game::new();
+        let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
-	let settings = PlayerSettings::new(id, Some(name), None);
+        let settings = PlayerSettings::new(id, Some(name), None);
         game.add_user(settings);
-	assert_eq!(game.players.len(), 1);
-	assert!(game.players[0].human_controlled);	
+        assert_eq!(game.players.len(), 1);
+        assert!(game.players[0].human_controlled);
     }
 
     #[test]
     fn remove_player() {
-	let mut game = Game::new();
-	let id = uuid::Uuid::new_v4();
+        let mut game = Game::new();
+        let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
-	let settings = PlayerSettings::new(id, Some(name), None);
+        let settings = PlayerSettings::new(id, Some(name), None);
         game.add_user(settings);
-	assert_eq!(game.players.len(), 1);
-	game.remove_player(id);
-	assert!(game.players.is_empty());
+        assert_eq!(game.players.len(), 1);
+        game.remove_player(id);
+        assert!(game.players.is_empty());
     }
-    
 }
-
-

@@ -6,13 +6,10 @@
 
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::AtomicUsize,
-        Arc,
-    },
+    sync::{atomic::AtomicUsize, Arc},
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, PlayerName, Join, ListTables};
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName};
 use crate::{
     logic::{Game, PlayerSettings},
     messages::PlayerActionMessage,
@@ -49,7 +46,6 @@ impl GameHub {
         }
     }
 }
-
 
 /// Make actor from `GameHub`
 impl Actor for GameHub {
@@ -96,7 +92,7 @@ impl Handler<Disconnect> for GameHub {
             // the player was at a table, so tell the Game that the player left
             if let Some(game) = self.tables_to_game.get_mut(&table_name) {
                 game.remove_player(msg.id);
-		game.send_message("Someone disconnected");
+                game.send_message("Someone disconnected");
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game
@@ -113,12 +109,12 @@ impl Handler<ClientChatMessage> for GameHub {
         if let Some(table_name) = self.players_to_table.remove(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
             if let Some(game) = self.tables_to_game.get_mut(&table_name) {
-		game.send_message(msg.msg.as_str());
+                game.send_message(msg.msg.as_str());
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_game		
-	    }
-	}
+                // have no record of it in tables_to_game
+            }
+        }
     }
 }
 
@@ -142,21 +138,21 @@ impl Handler<PlayerName> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: PlayerName, _: &mut Context<Self>) {
-	// if the player is the main lobby, find them and set their name
+        // if the player is the main lobby, find them and set their name
         if let Some(player_settings) = self.main_lobby_connections.get_mut(&msg.id) {
-	    player_settings.name = Some(msg.name);
-	} else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
-	    // otherwise, find which game they are in, and tell the game there has been a name change		    
+            player_settings.name = Some(msg.name);
+        } else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+            // otherwise, find which game they are in, and tell the game there has been a name change
             // the player was at a table, so tell the Game that the player left
             if let Some(game) = self.tables_to_game.get_mut(&table_name) {
                 game.set_player_name(msg.id, &msg.name);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game
-	    }
-	} else {
-	    // player id not found anywhere. this should never happen
-	}
+            }
+        } else {
+            // player id not found anywhere. this should never happen
+        }
     }
 }
 
@@ -200,10 +196,9 @@ impl Handler<Join> for GameHub {
             let name = format!("Mr {}", i);
             game.add_bot(name);
         }
-	
-        game.send_message("Someone connected");	
-        self.tables_to_game.insert(table_name, game);
 
+        game.send_message("Someone connected");
+        self.tables_to_game.insert(table_name, game);
     }
 }
 

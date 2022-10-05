@@ -106,8 +106,7 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server
-        self.hub_addr
-            .do_send(messages::Disconnect { id: self.id });
+        self.hub_addr.do_send(messages::Disconnect { id: self.id });
         Running::Stop
     }
 }
@@ -222,11 +221,8 @@ impl WsGameSession {
                 if v.len() == 2 {
                     // TODO need a new message to set our name
                     let name = v[1].to_owned();
-                    self.hub_addr.do_send(messages::PlayerName {
-			id: self.id,
-			name,
-                    });
-		    
+                    self.hub_addr
+                        .do_send(messages::PlayerName { id: self.id, name });
                 } else {
                     ctx.text("!!! name is required");
                 }
@@ -237,19 +233,19 @@ impl WsGameSession {
                     player_action: PlayerAction::Check,
                 });
             }
-	    "/fold" => {
+            "/fold" => {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,
                     player_action: PlayerAction::Fold,
                 });
             }
-	    "/call" => {
+            "/call" => {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,
                     player_action: PlayerAction::Call,
                 });
             }
-	    "/bet" => {
+            "/bet" => {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,
                     player_action: PlayerAction::Call,
