@@ -464,9 +464,9 @@ impl<'a> GameHand<'a> {
         }
     }
 
+    /// if the player is a human, then we look for their action in their current_action field
+    /// this value is set by the 
     fn get_action_from_player(player: &mut Player) -> Option<PlayerAction> {
-        // will need UI here
-        // for now do a random action
         if player.human_controlled {
             if player.current_action.is_some() {
                 println!(
@@ -641,14 +641,29 @@ impl Game {
             player_config.name = Some(name.to_string());	    
 	}
     }
-
+    
+    /// find a player with the given id, and set their action to be the given Playeraction
+    /// TODO: i think soon i am gouing to need to worry about a mutex or something?
+    /// maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
+    pub fn set_player_action(&mut self, id: Uuid, action: PlayerAction) {
+	for player in self.players.iter_mut() {
+	    if player.id == id {
+		player.current_action = Some(action);
+		break;
+	    }
+	}
+    }
+    
     /// send a given message to all the players at the tabel
     pub fn send_message(&self, message: &str) {
         PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
     }
     
     pub fn add_bot(&mut self, name: String) {
-        self.players.push(Player::new_bot(name));
+	let new_bot = Player::new_bot();
+	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
+        self.players.push(new_bot);
+	self.player_ids_to_configs.insert(new_config.id, new_config);
     }
 
     fn play_one_hand(&mut self) {

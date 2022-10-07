@@ -65,7 +65,8 @@ impl Player {
         }
     }
 
-    pub fn new_bot(name: String) -> Self {
+    /// create a new bot from scratch
+    pub fn new_bot() -> Self {
         let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
         Self::new(bot_id, false)
     }

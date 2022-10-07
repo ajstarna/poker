@@ -106,9 +106,9 @@ impl Handler<ClientChatMessage> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
-        if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
-            if let Some(game) = self.tables_to_game.get_mut(&table_name) {
+            if let Some(game) = self.tables_to_game.get_mut(table_name) {
                 game.send_message(msg.msg.as_str());
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
@@ -206,5 +206,18 @@ impl Handler<Join> for GameHub {
 impl Handler<PlayerActionMessage> for GameHub {
     type Result = ();
 
-    fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {}
+    /// the player has sent a message of what their next action in the game should be,
+    /// so we need to relay that to the game
+    fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
+            // the player was at a table, so tell the Game this player's message
+            if let Some(game) = self.tables_to_game.get_mut(table_name) {
+                game.set_player_action(msg.id, msg.player_action);
+            } else {
+                // TODO: this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_game
+            }
+        }
+    }
+	
 }
