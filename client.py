@@ -19,14 +19,17 @@ queue = asyncio.Queue()
 async def start_client(url, loop):
     name = input('Please enter your name: ')
 
+    print(f'about to connect to {url}')
     ws = await aiohttp.ClientSession().ws_connect(url, autoclose=False, autoping=False)
 
+    print(f'connected: {ws}')
     def stdin_callback():
         line = sys.stdin.buffer.readline().decode('utf-8')
         if not line:
             loop.stop()
         else:
             # Queue.put is a coroutine, so you can't call it directly.
+            print('fart ' + line)
             asyncio.ensure_future(queue.put(ws.send_str(name + ': ' + line)))
 
     loop.add_reader(sys.stdin, stdin_callback)

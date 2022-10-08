@@ -132,6 +132,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
         };
 
         log::debug!("WEBSOCKET MESSAGE: {msg:?}");
+        println!("WEBSOCKET MESSAGE: {:?}", msg);	
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb = Instant::now();
@@ -179,6 +180,7 @@ impl WsGameSession {
         message: &str,
         ctx: &mut <WsGameSession as Actor>::Context,
     ) {
+	println!("Entered handle_game_specific_command {:?}", message);
         let v: Vec<&str> = message.splitn(2, ' ').collect();
         match v[0] {
             "/list" => {

@@ -30,6 +30,7 @@ async fn ws_route(
     stream: web::Payload,
     hub_addr: web::Data<Addr<hub::GameHub>>,
 ) -> Result<HttpResponse, Error> {
+    log::info!("inside ws_route()");
     ws::start(
         session::WsGameSession::new(hub_addr.get_ref().clone()),
         &req,
@@ -56,7 +57,7 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("starting HTTP server at http://localhost:8080");
 
-    play(); // TODO: remove this. for now just getting rid of dead code warnings
+    //play(); // TODO: remove this. for now just getting rid of dead code warnings
 
     HttpServer::new(move || {
         App::new()
