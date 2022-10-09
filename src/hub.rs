@@ -101,7 +101,7 @@ impl Handler<Disconnect> for GameHub {
     }
 }
 
-/// Handler for Message message.
+/// Handler for ClientChatMessage message.
 impl Handler<ClientChatMessage> for GameHub {
     type Result = ();
 
@@ -110,6 +110,23 @@ impl Handler<ClientChatMessage> for GameHub {
             // the player was at a table, so tell the Game to relay the message
             if let Some(game) = self.tables_to_game.get_mut(table_name) {
                 game.send_message(msg.msg.as_str());
+            } else {
+                // TODO: this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_game
+            }
+        }
+    }
+}
+
+/// Handler for StartGame message.
+impl Handler<StartGame> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
+            // the player was at a table, so tell the Game to relay the message
+            if let Some(game) = self.tables_to_game.get_mut(table_name) {
+                game.start();
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

@@ -229,6 +229,11 @@ impl WsGameSession {
                     ctx.text("!!! name is required");
                 }
             }
+            "/start" => {
+                self.hub_addr.do_send(messages::GameStart {
+                    id: self.id,
+                });
+            }
             "/check" => {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,

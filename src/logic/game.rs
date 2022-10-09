@@ -688,6 +688,8 @@ impl Game {
             self.play_one_hand();
             // TODO: do we need to add or remove any players?
 
+
+	    /*
             println!("\nContinue playing? (y/n): ");
             self.send_message("\nContinue playing? (y/n): ");
             let mut input = String::new();
@@ -701,7 +703,7 @@ impl Game {
                 _ => {
                     println!("Unknown response. We will take that as a yes");
                 }
-            }
+            }*/
 
             let mut loop_count = 0;
             'find_button: loop {
