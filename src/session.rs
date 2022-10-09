@@ -214,7 +214,7 @@ impl WsGameSession {
                         table_name,
                     });
                     //self.table = Some(table_name);
-                    ctx.text("joined");
+                    ctx.text(format!("joined table: {:?}", v[1]));
                 } else {
                     ctx.text("!!! table name is required");
                 }

@@ -169,8 +169,6 @@ impl Handler<Join> for GameHub {
             return;
         }
 
-        // TODO: if our player_config.name is None, then we can't join a table!
-
         if let Some(old_table_name) = self.players_to_table.get(&id) {
             if *old_table_name != table_name {
                 // we already exist at a table, so we must leave that table
