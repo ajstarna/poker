@@ -26,7 +26,7 @@ pub struct Disconnect {
 /// Game should start
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct GameStart {
+pub struct StartGame {
     pub id: Uuid, // player session id
 }
 

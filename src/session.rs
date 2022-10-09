@@ -230,7 +230,7 @@ impl WsGameSession {
                 }
             }
             "/start" => {
-                self.hub_addr.do_send(messages::GameStart {
+                self.hub_addr.do_send(messages::StartGame {
                     id: self.id,
                 });
             }

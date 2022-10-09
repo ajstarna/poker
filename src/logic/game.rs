@@ -365,13 +365,14 @@ impl<'a> GameHand<'a> {
 
                 println!("Player = {:?}, i = {}", player.id, i);
                 if player.is_active && player.money > 0.0 {
-                    let action = GameHand::get_and_validate_action(
+                    let action = self.get_and_validate_action(
                         player,
-			self.small_blind,
-			self.big_blind,
-                        self.street,
+			//self.small_blind,
+			//self.big_blind,
+                        //self.street,
                         street_bet,
                         player_cumulative,
+			player_ids_to_configs
                     );
 
                     match action {
@@ -500,32 +501,34 @@ impl<'a> GameHand<'a> {
     }
 
     fn get_and_validate_action(
+	&self, 
         player: &mut Player,
-	small_blind: f64,
-	big_blind: f64,
-        street: Street,
+	//small_blind: f64,
+	//big_blind: f64,
+        //street: Street,
         street_bet: f64,
         player_cumulative: f64,
+	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
         // position is our spot in the order, with 0 == small blind, etc
-        if street == Street::Preflop && street_bet == 0.0 {
+        if self.street == Street::Preflop && street_bet == 0.0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(
-                small_blind as u32,
+                self.small_blind as u32,
                 player.money as u32,
             ) as f64);
-        } else if street == Street::Preflop && street_bet == small_blind {
+        } else if self.street == Street::Preflop && street_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(
-                cmp::min(big_blind as u32, player.money as u32) as f64,
+                cmp::min(self.big_blind as u32, player.money as u32) as f64,
             );
         }
         let mut action = None;
         let mut attempts = 0;
         let one_second = time::Duration::from_secs(1); // how long to wait between trying again
-        while attempts < 5 && action.is_none() {
+        while attempts < 20 && action.is_none() {
             // not a blind, so get an actual choice
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -535,6 +538,18 @@ impl<'a> GameHand<'a> {
             }
             println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player) {
+		None => {
+                    println!("No action is set for the player {:?}", player.id);
+		    // TODO: send a message to the player
+                    // we give the user a second to place their action
+		    PlayerConfig::send_specific_message(
+			&"Please enter your action!".to_owned(),
+			player.id,
+			player_ids_to_configs
+		    );
+                    thread::sleep(one_second);
+		}
+		
                 Some(PlayerAction::Fold) => {
                     if street_bet <= player_cumulative {
                         // if the player has put in enough then no sense folding
@@ -584,11 +599,10 @@ impl<'a> GameHand<'a> {
                     }
                     action = Some(PlayerAction::Bet(new_bet));
                 }
-                _ => {
-                    println!("Action is not valid at this time!");
-                    // we give the user a second to place their action
-                    thread::sleep(one_second);
-                }
+		other => {
+		    action = other;
+		}
+		
             }
         }
         // if we got a valid action, then we can return it,
@@ -704,7 +718,8 @@ impl Game {
                     println!("Unknown response. We will take that as a yes");
                 }
             }*/
-
+	    break;
+	    
             let mut loop_count = 0;
             'find_button: loop {
                 loop_count += 1;

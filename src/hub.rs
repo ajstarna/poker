@@ -9,7 +9,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName};
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName, StartGame };
 use crate::{
     logic::{Game, PlayerConfig},
     messages::PlayerActionMessage,
@@ -122,11 +122,11 @@ impl Handler<ClientChatMessage> for GameHub {
 impl Handler<StartGame> for GameHub {
     type Result = ();
 
-    fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: StartGame, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
             if let Some(game) = self.tables_to_game.get_mut(table_name) {
-                game.start();
+                game.play();
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

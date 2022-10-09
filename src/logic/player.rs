@@ -32,13 +32,23 @@ impl PlayerConfig {
     }
 
     /// given a message, send it to all players in the HashMap that have a Recipient address    
-    pub fn send_group_message<T>(message: &str, ids_to_configs: &HashMap<T, PlayerConfig>) {
+    pub fn send_group_message(message: &str, ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
 	for player_config in ids_to_configs.values() {
             if let Some(addr) = &player_config.player_addr {
                 addr.do_send(WsMessage(message.to_owned()));
             }
         }
     }
+
+    /// send a given message to one player
+    pub fn send_specific_message(message: &str, id: Uuid, ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+	if let Some(player_config) = ids_to_configs.get(&id) {
+            if let Some(addr) = &player_config.player_addr {
+		addr.do_send(WsMessage(message.to_owned()));
+	    }
+	}
+    }
+    
 }
 
 #[derive(Debug)]
