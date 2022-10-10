@@ -206,7 +206,7 @@ impl Handler<Join> for GameHub {
         let mut game = Game::new();
         game.add_user(player_config);
 
-        let num_bots = 5;
+        let num_bots = 2;
         for i in 0..num_bots {
             let name = format!("Mr {}", i);
             game.add_bot(name);

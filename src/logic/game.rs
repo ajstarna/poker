@@ -647,10 +647,20 @@ impl Game {
     /// add a given playerconfig to an empty seat
     /// TODO: eventually we wanmt the player to select an open seat I guess
     pub fn add_user(&mut self, player_config: PlayerConfig) {
+	self.add_player(player_config, true);
+    }
+
+    pub fn add_bot(&mut self, name: String) {
+	let new_bot = Player::new_bot();
+	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
+	self.add_player(new_config, false);
+    }
+    
+    fn add_player(&mut self, player_config: PlayerConfig, human_controlled: bool) {
 	let mut added = false;
 	for player_spot in self.players.iter_mut() {
 	    if player_spot.is_none() {
-		*player_spot = Some(Player::new(player_config.id, true));
+		*player_spot = Some(Player::new(player_config.id, human_controlled));
 		self.player_ids_to_configs.insert(player_config.id, player_config);
 		added = true;
 		break;
@@ -664,7 +674,7 @@ impl Game {
 	}
 
     }
-
+    
     /// remove the player from the vec of players with the given id
     /// and remove it from the id to config mapping
     pub fn remove_player(&mut self, id: Uuid) {
@@ -689,6 +699,7 @@ impl Game {
     /// TODO: i think soon i am gouing to need to worry about a mutex or something?
     /// maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
     pub fn set_player_action(&mut self, id: Uuid, action: PlayerAction) {
+	println!("inside set player action: {:?}, {:?}", id, action);
 	for player in self.players.iter_mut().flatten() {
 	    if player.id == id {
 		player.current_action = Some(action);
@@ -702,12 +713,6 @@ impl Game {
         PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
     }
     
-    pub fn add_bot(&mut self, name: String) {
-	let new_bot = Player::new_bot();
-	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-	self.add_user(new_config);
-    }
-
     fn play_one_hand(&mut self) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
