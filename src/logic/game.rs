@@ -92,8 +92,8 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn deal_hands(&mut self, players: &mut Vec<Player>) {
-        for player in players.iter_mut() {
+    fn deal_hands(&mut self, players: &mut [Option<Player>]) {
+        for player in players.iter_mut().flatten() {
             if player.is_active {
                 for _ in 0..2 {
                     if let Some(card) = self.deck.draw_card() {
@@ -126,10 +126,11 @@ impl<'a> GameHand<'a> {
         self.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self, players: &mut Vec<Player>) {
+    fn finish(&mut self, players: &mut [Option<Player>]) {
         let mut best_indices = HashSet::<usize>::new();
         let hand_results = players
             .iter()
+            .flatten() // skip None values
             .map(|player| self.determine_best_hand(player))
             .collect::<Vec<Option<HandResult>>>();
 
@@ -166,7 +167,7 @@ impl<'a> GameHand<'a> {
             }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
-            for (i, player) in players.iter().enumerate() {
+            for (i, player) in players.iter().flatten().enumerate() {
                 // TODO: make this more functional/rusty
                 if player.is_active {
                     //println!("found an active player remaining");
@@ -184,18 +185,21 @@ impl<'a> GameHand<'a> {
         let num_winners = best_indices.len();
         let payout = self.pot as f64 / num_winners as f64;
 
-        for idx in best_indices.iter() {
-            let winning_player = &mut players[*idx];
-            println!(
-                "paying out: {:?} \n  with hand result = {:?}",
-                winning_player, hand_results[*idx]
-            );
-            winning_player.pay(payout);
-            println!("after payment: {:?}", winning_player);
+        for idx in best_indices {
+            let winning_spot = &mut players[idx];
+	    if let Some(ref mut winning_player) = winning_spot {
+		//let b: bool = winning_player;
+		println!(
+                    "paying out: {:?} \n  with hand result = {:?}",
+                    winning_player, hand_results[idx]
+		);
+		winning_player.pay(payout);
+		println!("after payment: {:?}", winning_player);
+	    }
         }
 
         // take the players' cards
-        for player in players.iter_mut() {
+        for player in players.iter_mut().flatten() {
             // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
             if !player.is_sitting_out {
@@ -265,9 +269,11 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn play(&mut self, players: &mut Vec<Player>, player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn play(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-        self.num_active = players.iter().filter(|player| player.is_active).count(); // active to start the hand	
+	// how many active to start the hand
+	// note: we flatten so that we don't consider None values (empty seats)
+        self.num_active = players.iter().flatten().filter(|player| player.is_active).count(); 
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
             self.button_idx
@@ -300,7 +306,7 @@ impl<'a> GameHand<'a> {
         self.finish(players);
     }
 
-    fn get_starting_idx(&self, players: &mut Vec<Player>) -> usize {
+    fn get_starting_idx(&self, players: &mut [Option<Player>]) -> usize {
         // the starting index is either the person one more from the button on most streets,
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
@@ -311,7 +317,7 @@ impl<'a> GameHand<'a> {
         starting_idx
     }
 
-    fn play_street(&mut self, players: &mut Vec<Player>, player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn play_street(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         let mut street_bet: f64 = 0.0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0.0; players.len()];
@@ -324,6 +330,7 @@ impl<'a> GameHand<'a> {
         // then they are settled and ready to go to the end
         let mut num_all_in = players
             .iter()
+            .flatten() // skip over None values
             .filter(|player| player.is_all_in())
             .count();
         let mut num_settled = num_all_in;
@@ -356,7 +363,7 @@ impl<'a> GameHand<'a> {
             // iterate over the players from the starting index to the end of the vec,
             // and then from the beginning back to the starting index
             let (left, right) = players.split_at_mut(starting_idx);
-            for (i, mut player) in right.iter_mut().chain(left.iter_mut()).enumerate() {
+            for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
@@ -618,7 +625,7 @@ impl<'a> GameHand<'a> {
 #[derive(Debug)]
 pub struct Game {
     deck: Deck,
-    players: Vec<Player>,
+    players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
     button_idx: usize, // index of the player with the button
     small_blind: f64,
@@ -629,7 +636,7 @@ impl Game {
     pub fn new() -> Self {
         Game {
             deck: Deck::new(),
-            players: Vec::<Player>::with_capacity(9),
+            players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             small_blind: 4.0,
             big_blind: 8.0,
@@ -637,16 +644,38 @@ impl Game {
         }
     }
 
+    /// add a given playerconfig to an empty seat
+    /// TODO: eventually we wanmt the player to select an open seat I guess
     pub fn add_user(&mut self, player_config: PlayerConfig) {
-        self.players.push(Player::new(player_config.id, true));	
-        self.player_ids_to_configs.insert(player_config.id, player_config);	
+	let mut added = false;
+	for player_spot in self.players.iter_mut() {
+	    if player_spot.is_none() {
+		*player_spot = Some(Player::new(player_config.id, true));
+		self.player_ids_to_configs.insert(player_config.id, player_config);
+		added = true;
+		break;
+	    }
+	}
+	if added {
+	    // TODO: send a message to the player and the table
+	} else {
+	    // we were unable to add a player
+	    // or should we just keep count of the number of players at any moment?
+	}
+
     }
 
     /// remove the player from the vec of players with the given id
     /// and remove it from the id to config mapping
     pub fn remove_player(&mut self, id: Uuid) {
-        self.players.retain(|p| p.id != id);
-	self.player_ids_to_configs.remove(&id);
+	for player_spot in self.players.iter_mut() {
+	    if let Some(player) = player_spot{
+		if player.id == id {
+		    *player_spot = None;
+		    self.player_ids_to_configs.remove(&id);		    
+		}
+	    }
+	}
     }
 
     /// find a player with the given id, and set their name to be the given name
@@ -660,7 +689,7 @@ impl Game {
     /// TODO: i think soon i am gouing to need to worry about a mutex or something?
     /// maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
     pub fn set_player_action(&mut self, id: Uuid, action: PlayerAction) {
-	for player in self.players.iter_mut() {
+	for player in self.players.iter_mut().flatten() {
 	    if player.id == id {
 		player.current_action = Some(action);
 		break;
@@ -676,8 +705,7 @@ impl Game {
     pub fn add_bot(&mut self, name: String) {
 	let new_bot = Player::new_bot();
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-        self.players.push(new_bot);
-	self.player_ids_to_configs.insert(new_config.id, new_config);
+	self.add_user(new_config);
     }
 
     fn play_one_hand(&mut self) {
@@ -703,22 +731,7 @@ impl Game {
             // TODO: do we need to add or remove any players?
 
 
-	    /*
-            println!("\nContinue playing? (y/n): ");
-            self.send_message("\nContinue playing? (y/n): ");
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .expect("Failed to get console input");
-            input = input.to_string().trim().to_string();
-            match input.as_str() {
-                "y" => (),
-                "n" => std::process::exit(0),
-                _ => {
-                    println!("Unknown response. We will take that as a yes");
-                }
-            }*/
-	    break;
+	    break; // TODO: remove this break eventually
 	    
             let mut loop_count = 0;
             'find_button: loop {
@@ -731,16 +744,18 @@ impl Game {
                 if self.button_idx as usize >= self.players.len() {
                     self.button_idx = 0;
                 }
-                if self.players[self.button_idx].is_sitting_out {
-                    println!(
-                        "Player at index {} is sitting out so cannot be the button",
-                        self.button_idx
-                    );
-                    continue;
-                } else {
-                    // We found a player who is not sitting out, so it is a valid
-                    // button position
-                    break 'find_button;
+		if let Some(player) = self.players[self.button_idx] {
+                    if player.is_sitting_out {
+			println!(
+                            "Player at index {} is sitting out so cannot be the button",
+                            self.button_idx
+			);
+			continue;
+                    } else {
+			// We found a player who is not sitting out, so it is a valid
+			// button position
+			break 'find_button;		    
+		    }
                 }
             }
         }
