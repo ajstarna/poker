@@ -31,6 +31,9 @@ pub struct GameHub {
 
     tables_to_game: HashMap<String, Game>,
 
+    // this is where the hub can add incoming player actions for a running game to grab from
+    tables_to_actions: HashMap<String, Arc<Vec<u32>>>,    
+
     visitor_count: Arc<AtomicUsize>,
 }
 
@@ -126,7 +129,9 @@ impl Handler<StartGame> for GameHub {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
             if let Some(game) = self.tables_to_game.get_mut(table_name) {
-                game.play();
+		//TODO this call to play locks execution until it returns. So we can't get user input,
+		//or anything hmm
+		game.play();
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game
@@ -213,7 +218,7 @@ impl Handler<Join> for GameHub {
         }
 
         game.send_message("Someone connected");
-        self.tables_to_game.insert(table_name, game);
+        self.tables_to_game.insert(table_name, Arc::new(game));
     }
 }
 
@@ -227,7 +232,11 @@ impl Handler<PlayerActionMessage> for GameHub {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game this player's message
             if let Some(game) = self.tables_to_game.get_mut(table_name) {
+		println!("handling player action in the hub!");
                 game.set_player_action(msg.id, msg.player_action);
+		let mut actions_queue = game.incoming_actions.lock().unwrap();
+		println!("actions queue = {:?}", actions_queue);
+		actions_queue.push(55);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

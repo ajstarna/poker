@@ -1,8 +1,8 @@
 use rand::Rng;
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use std::io;
 use std::iter;
+use std::sync::{Arc, Mutex};
 
 use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
@@ -269,7 +269,11 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn play(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn play(&mut self,
+	    players: &mut [Option<Player>],
+	    player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	    incoming_actions: Arc<Mutex<Vec<u32>>>,
+    ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	// how many active to start the hand
 	// note: we flatten so that we don't consider None values (empty seats)
@@ -291,7 +295,7 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            self.play_street(players, player_ids_to_configs);
+            self.play_street(players, player_ids_to_configs, incoming_actions);
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -317,7 +321,12 @@ impl<'a> GameHand<'a> {
         starting_idx
     }
 
-    fn play_street(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn play_street(
+	&mut self,
+	players: &mut [Option<Player>],
+	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	incoming_actions: Arc<Mutex<Vec<u32>>>,
+    ) {
         let mut street_bet: f64 = 0.0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0.0; players.len()];
@@ -374,12 +383,10 @@ impl<'a> GameHand<'a> {
                 if player.is_active && player.money > 0.0 {
                     let action = self.get_and_validate_action(
                         player,
-			//self.small_blind,
-			//self.big_blind,
-                        //self.street,
                         street_bet,
                         player_cumulative,
-			player_ids_to_configs
+			player_ids_to_configs,
+			incoming_actions,
                     );
 
                     match action {
@@ -474,8 +481,9 @@ impl<'a> GameHand<'a> {
 
     /// if the player is a human, then we look for their action in their current_action field
     /// this value is set by the 
-    fn get_action_from_player(player: &mut Player) -> Option<PlayerAction> {
+    fn get_action_from_player(player: &mut Player, incoming_actions: Arc<Mutex<Vec<u32>>>) -> Option<PlayerAction> {
         if player.human_controlled {
+	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());	    
             if player.current_action.is_some() {
                 println!(
                     "Player: {:?} has action {:?}",
@@ -510,12 +518,10 @@ impl<'a> GameHand<'a> {
     fn get_and_validate_action(
 	&self, 
         player: &mut Player,
-	//small_blind: f64,
-	//big_blind: f64,
-        //street: Street,
         street_bet: f64,
         player_cumulative: f64,
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	incoming_actions: Arc<Mutex<Vec<u32>>>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -532,10 +538,16 @@ impl<'a> GameHand<'a> {
                 cmp::min(self.big_blind as u32, player.money as u32) as f64,
             );
         }
+	PlayerConfig::send_specific_message(
+	    &"Please enter your action!".to_owned(),
+	    player.id,
+	    player_ids_to_configs
+	);
+	
         let mut action = None;
         let mut attempts = 0;
-        let one_second = time::Duration::from_secs(1); // how long to wait between trying again
-        while attempts < 20 && action.is_none() {
+        let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
+        while attempts < 8 && action.is_none() {
             // not a blind, so get an actual choice
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -544,17 +556,12 @@ impl<'a> GameHand<'a> {
                 attempts += 1;
             }
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match GameHand::get_action_from_player(player) {
+            match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {
                     println!("No action is set for the player {:?}", player.id);
 		    // TODO: send a message to the player
                     // we give the user a second to place their action
-		    PlayerConfig::send_specific_message(
-			&"Please enter your action!".to_owned(),
-			player.id,
-			player_ids_to_configs
-		    );
-                    thread::sleep(one_second);
+                    thread::sleep(retry_duration);
 		}
 		
                 Some(PlayerAction::Fold) => {
@@ -696,8 +703,9 @@ impl Game {
     }
     
     /// find a player with the given id, and set their action to be the given Playeraction
-    /// TODO: i think soon i am gouing to need to worry about a mutex or something?
-    /// maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
+    //TODO: i think soon i am gouing to need to worry about a mutex or something?
+    //maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
+    //Because atm the Handle<PlayerAction> only happens AFTER game.play() ends
     pub fn set_player_action(&mut self, id: Uuid, action: PlayerAction) {
 	println!("inside set player action: {:?}, {:?}", id, action);
 	for player in self.players.iter_mut().flatten() {
@@ -713,17 +721,20 @@ impl Game {
         PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
     }
     
-    fn play_one_hand(&mut self) {
+    pub fn play_one_hand(
+	&mut self,
+	incoming_actions: Arc<Mutex<Vec<u32>>>,		     
+    ) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
             self.button_idx,
             self.small_blind,
             self.big_blind,
         );
-        game_hand.play(&mut self.players, &self.player_ids_to_configs);
+        game_hand.play(&mut self.players, &self.player_ids_to_configs, incoming_actions);
     }
 
-    pub fn play(&mut self) {
+    pub fn play(&mut self, incoming_actions: Arc<Mutex<Vec<u32>>>) {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
@@ -731,13 +742,14 @@ impl Game {
                 "\n\n\n=================================================\n\nplaying hand {}",
                 hand_count
             );
-
-            self.play_one_hand();
+	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
+            self.play_one_hand(incoming_actions);
             // TODO: do we need to add or remove any players?
 
 
-	    break; // TODO: remove this break eventually
-	    
+	    if hand_count > 1 {
+		break; // TODO: remove this break eventually
+	    }
             let mut loop_count = 0;
             'find_button: loop {
                 loop_count += 1;
@@ -749,8 +761,9 @@ impl Game {
                 if self.button_idx as usize >= self.players.len() {
                     self.button_idx = 0;
                 }
-		if let Some(player) = self.players[self.button_idx] {
-                    if player.is_sitting_out {
+		let button_spot = &mut self.players[self.button_idx];
+		if let Some(button_player) = button_spot {
+                    if button_player.is_sitting_out {
 			println!(
                             "Player at index {} is sitting out so cannot be the button",
                             self.button_idx
