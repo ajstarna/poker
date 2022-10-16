@@ -86,5 +86,5 @@ fn play() {
     let player_settings =
         logic::PlayerConfig::new(Uuid::new_v4(), Some("Adam".to_string()), None);
     game.add_user(player_settings);
-    game.play();
+    //game.play();
 }

@@ -272,7 +272,7 @@ impl<'a> GameHand<'a> {
     fn play(&mut self,
 	    players: &mut [Option<Player>],
 	    player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	    incoming_actions: Arc<Mutex<Vec<u32>>>,
+	    incoming_actions: &Arc<Mutex<Vec<u32>>>,
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	// how many active to start the hand
@@ -295,7 +295,7 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            self.play_street(players, player_ids_to_configs, incoming_actions);
+            self.play_street(players, player_ids_to_configs, &incoming_actions);
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -325,7 +325,7 @@ impl<'a> GameHand<'a> {
 	&mut self,
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	incoming_actions: Arc<Mutex<Vec<u32>>>,
+	incoming_actions: &Arc<Mutex<Vec<u32>>>,
     ) {
         let mut street_bet: f64 = 0.0;
         // each index keeps track of that players' contribution this street
@@ -386,7 +386,7 @@ impl<'a> GameHand<'a> {
                         street_bet,
                         player_cumulative,
 			player_ids_to_configs,
-			incoming_actions,
+			&incoming_actions,
                     );
 
                     match action {
@@ -481,7 +481,7 @@ impl<'a> GameHand<'a> {
 
     /// if the player is a human, then we look for their action in their current_action field
     /// this value is set by the 
-    fn get_action_from_player(player: &mut Player, incoming_actions: Arc<Mutex<Vec<u32>>>) -> Option<PlayerAction> {
+    fn get_action_from_player(player: &mut Player, incoming_actions: &Arc<Mutex<Vec<u32>>>) -> Option<PlayerAction> {
         if player.human_controlled {
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());	    
             if player.current_action.is_some() {
@@ -521,7 +521,7 @@ impl<'a> GameHand<'a> {
         street_bet: f64,
         player_cumulative: f64,
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	incoming_actions: Arc<Mutex<Vec<u32>>>,
+	incoming_actions: &Arc<Mutex<Vec<u32>>>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -723,7 +723,7 @@ impl Game {
     
     pub fn play_one_hand(
 	&mut self,
-	incoming_actions: Arc<Mutex<Vec<u32>>>,		     
+	incoming_actions: &Arc<Mutex<Vec<u32>>>,		     
     ) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -734,7 +734,7 @@ impl Game {
         game_hand.play(&mut self.players, &self.player_ids_to_configs, incoming_actions);
     }
 
-    pub fn play(&mut self, incoming_actions: Arc<Mutex<Vec<u32>>>) {
+    pub fn play(&mut self, incoming_actions: &Arc<Mutex<Vec<u32>>>) {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
