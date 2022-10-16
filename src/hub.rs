@@ -12,7 +12,7 @@ use std::{
 
 use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName };
 use crate::{
-    logic::{Game, PlayerConfig},
+    logic::{Game, PlayerConfig, PlayerAction},
     messages::PlayerActionMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -33,7 +33,7 @@ pub struct GameHub {
     tables_to_game: HashMap<String, Game>,
 
     // this is where the hub can add incoming player actions for a running game to grab from
-    tables_to_actions: HashMap<String, Arc<Mutex<Vec<u32>>>>,    
+    tables_to_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,    
 
     visitor_count: Arc<AtomicUsize>,
 }
@@ -224,14 +224,14 @@ impl Handler<Join> for GameHub {
         }
 
         game.send_message("Someone connected");
-	let actions_queue = Arc::new(Mutex::new(Vec::new()));
-	let cloned_queue = actions_queue.clone();
+	let actions = Arc::new(Mutex::new(HashMap::new()));
+	let cloned_actions = actions.clone();
 	//let b: bool = cloned_queue;
 	thread::spawn(move || {
-	    game.play(&cloned_queue);
+	    game.play(&cloned_actions);
 	});
 	
-        self.tables_to_actions.insert(table_name, actions_queue);
+        self.tables_to_actions.insert(table_name, actions);
     }
 }
 
@@ -246,10 +246,8 @@ impl Handler<PlayerActionMessage> for GameHub {
             // the player was at a table, so tell the Game this player's message
             if let Some(actions_queue) = self.tables_to_actions.get_mut(table_name) {
 		println!("handling player action in the hub!");
-                //game.set_player_action(msg.id, msg.player_action);
-		//let mut actions_queue = self.tables_to_actions.get(table_name).unwrap().lock().unwrap();
 		println!("actions queue = {:?}", actions_queue);
-		actions_queue.lock().unwrap().push(55);
+		actions_queue.lock().unwrap().insert(msg.id, msg.player_action);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

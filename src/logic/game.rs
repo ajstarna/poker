@@ -272,7 +272,7 @@ impl<'a> GameHand<'a> {
     fn play(&mut self,
 	    players: &mut [Option<Player>],
 	    player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	    incoming_actions: &Arc<Mutex<Vec<u32>>>,
+	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	// how many active to start the hand
@@ -325,9 +325,9 @@ impl<'a> GameHand<'a> {
 	&mut self,
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	incoming_actions: &Arc<Mutex<Vec<u32>>>,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
     ) {
-        let mut street_bet: f64 = 0.0;
+        let mut current_bet: f64 = 0.0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0.0; players.len()];
 
@@ -376,14 +376,14 @@ impl<'a> GameHand<'a> {
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
-			 street_bet,
+			 current_bet,
 			 player_cumulative);
 
                 println!("Player = {:?}, i = {}", player.id, i);
                 if player.is_active && player.money > 0.0 {
                     let action = self.get_and_validate_action(
                         player,
-                        street_bet,
+                        current_bet,
                         player_cumulative,
 			player_ids_to_configs,
 			&incoming_actions,
@@ -396,7 +396,7 @@ impl<'a> GameHand<'a> {
                             cumulative_bets[i] += amount;
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
-                            street_bet = self.small_blind;
+                            current_bet = self.small_blind;
                             if player.is_all_in() {
                                 num_all_in += 1;
                                 num_settled = num_all_in;
@@ -410,7 +410,7 @@ impl<'a> GameHand<'a> {
                             cumulative_bets[i] += amount;
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
-                            street_bet = self.big_blind;
+                            current_bet = self.big_blind;
                             if player.is_all_in() {
                                 num_all_in += 1;
                                 num_settled = num_all_in;
@@ -429,7 +429,7 @@ impl<'a> GameHand<'a> {
                         }
                         PlayerAction::Call => {
                             println!("Player calls!");
-                            let difference = street_bet - player_cumulative;
+                            let difference = current_bet - player_cumulative;
                             if difference > player.money {
                                 println!("you have to put in the rest of your chips");
                                 self.pot += player.money;
@@ -448,7 +448,7 @@ impl<'a> GameHand<'a> {
                             let difference = new_bet - player_cumulative;
                             self.pot += difference;
                             player.money -= difference;
-                            street_bet = new_bet;
+                            current_bet = new_bet;
                             cumulative_bets[i] = new_bet;
                             if player.is_all_in() {
                                 println!("Just bet the rest of our money!");
@@ -479,21 +479,25 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    /// if the player is a human, then we look for their action in their current_action field
-    /// this value is set by the 
-    fn get_action_from_player(player: &mut Player, incoming_actions: &Arc<Mutex<Vec<u32>>>) -> Option<PlayerAction> {
+    /// if the player is a human, then we look for their action in the incoming_actions hashmap
+    /// this value is set by the game hub when handling a message from a player client
+    fn get_action_from_player(
+	player: &mut Player,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>)
+	-> Option<PlayerAction>
+    {
         if player.human_controlled {
-	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());	    
-            if player.current_action.is_some() {
+	    let mut actions = incoming_actions.lock().unwrap();	    
+	    println!("incoming_actions = {:?}", actions);	    
+            if let Some(action) = actions.get_mut(&player.id) {
                 println!(
                     "Player: {:?} has action {:?}",
-                    player.id, player.current_action
+                    player.id, action
                 );
-                let action = player.current_action;
-                player.current_action = None; // set it back to None
-                action
+		let value = *action;
+		actions.remove(&player.id);  // wipe this action so we don't repeat it next time
+                Some(value)
             } else {
-                println!("No action available for {:?}", player.id);
                 None
             }
         } else {
@@ -518,21 +522,21 @@ impl<'a> GameHand<'a> {
     fn get_and_validate_action(
 	&self, 
         player: &mut Player,
-        street_bet: f64,
+        current_bet: f64,
         player_cumulative: f64,
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-	incoming_actions: &Arc<Mutex<Vec<u32>>>,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
         // position is our spot in the order, with 0 == small blind, etc
-        if self.street == Street::Preflop && street_bet == 0.0 {
+        if self.street == Street::Preflop && current_bet == 0.0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(
                 self.small_blind as u32,
                 player.money as u32,
             ) as f64);
-        } else if self.street == Street::Preflop && street_bet == self.small_blind {
+        } else if self.street == Street::Preflop && current_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(
                 cmp::min(self.big_blind as u32, player.money as u32) as f64,
@@ -546,7 +550,7 @@ impl<'a> GameHand<'a> {
 	
         let mut action = None;
         let mut attempts = 0;
-        let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
+        let retry_duration = time::Duration::from_secs(3); // how long to wait between trying again
         while attempts < 8 && action.is_none() {
             // not a blind, so get an actual choice
             if player.human_controlled {
@@ -555,7 +559,7 @@ impl<'a> GameHand<'a> {
                 // Currently it might try to check when it has to call for example,
                 attempts += 1;
             }
-            println!("Attempting to get player action on attempt {:?}", attempts);
+            //println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {
                     println!("No action is set for the player {:?}", player.id);
@@ -565,7 +569,7 @@ impl<'a> GameHand<'a> {
 		}
 		
                 Some(PlayerAction::Fold) => {
-                    if street_bet <= player_cumulative {
+                    if current_bet <= player_cumulative {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
@@ -577,37 +581,46 @@ impl<'a> GameHand<'a> {
                 }
                 Some(PlayerAction::Check) => {
                     //println!("Player checks!");
-                    if street_bet > player_cumulative {
+                    if current_bet > player_cumulative {
                         // if the current bet is higher than this players bet
                         if player.human_controlled {
-                            println!("you cant check since there is a bet!");
+			    PlayerConfig::send_specific_message(
+				&"You can't check since there is a bet!!".to_owned(),
+				player.id,
+				player_ids_to_configs
+			    );
                         }
                         continue;
                     }
                     action = Some(PlayerAction::Check);
                 }
                 Some(PlayerAction::Call) => {
-                    if street_bet <= player_cumulative {
-                        if street_bet != 0.0 {
+                    if current_bet <= player_cumulative {
+                        if current_bet != 0.0 {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
-                        continue;
+			// we can let them check
+                        action = Some(PlayerAction::Check);			
                     }
                     action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
                     //println!("Player bets {}!", new_bet);
-                    if street_bet < player_cumulative {
+                    if current_bet < player_cumulative {
                         // will this case happen?
                         println!("this should not happen!");
                         continue;
                     }
                     if new_bet - player_cumulative > player.money {
-                        //println!("you cannot bet more than you have!");
+			PlayerConfig::send_specific_message(
+			    &"You can't bet more than you have!!".to_owned(),
+			    player.id,
+			    player_ids_to_configs
+			    );
                         continue;
                     }
-                    if new_bet <= street_bet {
+                    if new_bet <= current_bet {
                         //println!("the new bet has to be larger than the current bet!");
                         continue;
                     }
@@ -723,7 +736,7 @@ impl Game {
     
     pub fn play_one_hand(
 	&mut self,
-	incoming_actions: &Arc<Mutex<Vec<u32>>>,		     
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,		     
     ) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -734,7 +747,7 @@ impl Game {
         game_hand.play(&mut self.players, &self.player_ids_to_configs, incoming_actions);
     }
 
-    pub fn play(&mut self, incoming_actions: &Arc<Mutex<Vec<u32>>>) {
+    pub fn play(&mut self, incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>) {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
