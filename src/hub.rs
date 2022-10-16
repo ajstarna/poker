@@ -10,7 +10,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName, StartGame };
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName };
 use crate::{
     logic::{Game, PlayerConfig},
     messages::PlayerActionMessage,
@@ -124,6 +124,8 @@ impl Handler<ClientChatMessage> for GameHub {
     }
 }
 
+
+/*
 /// Handler for StartGame message.
 impl Handler<StartGame> for GameHub {
     type Result = ();
@@ -141,6 +143,7 @@ impl Handler<StartGame> for GameHub {
         }
     }
 }
+ */
 
 /// Handler for `ListTables` message.
 impl Handler<ListTables> for GameHub {
@@ -169,6 +172,7 @@ impl Handler<PlayerName> for GameHub {
             // otherwise, find which game they are in, and tell the game there has been a name change
             // the player was at a table, so tell the Game that the player left
             if let Some(game) = self.tables_to_game.get_mut(&table_name) {
+		//TODO need to communicate to the running game in another thread
                 game.set_player_name(msg.id, &msg.name);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
@@ -240,16 +244,18 @@ impl Handler<PlayerActionMessage> for GameHub {
     fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game this player's message
-            if let Some(game) = self.tables_to_game.get_mut(table_name) {
+            if let Some(actions_queue) = self.tables_to_actions.get_mut(table_name) {
 		println!("handling player action in the hub!");
                 //game.set_player_action(msg.id, msg.player_action);
-		let mut actions_queue = self.tables_to_actions.get(table_name).unwrap().lock().unwrap();
+		//let mut actions_queue = self.tables_to_actions.get(table_name).unwrap().lock().unwrap();
 		println!("actions queue = {:?}", actions_queue);
-		actions_queue.push(55);
+		actions_queue.lock().unwrap().push(55);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game
+		println!("blah blah mp actioms queue!");
             }
+
         }
     }
 	

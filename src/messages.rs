@@ -23,12 +23,15 @@ pub struct Disconnect {
     pub id: Uuid,
 }
 
+
+/*
 /// Game should start
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct StartGame {
     pub id: Uuid, // player session id
 }
+*/
 
 /// Send message to specific table
 #[derive(Message)]
