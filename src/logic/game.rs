@@ -104,7 +104,7 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn deal_hands(&mut self, players: &mut [Option<Player>]) {
+    fn deal_hands(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         for player in players.iter_mut().flatten() {
             if player.is_active {
                 for _ in 0..2 {
@@ -112,8 +112,14 @@ impl<'a> GameHand<'a> {
                         player.hole_cards.push(card)
                     } else {
                         panic!();
-                    }
+                    }		    
                 }
+		PlayerConfig::send_specific_message(
+		    &format!("Your hand: {:?}", player.hole_cards),
+		    player.id,
+		    player_ids_to_configs
+		);
+		
             }
         }
     }
@@ -302,10 +308,10 @@ impl<'a> GameHand<'a> {
             return;
         }
         self.deck.shuffle();
-        self.deal_hands(players);
+        self.deal_hands(players, player_ids_to_configs);
 
         println!("players = {:?}", players);
-        PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
+        //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
             self.play_street(players, player_ids_to_configs, &incoming_actions);
             if self.num_active == 1 {
@@ -563,6 +569,11 @@ impl<'a> GameHand<'a> {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
         // position is our spot in the order, with 0 == small blind, etc
+
+	// we sleep a little bit each time so that the output doesnt flood the user at one moment
+        let pause_duration = time::Duration::from_secs(1); 	
+        thread::sleep(pause_duration);
+	
         if self.street == Street::Preflop && current_bet == 0.0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(
@@ -591,7 +602,8 @@ impl<'a> GameHand<'a> {
                 // TODO: the computer can give a better than random guess at a move
                 // Currently it might try to check when it has to call for example,
                 attempts += 1;
-            }
+            } else {
+	    }
             //println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {

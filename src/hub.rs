@@ -10,7 +10,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, ListTables, PlayerName };
+use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, Leave, ListTables, PlayerName };
 use crate::{
     logic::{Game, PlayerConfig, PlayerAction},
     messages::PlayerActionMessage,
@@ -237,6 +237,16 @@ impl Handler<Join> for GameHub {
     }
 }
 
+/// Handler for leaving a table (if we are even at one)
+impl Handler<Leave> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: Leave, _: &mut Context<Self>) {
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
+	    // tell the table that we want to leave
+	    TODO: do we need a new place to store non-game player commands?
+	}
+    }
 /// Handler for Message message.
 impl Handler<PlayerActionMessage> for GameHub {
     type Result = ();

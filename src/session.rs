@@ -219,6 +219,11 @@ impl WsGameSession {
                     ctx.text("!!! table name is required");
                 }
             }
+            "/leave" => {
+                self.hub_addr.do_send(messages::Leave {
+                    id: self.id,
+                });
+	    }	    
             "/name" => {
                 if v.len() == 2 {
                     // TODO need a new message to set our name
@@ -229,12 +234,6 @@ impl WsGameSession {
                     ctx.text("!!! name is required");
                 }
             }
-	    /*
-            "/start" => {
-                self.hub_addr.do_send(messages::StartGame {
-                    id: self.id,
-                });
-            }*/
             "/check" => {
                 self.hub_addr.do_send(messages::PlayerActionMessage {
                     id: self.id,

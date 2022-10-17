@@ -63,6 +63,16 @@ pub struct Join {
     pub table_name: String,
 }
 
+/// If you are at a table, leave it.
+/// Any money that you ahve already committed to the pot is lost, and you will fold out
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Leave {
+    /// Client ID
+    pub id: Uuid,
+}
+
+
 /// Session wants to the set the player's name
 #[derive(Message)]
 #[rtype(result = "()")]
