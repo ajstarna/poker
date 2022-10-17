@@ -201,6 +201,8 @@ impl Handler<Join> for GameHub {
             if *old_table_name != table_name {
                 // we already exist at a table, so we must leave that table
                 // we can unwrap since the mappings must always be in sync
+
+		// TODO we cannot actually grab the game anymore
                 let game = self.tables_to_game.get_mut(old_table_name).unwrap();
 
                 game.remove_player(id);

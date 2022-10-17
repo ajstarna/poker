@@ -254,10 +254,16 @@ impl WsGameSession {
                 });
             }
             "/bet" => {
-                self.hub_addr.do_send(messages::PlayerActionMessage {
-                    id: self.id,
-                    player_action: PlayerAction::Call,
-                });
+                if v.len() == 2 {
+                    let amount = v[1].to_owned(); // parse as f64
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+			id: self.id,
+			player_action: PlayerAction::Bet(amount.parse::<f64>().unwrap()),
+                    });
+                    ctx.text(format!("placing bet of: {:?}", v[1]));
+                } else {
+                    ctx.text("!!!You much specify how much to bet!");
+                }		
             }
             _ => ctx.text(format!("!!! unknown command: {message:?}")),
         }

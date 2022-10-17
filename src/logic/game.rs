@@ -56,7 +56,7 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn transition(&mut self) {
+    fn transition(&mut self, player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         match self.street {
             Street::Preflop => {
                 self.street = Street::Flop;
@@ -65,6 +65,9 @@ impl<'a> GameHand<'a> {
                     "\n===========================\nFlop = {:?}\n===========================",
                     self.flop
                 );
+                PlayerConfig::send_group_message(
+                    &format!("\n===========================\nFlop = {:?}\n===========================", self.flop),
+		    player_ids_to_configs);		
             }
             Street::Flop => {
                 self.street = Street::Turn;
@@ -73,6 +76,9 @@ impl<'a> GameHand<'a> {
                     "\n==========================\nTurn = {:?}\n==========================",
                     self.turn
                 );
+                PlayerConfig::send_group_message(
+                    &format!("\n===========================\nTurn = {:?}\n===========================", self.turn),
+		    player_ids_to_configs);				
             }
             Street::Turn => {
                 self.street = Street::River;
@@ -81,12 +87,18 @@ impl<'a> GameHand<'a> {
                     "\n==========================\nRiver = {:?}\n==========================",
                     self.river
                 );
+                PlayerConfig::send_group_message(
+                    &format!("\n===========================\nRiver = {:?}\n===========================", self.river),
+		    player_ids_to_configs);				
             }
             Street::River => {
                 self.street = Street::ShowDown;
                 println!(
                     "\n==========================\nShowDown!\n================================"
                 );
+                PlayerConfig::send_group_message(
+                    &format!("\n===========================\nShowDown!\n==========================="),
+		    player_ids_to_configs);						
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
@@ -303,7 +315,7 @@ impl<'a> GameHand<'a> {
                 break;
             } else {
                 // otherwise we move to the next street
-                self.transition();
+                self.transition(player_ids_to_configs);
             }
         }
         // now we finish up and pay the pot to the winner
@@ -373,6 +385,7 @@ impl<'a> GameHand<'a> {
             // and then from the beginning back to the starting index
             let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
+		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for messages
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
@@ -391,7 +404,11 @@ impl<'a> GameHand<'a> {
 
                     match action {
                         PlayerAction::PostSmallBlind(amount) => {
-                            println!("Player posts small blind of {}", amount);
+                            println!("Player {:?} posts small blind of {}", name, amount);
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} posts small blind of {}", name, amount),
+				player_ids_to_configs);
+			    
                             self.pot += amount;
                             cumulative_bets[i] += amount;
                             player.money -= amount;
@@ -406,6 +423,10 @@ impl<'a> GameHand<'a> {
                         }
                         PlayerAction::PostBigBlind(amount) => {
                             println!("Player posts big blind of {}", amount);
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} posts big blind of {}", name, amount),
+				player_ids_to_configs);
+			    
                             self.pot += amount;
                             cumulative_bets[i] += amount;
                             player.money -= amount;
@@ -420,15 +441,24 @@ impl<'a> GameHand<'a> {
                         }
                         PlayerAction::Fold => {
                             println!("Player {:?} folds!", player.id);
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} folds", name),
+				player_ids_to_configs);			    
                             player.deactivate();
                             self.num_active -= 1;
                         }
                         PlayerAction::Check => {
                             println!("Player checks!");
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} checks", name),
+				player_ids_to_configs);			    
                             num_settled += 1;
                         }
                         PlayerAction::Call => {
                             println!("Player calls!");
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} calls", name),
+				player_ids_to_configs);			    
                             let difference = current_bet - player_cumulative;
                             if difference > player.money {
                                 println!("you have to put in the rest of your chips");
@@ -445,6 +475,9 @@ impl<'a> GameHand<'a> {
                         }
                         PlayerAction::Bet(new_bet) => {
                             println!("Player bets {}!", new_bet);
+			    PlayerConfig::send_group_message(
+				&format!("Player {:?} bets {:?}", name, new_bet),
+				player_ids_to_configs);			    			    
                             let difference = new_bet - player_cumulative;
                             self.pot += difference;
                             player.money -= difference;
@@ -573,6 +606,11 @@ impl<'a> GameHand<'a> {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
+			    PlayerConfig::send_specific_message(			    
+				&"You said fold but we will let you check!".to_owned(),
+				player.id,
+				player_ids_to_configs
+			    );			    
                         }
                         action = Some(PlayerAction::Check);
                     } else {
@@ -601,9 +639,16 @@ impl<'a> GameHand<'a> {
                             println!("should we even be here???!");
                         }
 			// we can let them check
+			PlayerConfig::send_specific_message(
+			    &"There is nothing for you to call!!".to_owned(),
+			    player.id,
+			    player_ids_to_configs
+			);
+			
                         action = Some(PlayerAction::Check);			
-                    }
-                    action = Some(PlayerAction::Call);
+                    } else {
+			action = Some(PlayerAction::Call);
+		    }
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
                     //println!("Player bets {}!", new_bet);
@@ -617,7 +662,7 @@ impl<'a> GameHand<'a> {
 			    &"You can't bet more than you have!!".to_owned(),
 			    player.id,
 			    player_ids_to_configs
-			    );
+			);
                         continue;
                     }
                     if new_bet <= current_bet {
