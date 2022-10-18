@@ -10,7 +10,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{ClientChatMessage, Connect, Disconnect, Join, Leave, ListTables, PlayerName };
+use crate::messages::{MetaAction, Chat, Connect, Disconnect, Join, Leave, ListTables, PlayerName};
 use crate::{
     logic::{Game, PlayerConfig, PlayerAction},
     messages::PlayerActionMessage,
@@ -21,19 +21,16 @@ use uuid::Uuid;
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
 pub struct GameHub {
-    // map from session id to the PlayerConfig for players that have connected but are not yet at a table
+    // map from session id to the PlayerConfig for players that have connected but are not at a table
     main_lobby_connections: HashMap<Uuid, PlayerConfig>,
-
-    // map from table name to a set of session ids
-    //tables_to_session_ids: HashMap<String, HashSet<Uuid>>,
 
     // a map from session id to the table that it currently is in
     players_to_table: HashMap<Uuid, String>,
 
-    tables_to_game: HashMap<String, Game>,
-
     // this is where the hub can add incoming player actions for a running game to grab from
-    tables_to_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,    
+    tables_to_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
+
+    tables_to_meta_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, Vec<MetaAction>>>>>,        
 
     visitor_count: Arc<AtomicUsize>,
 }
@@ -45,8 +42,8 @@ impl GameHub {
             //tables_to_session_ids: HashMap::new(),
             main_lobby_connections: HashMap::new(),
             players_to_table: HashMap::new(),
-            tables_to_game: HashMap::new(),
 	    tables_to_actions: HashMap::new(),
+	    tables_to_meta_actions: HashMap::new(),	    
             visitor_count,
         }
     }
@@ -107,11 +104,11 @@ impl Handler<Disconnect> for GameHub {
     }
 }
 
-/// Handler for ClientChatMessage message.
-impl Handler<ClientChatMessage> for GameHub {
+/// Handler for Chat message.
+impl Handler<Chat> for GameHub {
     type Result = ();
 
-    fn handle(&mut self, msg: ClientChatMessage, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: Chat, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
             if let Some(game) = self.tables_to_game.get_mut(table_name) {
@@ -152,7 +149,7 @@ impl Handler<ListTables> for GameHub {
     fn handle(&mut self, _: ListTables, _: &mut Context<Self>) -> Self::Result {
         let mut tables = Vec::new();
 
-        for key in self.tables_to_game.keys() {
+        for key in self.tables_to_actions.keys() {
             tables.push(key.to_owned())
         }
 
@@ -226,14 +223,18 @@ impl Handler<Join> for GameHub {
         }
 
         game.send_message("Someone connected");
-	let actions = Arc::new(Mutex::new(HashMap::new()));
+	let actions = Arc::new(Mutex::new(HashMap::new()));	
 	let cloned_actions = actions.clone();
+
+	let meta_actions = Arc::new(Mutex::new(Vec::new()));
+	let cloned_meta_actions = meta_actions.clone();
 	//let b: bool = cloned_queue;
 	thread::spawn(move || {
-	    game.play(&cloned_actions);
+	    game.play(&cloned_actions, &cloned_meta_actions);
 	});
 	
         self.tables_to_actions.insert(table_name, actions);
+        self.tables_to_meta_actions.insert(table_name, meta_actions);	
     }
 }
 
@@ -244,9 +245,16 @@ impl Handler<Leave> for GameHub {
     fn handle(&mut self, msg: Leave, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
 	    // tell the table that we want to leave
-	    TODO: do we need a new place to store non-game player commands?
+	    //TODO: do we need a new place to store non-game player commands?
+           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+		println!("handling leave message in the hub!");
+		println!("meta actions = {:?}", meta_actions);
+		meta_actions.lock().unwrap().).or_insert(Vec::new()).push(msg);
+            } else {
+ 	    
 	}
     }
+}
 /// Handler for Message message.
 impl Handler<PlayerActionMessage> for GameHub {
     type Result = ();
@@ -256,10 +264,10 @@ impl Handler<PlayerActionMessage> for GameHub {
     fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game this player's message
-            if let Some(actions_queue) = self.tables_to_actions.get_mut(table_name) {
+            if let Some(actions_map) = self.tables_to_actions.get_mut(table_name) {
 		println!("handling player action in the hub!");
-		println!("actions queue = {:?}", actions_queue);
-		actions_queue.lock().unwrap().insert(msg.id, msg.player_action);
+		println!("actions map = {:?}", actions_map);
+		actions_map.lock().unwrap().insert(msg.id, msg.player_action);
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

@@ -1,14 +1,22 @@
 use crate::logic::player::PlayerAction;
 use actix::prelude::{Message, Recipient};
-/// Game server sends this messages to session
 use uuid::Uuid;
+
+/// Game server sends this messages to session
+
+//    TODO: can this enum represent higher level commands that the ub will relay
+//	to the running games? Player name change. player join/leave
+#[derive(Debug)]
+pub enum MetaAction {
+    Join(Uuid),
+    Leave(Uuid),  // disconnect can also just use leave
+    PlayerName(Uuid, String),
+    Chat(Uuid, String), 
+}
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct WsMessage(pub String);
-
-/// Message for ws communications
-
 /// New ws session is created
 #[derive(Message)]
 #[rtype(result = "Uuid")]
@@ -36,7 +44,7 @@ pub struct StartGame {
 /// Send message to specific table
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct ClientChatMessage {
+pub struct Chat {
     /// Id of the client session
     pub id: Uuid,
     /// Peer message

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
-use crate::messages::WsMessage;
+use crate::messages::MetaAction;
 
 use std::{thread, time};
 
@@ -804,7 +804,11 @@ impl Game {
         game_hand.play(&mut self.players, &self.player_ids_to_configs, incoming_actions);
     }
 
-    pub fn play(&mut self, incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>) {
+    pub fn play(
+	&mut self,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	incoming_meta_actions: &Arc<Mutex<HashMap<Uuid, Vec<MetaAction>>>>,
+    ) {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
@@ -815,7 +819,8 @@ impl Game {
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
             self.play_one_hand(incoming_actions);
             // TODO: do we need to add or remove any players?
-
+	    TODO: this is where we can check the meta actions. they will tell us if a player is joining, leaving, changing name, sending message.
+		Actually. We want messages to be live, so that should happen more often, i.e. inside playone hand?
 
 	    if hand_count > 1 {
 		break; // TODO: remove this break eventually
