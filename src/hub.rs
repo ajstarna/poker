@@ -30,7 +30,7 @@ pub struct GameHub {
     // this is where the hub can add incoming player actions for a running game to grab from
     tables_to_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
 
-    tables_to_meta_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, Vec<MetaAction>>>>>,        
+    tables_to_meta_actions: HashMap<String, Arc<Mutex<Vec<MetaAction>>>>,        
 
     visitor_count: Arc<AtomicUsize>,
 }
@@ -111,11 +111,13 @@ impl Handler<Chat> for GameHub {
     fn handle(&mut self, msg: Chat, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // the player was at a table, so tell the Game to relay the message
-            if let Some(game) = self.tables_to_game.get_mut(table_name) {
-                game.send_message(msg.msg.as_str());
+           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+	       println!("handling chat message in the hub!");
+	       println!("meta actions = {:?}", meta_actions);
+	       meta_actions.lock().unwrap().push(MetaAction::Chat(msg.id, msg.msg));
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_game
+                // have no record of it in tables_to_meta_actions
             }
         }
     }
@@ -168,12 +170,13 @@ impl Handler<PlayerName> for GameHub {
         } else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change
             // the player was at a table, so tell the Game that the player left
-            if let Some(game) = self.tables_to_game.get_mut(&table_name) {
-		//TODO need to communicate to the running game in another thread
-                game.set_player_name(msg.id, &msg.name);
+            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
+		println!("handling chat message in the hub!");
+		println!("meta actions = {:?}", meta_actions);
+		meta_actions.lock().unwrap().push(MetaAction::PlayerName(msg.id, msg.name));	    
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_game
+                // have no record of it in tables_to_meta_actions
             }
         } else {
             // player id not found anywhere. this should never happen
@@ -189,7 +192,7 @@ impl Handler<Join> for GameHub {
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
         let Join { id, table_name } = msg;
 
-        if self.tables_to_game.contains_key(&table_name) {
+        if self.tables_to_actions.contains_key(&table_name) {
             // for now, you cannot actually join (or create) a table that already exists
             return;
         }
@@ -199,11 +202,16 @@ impl Handler<Join> for GameHub {
                 // we already exist at a table, so we must leave that table
                 // we can unwrap since the mappings must always be in sync
 
-		// TODO we cannot actually grab the game anymore
-                let game = self.tables_to_game.get_mut(old_table_name).unwrap();
+		if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
+		    println!("handling chat message in the hub!");
+		    println!("meta actions = {:?}", meta_actions);
+		    TODO we should use a queue instead of a VEC to push the messages
+		    meta_actions.lock().unwrap().push(MetaAction::Leave(msg.id));
+                    game.send_message("Someone disconnected");		    
+		} else {
+		}
 
-                game.remove_player(id);
-                game.send_message("Someone disconnected");
+		
             }
         }
 
@@ -247,14 +255,16 @@ impl Handler<Leave> for GameHub {
 	    // tell the table that we want to leave
 	    //TODO: do we need a new place to store non-game player commands?
            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-		println!("handling leave message in the hub!");
-		println!("meta actions = {:?}", meta_actions);
-		meta_actions.lock().unwrap().).or_insert(Vec::new()).push(msg);
-            } else {
- 	    
+	       println!("handling leave message in the hub!");
+	       println!("meta actions = {:?}", meta_actions);
+	       meta_actions.lock().unwrap().push(MetaAction::Leave(msg.id));
+           } else {
+ 	       // this should not happen since the meta actions vec should be created at the same time as the game
+	   }
 	}
     }
 }
+
 /// Handler for Message message.
 impl Handler<PlayerActionMessage> for GameHub {
     type Result = ();

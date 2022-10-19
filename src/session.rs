@@ -158,7 +158,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                     // send message to game server
                     // note: we used to check if we were at a table here
                     self.hub_addr
-                        .do_send(messages::ClientChatMessage { id: self.id, msg })
+                        .do_send(messages::Chat { id: self.id, msg })
                 }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
