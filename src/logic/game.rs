@@ -1,12 +1,14 @@
 use rand::Rng;
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter;
 use std::sync::{Arc, Mutex};
+use actix::Addr;
 
 use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
-use crate::messages::MetaAction;
+use crate::messages::{MetaAction, Removed};
+use crate::hub::GameHub;
 
 use std::{thread, time};
 
@@ -701,6 +703,7 @@ impl<'a> GameHand<'a> {
 
 #[derive(Debug)]
 pub struct Game {
+    hub_addr: Addr<GameHub>,    
     deck: Deck,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
@@ -710,8 +713,9 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new() -> Self {
+    pub fn new(hub_addr: Addr<GameHub>) -> Self {
         Game {
+	    hub_addr, // needs to be able to communicate back to the hub sometimes
             deck: Deck::new(),
             players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
@@ -771,21 +775,7 @@ impl Game {
             player_config.name = Some(name.to_string());	    
 	}
     }
-    
-    /// find a player with the given id, and set their action to be the given Playeraction
-    //TODO: i think soon i am gouing to need to worry about a mutex or something?
-    //maybe the action shoouldnt live on each player, but instead in a HashMap that the hub can access?
-    //Because atm the Handle<PlayerAction> only happens AFTER game.play() ends
-    pub fn set_player_action(&mut self, id: Uuid, action: PlayerAction) {
-	println!("inside set player action: {:?}, {:?}", id, action);
-	for player in self.players.iter_mut().flatten() {
-	    if player.id == id {
-		player.current_action = Some(action);
-		break;
-	    }
-	}
-    }
-    
+        
     /// send a given message to all the players at the tabel
     pub fn send_message(&self, message: &str) {
         PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
@@ -807,7 +797,7 @@ impl Game {
     pub fn play(
 	&mut self,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<HashMap<Uuid, Vec<MetaAction>>>>,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) {
         let mut hand_count = 0;
         loop {
@@ -819,9 +809,34 @@ impl Game {
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
             self.play_one_hand(incoming_actions);
             // TODO: do we need to add or remove any players?
-	    TODO: this is where we can check the meta actions. they will tell us if a player is joining, leaving, changing name, sending message.
-		Actually. We want messages to be live, so that should happen more often, i.e. inside playone hand?
-
+	    //Actually. We want messages to be live, so that should happen more often, i.e. inside playone hand?
+	    let mut meta_actions = incoming_meta_actions.lock().unwrap();
+	    println!("meta_actions = {:?}", meta_actions);
+	    while !meta_actions.is_empty() {
+		match meta_actions.pop_front().unwrap() {
+		    MetaAction::Chat(id, text) => {
+			// TODO: send the message to all players,
+			// appending by the player name
+		    },
+		    MetaAction::Join(id) => (),
+		    MetaAction::Leave(id) => {
+			for player_spot in self.players.iter_mut() {
+			    if let Some(player) = player_spot {
+				if player.id == id {
+				    *player_spot = None;
+				}
+			    }
+			}
+			// grab the associated config, and send it back to
+			// the game hub
+			let config = self.player_ids_to_configs.remove(&id).unwrap();
+			self.hub_addr.do_send(Removed{config});
+		    },
+		    MetaAction::PlayerName(id, new_name) => {
+		    }
+		}
+		
+	    }
 	    if hand_count > 1 {
 		break; // TODO: remove this break eventually
 	    }

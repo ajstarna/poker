@@ -1,11 +1,11 @@
-use crate::logic::player::PlayerAction;
+use crate::logic::{player::PlayerAction, PlayerConfig};
 use actix::prelude::{Message, Recipient};
 use uuid::Uuid;
 
 /// Game server sends this messages to session
 
-//    TODO: can this enum represent higher level commands that the ub will relay
-//	to the running games? Player name change. player join/leave
+/// this enum represents higher level commands that the hub will relay
+/// to the running games Player name change. player join/leave
 #[derive(Debug)]
 pub enum MetaAction {
     Join(Uuid),
@@ -17,6 +17,7 @@ pub enum MetaAction {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct WsMessage(pub String);
+
 /// New ws session is created
 #[derive(Message)]
 #[rtype(result = "Uuid")]
@@ -78,6 +79,14 @@ pub struct Join {
 pub struct Leave {
     /// Client ID
     pub id: Uuid,
+}
+
+/// the game sends this message to confirm that a player has been removed
+/// It provides the playerconfig so it can be added back to the lobby by the hub
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Removed {
+    pub config: PlayerConfig,
 }
 
 

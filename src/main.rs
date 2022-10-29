@@ -14,7 +14,6 @@ use actix_web::{
     middleware::Logger, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_actors::ws;
-use uuid::Uuid;
 
 mod hub;
 mod messages;
@@ -57,8 +56,6 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("starting HTTP server at http://localhost:8080");
 
-    //play(); // TODO: remove this. for now just getting rid of dead code warnings
-
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))
@@ -73,18 +70,4 @@ async fn main() -> std::io::Result<()> {
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
-}
-
-fn play() {
-    println!("Hello, world!");
-    let mut game = logic::Game::new();
-    let num_bots = 5;
-    for i in 0..num_bots {
-        let name = format!("Mr {}", i);
-        game.add_bot(name);
-    }
-    let player_settings =
-        logic::PlayerConfig::new(Uuid::new_v4(), Some("Adam".to_string()), None);
-    game.add_user(player_settings);
-    //game.play();
 }
