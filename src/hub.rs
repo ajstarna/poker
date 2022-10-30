@@ -3,14 +3,14 @@
 //! When a WsMessage comes in from a WsGameSession, the GameHub routes the message to the proper Game
 
 //! This file is adapted from the actix-web chat websocket example
-
+ 
 use std::{
     thread,
     collections::{HashMap, VecDeque},
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{MetaAction, Chat, Connect, Disconnect, Join, Leave, Removed, ListTables, PlayerName};
+use crate::messages::{WsMessage, MetaAction, Chat, Connect, Disconnect, Join, Leave, Removed, ListTables, PlayerName};
 use crate::{
     logic::{Game, PlayerConfig, PlayerAction},
     messages::PlayerActionMessage,
@@ -87,21 +87,18 @@ impl Handler<Disconnect> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        println!("Someone disconnected");
-
+	println!("handling Disconnect in the hub!");	
         self.main_lobby_connections.remove(&msg.id); // attempt to remove from the main lobby
-
-        if let Some(table_name) = self.players_to_table.remove(&msg.id) {
-            // the player was at a table, so tell the Game that the player left
-            if let Some(actions) = self.tables_to_actions.get_mut(&table_name) {
-		//TODO we actually need to tell the game a plery disconnected
-                //game.remove_player(msg.id);
-                //game.send_message("Someone disconnected");
-            } else {
-                // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_game
-            }
-        }
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
+	    // tell the table that a player is gone
+           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+	       println!("passing leave (due to disconnect) to the game!");
+	       meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
+	       println!("meta actions = {:?}", meta_actions);	       
+           } else {
+ 	       // this should not happen since the meta actions vec should be created at the same time as the game
+	   }
+	}
     }
 }
 
@@ -167,14 +164,14 @@ impl Handler<PlayerName> for GameHub {
     fn handle(&mut self, msg: PlayerName, _: &mut Context<Self>) {
         // if the player is the main lobby, find them and set their name
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
+	    println!("setting player name in the main lobby");
             player_config.name = Some(msg.name);
-        } else if let Some(table_name) = self.players_to_table.remove(&msg.id) {
+        } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change
-            // the player was at a table, so tell the Game that the player left
-            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
-		println!("handling chat message in the hub!");
-		println!("meta actions = {:?}", meta_actions);
-		meta_actions.lock().unwrap().push_back(MetaAction::PlayerName(msg.id, msg.name));	    
+            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+		println!("passing player name to the game");
+		meta_actions.lock().unwrap().push_back(MetaAction::PlayerName(msg.id, msg.name));
+		println!("meta actions = {:?}", meta_actions);		
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_meta_actions
@@ -202,11 +199,10 @@ impl Handler<Join> for GameHub {
             if *old_table_name != table_name {
                 // we already exist at a table, so we must leave that table
                 // we can unwrap since the mappings must always be in sync
-
 		if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
-		    println!("handling chat message in the hub!");
-		    println!("meta actions = {:?}", meta_actions);
+		    println!("passing leave to the existing!");
 		    meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
+		    println!("meta actions = {:?}", meta_actions);		    
 		} else {
 		    // TODO this should never happen
 		}
@@ -251,12 +247,13 @@ impl Handler<Leave> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Leave, _: &mut Context<Self>) {
+	println!("handling leave message in the hub!");	
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
 	    // tell the table that we want to leave
            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-	       println!("handling leave message in the hub!");
-	       println!("meta actions = {:?}", meta_actions);
+	       println!("passing leave to the game!");
 	       meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
+	       println!("meta actions = {:?}", meta_actions);	       
            } else {
  	       // this should not happen since the meta actions vec should be created at the same time as the game
 	   }
@@ -276,6 +273,10 @@ impl Handler<Removed> for GameHub {
 	    println!("removing player {:?} removed from {:?}", msg.config, table_name);
 	}
 	// add the config back into the lobby
+        if let Some(addr) = &msg.config.player_addr {
+            addr.do_send(WsMessage("You have left the game and are back in the lobby".to_owned()));
+        }
+	
 	self.main_lobby_connections.insert(msg.config.id, msg.config);
     }
 }
@@ -291,8 +292,8 @@ impl Handler<PlayerActionMessage> for GameHub {
             // the player was at a table, so tell the Game this player's message
             if let Some(actions_map) = self.tables_to_actions.get_mut(table_name) {
 		println!("handling player action in the hub!");
-		println!("actions map = {:?}", actions_map);
 		actions_map.lock().unwrap().insert(msg.id, msg.player_action);
+		println!("actions map = {:?}", actions_map);		
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_game

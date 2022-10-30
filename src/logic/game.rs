@@ -596,8 +596,8 @@ impl<'a> GameHand<'a> {
 	
         let mut action = None;
         let mut attempts = 0;
-        let retry_duration = time::Duration::from_secs(3); // how long to wait between trying again
-        while attempts < 8 && action.is_none() {
+        let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
+        while attempts < 9 && action.is_none() {
             // not a blind, so get an actual choice
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -609,8 +609,7 @@ impl<'a> GameHand<'a> {
             //println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {
-                    println!("No action is set for the player {:?}", player.id);
-		    // TODO: send a message to the player
+                    // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
                     thread::sleep(retry_duration);
 		}
@@ -693,8 +692,8 @@ impl<'a> GameHand<'a> {
         }
         // if we got a valid action, then we can return it,
         // otherwise, we just return Fold
-        if let Some(final_action) = action {
-            final_action
+        if action.is_some() {
+            action.unwrap()
         } else {
             PlayerAction::Fold
         }
@@ -727,17 +726,17 @@ impl Game {
 
     /// add a given playerconfig to an empty seat
     /// TODO: eventually we wanmt the player to select an open seat I guess
-    pub fn add_user(&mut self, player_config: PlayerConfig) {
-	self.add_player(player_config, true);
+    pub fn add_user(&mut self, player_config: PlayerConfig) -> bool {
+	self.add_player(player_config, true)
     }
 
-    pub fn add_bot(&mut self, name: String) {
+    pub fn add_bot(&mut self, name: String) -> bool {
 	let new_bot = Player::new_bot();
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-	self.add_player(new_config, false);
+	self.add_player(new_config, false)
     }
     
-    fn add_player(&mut self, player_config: PlayerConfig, human_controlled: bool) {
+    fn add_player(&mut self, player_config: PlayerConfig, human_controlled: bool) -> bool{
 	let mut added = false;
 	for player_spot in self.players.iter_mut() {
 	    if player_spot.is_none() {
@@ -747,13 +746,7 @@ impl Game {
 		break;
 	    }
 	}
-	if added {
-	    // TODO: send a message to the player and the table
-	} else {
-	    // we were unable to add a player
-	    // or should we just keep count of the number of players at any moment?
-	}
-
+	added
     }
     
     /// remove the player from the vec of players with the given id
@@ -802,23 +795,49 @@ impl Game {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
+	    if hand_count > 3 {
+		break; // TODO: remove this break eventually
+	    }
+	    
             println!(
                 "\n\n\n=================================================\n\nplaying hand {}",
                 hand_count
             );
+	    PlayerConfig::send_group_message(&format!("================playing hand {}", hand_count ),
+					     &self.player_ids_to_configs);			
+	    
+	    
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
             self.play_one_hand(incoming_actions);
-            // TODO: do we need to add or remove any players?
-	    //Actually. We want messages to be live, so that should happen more often, i.e. inside playone hand?
+	    //Actually. We want messages to be live, so that should happen more often, i.e. inside play one hand?
 	    let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	    println!("meta_actions = {:?}", meta_actions);
 	    while !meta_actions.is_empty() {
 		match meta_actions.pop_front().unwrap() {
 		    MetaAction::Chat(id, text) => {
-			// TODO: send the message to all players,
-			// appending by the player name
+			// send the message to all players,
+			// appended by the player name
+			// TODO we want chat to happen more in real-time, not between hands
+			let name = &self.player_ids_to_configs.get(&id).unwrap().name;
+			PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
+							 &self.player_ids_to_configs);			
+			
 		    },
-		    MetaAction::Join(id) => (),
+		    MetaAction::Join(player_config) => {
+			// add a new player to the game
+			let id = player_config.id; // copy the id so we can use to send a message later
+			let added = self.add_user(player_config);
+			if !added {
+			    // we were unable to add the player
+			    PlayerConfig::send_specific_message(
+				&"Unable to join game, it must be full!".to_owned(),
+				id,
+				&self.player_ids_to_configs,
+			    );
+			    
+			    
+			}
+		    },
 		    MetaAction::Leave(id) => {
 			for player_spot in self.players.iter_mut() {
 			    if let Some(player) = player_spot {
@@ -830,15 +849,15 @@ impl Game {
 			// grab the associated config, and send it back to
 			// the game hub
 			let config = self.player_ids_to_configs.remove(&id).unwrap();
+			PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
+							 &self.player_ids_to_configs);			
 			self.hub_addr.do_send(Removed{config});
 		    },
 		    MetaAction::PlayerName(id, new_name) => {
+			self.set_player_name(id, &new_name);
 		    }
 		}
 		
-	    }
-	    if hand_count > 1 {
-		break; // TODO: remove this break eventually
 	    }
             let mut loop_count = 0;
             'find_button: loop {

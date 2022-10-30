@@ -8,7 +8,7 @@ use uuid::Uuid;
 /// to the running games Player name change. player join/leave
 #[derive(Debug)]
 pub enum MetaAction {
-    Join(Uuid),
+    Join(PlayerConfig),
     Leave(Uuid),  // disconnect can also just use leave
     PlayerName(Uuid, String),
     Chat(Uuid, String), 
