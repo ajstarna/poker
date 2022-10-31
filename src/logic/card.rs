@@ -132,6 +132,7 @@ impl HandResult {
             | HandRanking::RoyalFlush => {
                 // These handrankings are all uniquely identified by a single constituent card
                 // first add the rank of the constituent
+		// TODO: there is a bug in Flushes! it is not simply the highest card!
                 let mut extra = constituent_cards.last().unwrap().rank as u32;
                 extra <<= 16;
                 value += extra;

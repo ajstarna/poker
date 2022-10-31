@@ -146,7 +146,9 @@ impl<'a> GameHand<'a> {
         self.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self, players: &mut [Option<Player>]) {
+    fn finish(&mut self, players: &mut [Option<Player>],
+	      player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+    ) {
         let mut best_indices = HashSet::<usize>::new();
         let hand_results = players
             .iter()
@@ -213,6 +215,11 @@ impl<'a> GameHand<'a> {
                     "paying out: {:?} \n  with hand result = {:?}",
                     winning_player, hand_results[idx]
 		);
+		PlayerConfig::send_group_message(
+		    &format!("paying out: {:?} \n  with hand result = {:?}",
+			     winning_player, hand_results[idx]),
+		    &player_ids_to_configs);			
+		
 		winning_player.pay(payout);
 		println!("after payment: {:?}", winning_player);
 	    }
@@ -297,6 +304,16 @@ impl<'a> GameHand<'a> {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	// how many active to start the hand
 	// note: we flatten so that we don't consider None values (empty seats)
+	for player in players.iter_mut().flatten() {
+	    if player.is_sitting_out {
+		player.is_active = false;		
+	    } else {
+		player.is_active = true;				
+	    }
+
+	}
+	// should num_active just be all the players? I have is_sitting_out? hmm
+	// cuz right now when we fold, we deactivate
         self.num_active = players.iter().flatten().filter(|player| player.is_active).count(); 
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
@@ -315,7 +332,7 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            self.play_street(players, player_ids_to_configs, &incoming_actions);
+            self.play_street(players, player_ids_to_configs, &incomisng_actions);
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -327,7 +344,7 @@ impl<'a> GameHand<'a> {
             }
         }
         // now we finish up and pay the pot to the winner
-        self.finish(players);
+        self.finish(players, player_ids_to_configs);
     }
 
     fn get_starting_idx(&self, players: &mut [Option<Player>]) -> usize {
@@ -529,7 +546,7 @@ impl<'a> GameHand<'a> {
     {
         if player.human_controlled {
 	    let mut actions = incoming_actions.lock().unwrap();	    
-	    println!("incoming_actions = {:?}", actions);	    
+	    //println!("incoming_actions = {:?}", actions);	    
             if let Some(action) = actions.get_mut(&player.id) {
                 println!(
                     "Player: {:?} has action {:?}",
@@ -589,7 +606,7 @@ impl<'a> GameHand<'a> {
             );
         }
 	PlayerConfig::send_specific_message(
-	    &"Please enter your action!".to_owned(),
+	    &format!("Please enter your action: {:?}", player),
 	    player.id,
 	    player_ids_to_configs
 	);
@@ -597,7 +614,7 @@ impl<'a> GameHand<'a> {
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
-        while attempts < 9 && action.is_none() {
+        while attempts < 10000 && action.is_none() {
             // not a blind, so get an actual choice
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -795,10 +812,6 @@ impl Game {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
-	    if hand_count > 3 {
-		break; // TODO: remove this break eventually
-	    }
-	    
             println!(
                 "\n\n\n=================================================\n\nplaying hand {}",
                 hand_count
@@ -867,6 +880,8 @@ impl Game {
                     break 'find_button;
                 }
                 self.button_idx += 1; // and modulo length
+		// TODO there is a bug here. should not use players.len()
+		// should look at the number of active?, or we should do this at the START of the next one?
                 if self.button_idx as usize >= self.players.len() {
                     self.button_idx = 0;
                 }

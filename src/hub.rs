@@ -190,11 +190,6 @@ impl Handler<Join> for GameHub {
     fn handle(&mut self, msg: Join, ctx: &mut Context<Self>) {
         let Join { id, table_name } = msg;
 
-        if self.tables_to_actions.contains_key(&table_name) {
-            // for now, you cannot actually join (or create) a table that already exists
-            return;
-        }
-
         if let Some(old_table_name) = self.players_to_table.get(&id) {
             if *old_table_name != table_name {
                 // we already exist at a table, so we must leave that table
@@ -210,36 +205,44 @@ impl Handler<Join> for GameHub {
 		
             }
         }
-
         // unwrap since how can they join a table if they were not in the lobby already?
         let player_config = self.main_lobby_connections.remove(&id).unwrap();
-
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());
 
-        let mut game = Game::new(ctx.address());
-        game.add_user(player_config);
 
-        let num_bots = 2;
-        for i in 0..num_bots {
-            let name = format!("Mr {}", i);
-            game.add_bot(name);
-        }
-
-        game.send_message("Someone connected");
-	let actions = Arc::new(Mutex::new(HashMap::new()));	
-	let cloned_actions = actions.clone();
-
-	let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-	let cloned_meta_actions = meta_actions.clone();
-	//let b: bool = cloned_queue;
-	thread::spawn(move || {
-	    game.play(&cloned_actions, &cloned_meta_actions);
-	});
-	
-        self.tables_to_actions.insert(table_name.clone(), actions);
-        self.tables_to_meta_actions.insert(table_name, meta_actions);	
-    }
+        if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
+	    // since the meta actions already exist, this means the game already exists
+	    // so we can simply join it
+	    println!("joining existing game!");
+	    meta_actions.lock().unwrap().push_back(MetaAction::Join(player_config));
+	    println!("meta actions = {:?}", meta_actions);
+        } else {
+	    // we need to create the game for the first time
+            let mut game = Game::new(ctx.address());
+            game.add_user(player_config);
+	    
+            let num_bots = 2;
+            for i in 0..num_bots {
+		let name = format!("Mr {}", i);
+		game.add_bot(name);
+            }
+	    
+            game.send_message("Someone connected");
+	    let actions = Arc::new(Mutex::new(HashMap::new()));	
+	    let cloned_actions = actions.clone();
+	    
+	    let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+	    let cloned_meta_actions = meta_actions.clone();
+	    //let b: bool = cloned_queue;
+	    thread::spawn(move || {
+		game.play(&cloned_actions, &cloned_meta_actions);
+	    });
+	    
+            self.tables_to_actions.insert(table_name.clone(), actions);
+            self.tables_to_meta_actions.insert(table_name, meta_actions);	
+	}
+    }    
 }
 
 /// Handler for leaving a table (if we are even at one)
