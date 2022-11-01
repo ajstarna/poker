@@ -122,59 +122,30 @@ impl HandResult {
     ) -> u32 {
         let mut value = hand_ranking as u32;
         value <<= 20; // shift it into the most significant area we need
-        match hand_ranking {
-            HandRanking::HighCard
-            | HandRanking::Pair
-            | HandRanking::ThreeOfAKind
-            | HandRanking::Straight
-            | HandRanking::Flush
-            | HandRanking::FourOfAKind
-            | HandRanking::StraightFlush
-            | HandRanking::RoyalFlush => {
-                // These handrankings are all uniquely identified by a single constituent card
-                // first add the rank of the constituent
-		// TODO: there is a bug in Flushes! it is not simply the highest card!
-                let mut extra = constituent_cards.last().unwrap().rank as u32;
-                extra <<= 16;
-                value += extra;
-            }
-            HandRanking::TwoPair => {
-                // a two pair is valued by its higher pair, then lower pair
-                let mut extra = constituent_cards.last().unwrap().rank as u32;
-                extra <<= 16;
-                value += extra;
 
-                // the lower pair is sorted to the front
-                extra = constituent_cards[0].rank as u32;
-                extra <<= 12;
-                value += extra;
-            }
-            HandRanking::FullHouse => {
-                // a full house is valued first by the three of a kind, then the pair
-                // the three of a kind will always exist as the middle element, regardless of the sort order
-                let mut extra = constituent_cards[2].rank as u32;
-                extra <<= 16;
-                value += extra;
 
-                // the pair will be either at the beginning or the end of the constituent_cards, we need to check.
-                // this depends on the sort.
-                // e.g. could be [ 2, 2, 2, 6, 6 ], OR [ 2, 2, 6, 6, 6 ]
-                let mut second_extra = constituent_cards[0].rank as u32;
-                if second_extra == extra {
-                    // the first card was the same as the middle card, i.e. we grabbed another card in the three of a kind.
-                    // So grab the last card in the list, which will necessarily be part of the pair
-                    second_extra = constituent_cards.last().unwrap().rank as u32;
-                }
-                second_extra <<= 12;
-                value += second_extra;
-            }
+	// add the values of the constituent cards
+        let mut shift_amount = 16;
+        for card in kickers.iter().reverse() {
+	    // the highest cards are shifted all the way to the left
+            let mut extra = card.rank as u32;
+            extra <<= shift_amount;
+            value += extra;
+            shift_amount -= 4;
         }
+	
+        let mut extra = constituent_cards.last().unwrap().rank as u32;
+        extra <<= 16;
+        value += extra;
+	
+        // the lower pair is sorted to the front
+        extra = constituent_cards[0].rank as u32;
+        extra <<= 12;
+        value += extra;
 
         // next add the value of the kicker(s), in order
         // Note: for rankings without kickers, this loop simply won't happen
         let mut shift_amount = 0;
-        // TODO: double check this logic. originally shift_amount started at 12. but that wont work for 2 pair in particular, since
-        // the second pair is being shifted 12. so if we start at 0 and go UP, i think we are good right?
         for kicker in kickers {
             let mut extra = kicker.rank as u32;
             extra <<= shift_amount;
