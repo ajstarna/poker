@@ -15,7 +15,7 @@ enum Rank {
     Five = 5,
     Six = 6,
     Seven = 7,
-    Eeight = 8,
+    Eight = 8,
     Nine = 9,
     Ten = 10,
     Jack = 11,
