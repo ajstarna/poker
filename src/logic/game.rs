@@ -210,14 +210,14 @@ impl<'a> GameHand<'a> {
         for idx in best_indices {
             let winning_spot = &mut players[idx];
 	    if let Some(ref mut winning_player) = winning_spot {
-		//let b: bool = winning_player;
+		let name = &player_ids_to_configs.get(&winning_player.id).unwrap().name; // get the name for message
 		println!(
                     "paying out: {:?} \n  with hand result = {:?}",
-                    winning_player, hand_results[idx]
+                    name, hand_results[idx]
 		);
 		PlayerConfig::send_group_message(
-		    &format!("paying out: {:?} \n  with hand result = {:?}",
-			     winning_player, hand_results[idx]),
+		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
+			     payout, name, hand_results[idx]),
 		    &player_ids_to_configs);			
 		
 		winning_player.pay(payout);
@@ -561,13 +561,13 @@ impl<'a> GameHand<'a> {
             let num = rand::thread_rng().gen_range(0..100);
             match num {
                 0..=20 => Some(PlayerAction::Fold),
-                21..=50 => Some(PlayerAction::Check),
-                51..=70 => {
+                21..=55 => Some(PlayerAction::Check),
+                56..=70 => {
                     let amount: u32 = if player.money <= 100 {
                         // just go all in if we are at 10% starting
                         player.money
                     } else {
-                        rand::thread_rng().gen_range(1..player.money as u32)
+                        rand::thread_rng().gen_range(1..player.money/2 as u32)
                     };
                     Some(PlayerAction::Bet(amount))
                 }

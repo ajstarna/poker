@@ -59,7 +59,6 @@ pub struct Player {
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     pub money: u32,
     pub human_controlled: bool, // do we need user input or let the computer control it
-    pub current_action: Option<PlayerAction>, // this action is set by the connection
 }
 
 impl Player {
@@ -71,7 +70,6 @@ impl Player {
             is_sitting_out: false,
             money: 1000, // let them start with 1000 for now,
             human_controlled,
-            current_action: None,
         }
     }
 
