@@ -9,19 +9,19 @@ The is a websocket-based server and client implemented.
 
 to run the server locally, use cargo run --bin server, and in a separate tab, use cargo run --bin client.
 
-#Lobby commands are:
-'''
+**Lobby commands are:**
+```
 /name X [change your name]
 /join X [join (and create if need be) table X]
-'''
+```
 
 Once you create a table, currently two bots will be added, and it will start playing hands indefinitely.
 
-#In-game commands are:
-'''
+**In-game commands are:**
+```
 /check
 /call
 /fold
 /bet X
 /leave [brings you back to the lobby (where you can join a new table)
-'''
+```
