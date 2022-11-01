@@ -1,13 +1,11 @@
 # poker
-implimenting poker to practice my Rust.
+a playable poker implementation in Rust.
 
-currently the game logic is "complete", and there is a super dumb (random) AI to play against in the terminal.
+currently the game logic is complete, and there is a super dumb (random) AI to play against in the terminal.
 
-It could definitely use an improvement to the UI, and possibly even a GUI if I wanted to go that far. But the main objective is complete.
+The is a websocket-based server and client implemented using the actix framework.
 
-The is a websocket-based server and client implemented.
-
-to run the server locally, use cargo run --bin server, and in a separate tab, use cargo run --bin client.
+to run the server locally, use ```cargo run --bin server```, and in a separate tab, use ```cargo run --bin client``` to connect.
 
 **Lobby commands are:**
 ```
