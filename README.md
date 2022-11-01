@@ -5,7 +5,7 @@ currently the game logic is complete, and there is a super dumb (random) AI to p
 
 The is a websocket-based server and client implemented using the actix framework.
 
-to run the server locally, use ```cargo run --bin server```, and in a separate tab, use ```cargo run --bin client``` to connect.
+to run the server locally, use ```cargo run --bin server```, and in a separate tab, use ```cargo run --bin client``` to connect. You can also connect to the server using your own client or postman, etc. To play with a friend remotely, you will need to set up port forwarding rules on your router and change the hard coded local host in the server code.
 
 **Lobby commands are:**
 ```
