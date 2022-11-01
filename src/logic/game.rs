@@ -7,7 +7,7 @@ use actix::Addr;
 
 use super::card::{Card, Deck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
-use crate::messages::{MetaAction, Removed};
+use crate::messages::{MetaAction, Removed, WsMessage};
 use crate::hub::GameHub;
 
 use std::{thread, time};
@@ -28,10 +28,10 @@ struct GameHand<'a> {
     deck: &'a mut Deck,
     num_active: usize,
     button_idx: usize, // the button index dictates where the action starts
-    small_blind: f64,
-    big_blind: f64,
+    small_blind: u32,
+    big_blind: u32,
     street: Street,
-    pot: f64, // current size of the pot
+    pot: u32, // current size of the pot
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -41,8 +41,8 @@ impl<'a> GameHand<'a> {
     fn new(
         deck: &'a mut Deck,
         button_idx: usize,
-        small_blind: f64,
-        big_blind: f64,
+        small_blind: u32,
+        big_blind: u32,
     ) -> Self {
         GameHand {
             deck,
@@ -51,7 +51,7 @@ impl<'a> GameHand<'a> {
             small_blind,
             big_blind,
             street: Street::Preflop,
-            pot: 0.0,
+            pot: 0,
             flop: None,
             turn: None,
             river: None,
@@ -205,7 +205,7 @@ impl<'a> GameHand<'a> {
         // TODO: if a player was all_in (i.e. money left is 0?) then we need to figure out
         // how much of the pot they actually get to win if multiple other players made it to showdown
         let num_winners = best_indices.len();
-        let payout = self.pot as f64 / num_winners as f64;
+        let payout = (self.pot as f64 / num_winners as f64) as u32;
 
         for idx in best_indices {
             let winning_spot = &mut players[idx];
@@ -230,16 +230,12 @@ impl<'a> GameHand<'a> {
             // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
             if !player.is_sitting_out {
-                if player.money == 0.0 {
+                if player.money == 0 {
                     println!(
                         "Player {:?} is out of money so is no longer playing in the game!",
                         player.id
                     );
-                    player.is_active = false;
                     player.is_sitting_out = true;
-                } else {
-                    // they will be active in the next hand
-                    player.is_active = true;
                 }
             }
         }
@@ -304,8 +300,10 @@ impl<'a> GameHand<'a> {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	// how many active to start the hand
 	// note: we flatten so that we don't consider None values (empty seats)
+	self.num_active = 0;
 	for player in players.iter_mut().flatten() {
-	    if player.is_sitting_out {
+	    if player.is_sitting_out || player.money == 0 {
+		// if a player has no money they should be sitting out, but to be safe check both
 		player.is_active = false;		
 	    } else {
 		player.is_active = true;				
@@ -314,7 +312,11 @@ impl<'a> GameHand<'a> {
 	}
 	// should num_active just be all the players? I have is_sitting_out? hmm
 	// cuz right now when we fold, we deactivate
-        self.num_active = players.iter().flatten().filter(|player| player.is_active).count(); 
+        self.num_active = players
+	    .iter()
+	    .flatten()
+	    .filter(|player| {!player.is_sitting_out && player.money > 0})
+	    .count(); 
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
             self.button_idx
@@ -332,7 +334,7 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            self.play_street(players, player_ids_to_configs, &incomisng_actions);
+            self.play_street(players, player_ids_to_configs, &incoming_actions);
             if self.num_active == 1 {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -364,23 +366,27 @@ impl<'a> GameHand<'a> {
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
     ) {
-        let mut current_bet: f64 = 0.0;
+        let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
-        let mut cumulative_bets = vec![0.0; players.len()];
+        let mut cumulative_bets = vec![0; players.len()];
 
         let starting_idx = self.get_starting_idx(players); // which player starts the betting
                                                     // keeps track of how many players have either checked through or called
                                                     // the last bet (or made the last bet)
 
         // if a player is still active but has no remaining money (i.e. is all-in),
-        // then they are settled and ready to go to the end
         let mut num_all_in = players
             .iter()
             .flatten() // skip over None values
             .filter(|player| player.is_all_in())
             .count();
-        let mut num_settled = num_all_in;
 
+	// once every player is either all-in or settled, then we move to the next street	
+        let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
+
+
+
+	
         println!("Current pot = {}", self.pot);
         PlayerConfig::send_group_message(&format!("Current pot = {}", self.pot), player_ids_to_configs);
 
@@ -418,7 +424,7 @@ impl<'a> GameHand<'a> {
 			 player_cumulative);
 
                 println!("Player = {:?}, i = {}", player.id, i);
-                if player.is_active && player.money > 0.0 {
+                if player.is_active && player.money > 0 {
                     let action = self.get_and_validate_action(
                         player,
                         current_bet,
@@ -441,10 +447,7 @@ impl<'a> GameHand<'a> {
                             current_bet = self.small_blind;
                             if player.is_all_in() {
                                 num_all_in += 1;
-                                num_settled = num_all_in;
-                            } else {
-                                num_settled = num_all_in + 1;
-                            }
+			    }
                         }
                         PlayerAction::PostBigBlind(amount) => {
                             println!("Player posts big blind of {}", amount);
@@ -459,10 +462,7 @@ impl<'a> GameHand<'a> {
                             current_bet = self.big_blind;
                             if player.is_all_in() {
                                 num_all_in += 1;
-                                num_settled = num_all_in;
-                            } else {
-                                num_settled = num_all_in + 1;
-                            }
+			    }
                         }
                         PlayerAction::Fold => {
                             println!("Player {:?} folds!", player.id);
@@ -489,7 +489,7 @@ impl<'a> GameHand<'a> {
                                 println!("you have to put in the rest of your chips");
                                 self.pot += player.money;
                                 cumulative_bets[i] += player.money;
-                                player.money = 0.0;
+                                player.money = 0;
                                 num_all_in += 1;
                             } else {
                                 self.pot += difference;
@@ -511,11 +511,10 @@ impl<'a> GameHand<'a> {
                             if player.is_all_in() {
                                 println!("Just bet the rest of our money!");
                                 num_all_in += 1;
-                                num_settled = num_all_in;
-                            } else {
-                                // since we just bet more, we are the only settled player (aside from the all-ins)
-                                num_settled = num_all_in + 1;
-                            }
+				num_settled = 0;
+			    } else {
+				num_settled = 1;
+			    }
                         }
                     }
                 }
@@ -525,7 +524,7 @@ impl<'a> GameHand<'a> {
                     println!("Only one active player left so lets break the steet loop");
                     break 'street;
                 }
-                if num_settled == self.num_active {
+                if num_settled + num_all_in == self.num_active {
                     // every active player is ready to move onto the next street
                     println!(
                         "everyone is ready to go to the next street! num_settled = {}",
@@ -562,13 +561,13 @@ impl<'a> GameHand<'a> {
             let num = rand::thread_rng().gen_range(0..100);
             match num {
                 0..=20 => Some(PlayerAction::Fold),
-                21..=55 => Some(PlayerAction::Check),
-                56..=70 => {
-                    let amount: f64 = if player.money <= 100.0 {
+                21..=50 => Some(PlayerAction::Check),
+                51..=70 => {
+                    let amount: u32 = if player.money <= 100 {
                         // just go all in if we are at 10% starting
-                        player.money as f64
+                        player.money
                     } else {
-                        rand::thread_rng().gen_range(1..player.money as u32) as f64
+                        rand::thread_rng().gen_range(1..player.money as u32)
                     };
                     Some(PlayerAction::Bet(amount))
                 }
@@ -580,8 +579,8 @@ impl<'a> GameHand<'a> {
     fn get_and_validate_action(
 	&self, 
         player: &mut Player,
-        current_bet: f64,
-        player_cumulative: f64,
+        current_bet: u32,
+        player_cumulative: u32,
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
     ) -> PlayerAction {
@@ -593,16 +592,16 @@ impl<'a> GameHand<'a> {
         let pause_duration = time::Duration::from_secs(1); 	
         thread::sleep(pause_duration);
 	
-        if self.street == Street::Preflop && current_bet == 0.0 {
+        if self.street == Street::Preflop && current_bet == 0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(
-                self.small_blind as u32,
-                player.money as u32,
-            ) as f64);
+                self.small_blind,
+                player.money,
+            ));
         } else if self.street == Street::Preflop && current_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(
-                cmp::min(self.big_blind as u32, player.money as u32) as f64,
+                cmp::min(self.big_blind, player.money),
             );
         }
 	PlayerConfig::send_specific_message(
@@ -664,7 +663,7 @@ impl<'a> GameHand<'a> {
                 }
                 Some(PlayerAction::Call) => {
                     if current_bet <= player_cumulative {
-                        if current_bet != 0.0 {
+                        if current_bet != 0 {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
@@ -724,8 +723,8 @@ pub struct Game {
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
     button_idx: usize, // index of the player with the button
-    small_blind: f64,
-    big_blind: f64,
+    small_blind: u32,
+    big_blind: u32,
 }
 
 impl Game {
@@ -735,8 +734,8 @@ impl Game {
             deck: Deck::new(),
             players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
-            small_blind: 4.0,
-            big_blind: 8.0,
+            small_blind: 4,
+            big_blind: 8,
             button_idx: 0,
         }
     }
@@ -782,7 +781,12 @@ impl Game {
     /// find a player with the given id, and set their name to be the given name
     pub fn set_player_name(&mut self, id: Uuid, name: &str) {
 	if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
-            player_config.name = Some(name.to_string());	    
+            player_config.name = Some(name.to_string());
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("You are changing your name to {:?}", name))
+		);	    
+	    
 	}
     }
         
@@ -904,6 +908,7 @@ impl Game {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::PlayerConfig;
@@ -941,5 +946,4 @@ mod tests {
         assert!(game.players.is_empty());
     }
 }
-
-
+*/

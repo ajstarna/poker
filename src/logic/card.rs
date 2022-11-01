@@ -81,7 +81,8 @@ enum HandRanking {
 /// hand_ranking: HandRanking::ThreeOfAKind,
 /// contsituent_cards: [Q, Q, Q],
 /// kickers: [9, 4]
-/// value = [3] | [12] | [12] | [12] | [9] | [4] == [0000] | [0000] | [0011] | [1100] | [1100] | [1100] | [1001] | [0100]
+/// value = [3] | [12] | [12] | [12] | [9] | [4]
+///        == [0000] | [0000] | [0011] | [1100] | [1100] | [1100] | [1001] | [0100]
 /// Note: value has eight leading 0s since we only need 24 bits to represent it.
 /// }
 #[derive(Debug, Eq)]
@@ -120,7 +121,7 @@ impl HandResult {
         kickers: &[Card],
     ) -> u32 {
         let mut value = hand_ranking as u32;
-        value <<= 20; // shift it into the most sifnificant area we need
+        value <<= 20; // shift it into the most significant area we need
         match hand_ranking {
             HandRanking::HighCard
             | HandRanking::Pair
@@ -345,4 +346,155 @@ impl Deck {
             Some(card)
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+     use super::*;
+
+    #[test]
+    fn compare_high_card_and_pair() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Four, suit: Suit::Spade},
+	    Card{rank: Rank::Five, suit: Suit::Heart},
+	    Card{rank: Rank::Nine, suit: Suit::Heart},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::HighCard);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Club},
+	    Card{rank: Rank::Three, suit: Suit::Spade},
+	    Card{rank: Rank::Seven, suit: Suit::Heart},
+	    Card{rank: Rank::Nine, suit: Suit::Spade},	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::Pair);
+        assert_eq!(
+	    result2.constituent_cards,
+	    vec![
+	    	Card{rank: Rank::Two, suit: Suit::Spade},
+		Card{rank: Rank::Two, suit: Suit::Club},
+	    ]
+	);
+
+	assert!(result1 < result2);
+    }
+
+/*
+    HighCard = 1,
+    Pair = 2,
+    TwoPair = 3,
+    ThreeOfAKind = 4,
+    Straight = 5,
+    Flush = 6,
+    FullHouse = 7,
+    FourOfAKind = 8,
+    StraightFlush = 9,
+    RoyalFlush = 10,
+*/
+    
+    #[test]
+    fn compare_two_pair_and_three() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Diamond},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::TwoPair);
+        assert_eq!(
+	    result1.constituent_cards,
+	    vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Diamond},		
+	    ]
+	);
+
+        let hand2 = vec![
+	    Card{rank: Rank::King, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Heart},
+	    Card{rank: Rank::King, suit: Suit::Diamond},
+	    Card{rank: Rank::Five, suit: Suit::Diamond},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
+	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::ThreeOfAKind);
+        assert_eq!(
+	    result2.constituent_cards,
+	    vec![
+	    Card{rank: Rank::King, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Heart},
+	    Card{rank: Rank::King, suit: Suit::Diamond},		
+	    ]
+	);
+
+	assert!(result1 < result2);
+    }
+    
+    #[test]
+    fn compare_straights() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Three, suit: Suit::Heart},
+	    Card{rank: Rank::Four, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Diamond},
+	    Card{rank: Rank::Six, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::Straight);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Nine, suit: Suit::Spade},
+	    Card{rank: Rank::Ten, suit: Suit::Heart},
+	    Card{rank: Rank::Jack, suit: Suit::Diamond},
+	    Card{rank: Rank::Queen, suit: Suit::Diamond},
+	    Card{rank: Rank::King, suit: Suit::Spade},	    
+	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::Straight);
+	assert!(result1 < result2);
+    }
+
+    /// these flushes have some cards in common (as will happen in a real game)
+    #[test]
+    fn compare_flushes() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Seven, suit: Suit::Spade},
+	    Card{rank: Rank::Eight, suit: Suit::Spade},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::Flush);
+
+	dbg!(&result1);
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Five, suit: Suit::Spade}, // the 5 is less than the 7
+	    Card{rank: Rank::Eight, suit: Suit::Spade},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Spade},	    	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+	dbg!(&result2);		
+        assert_eq!(result2.hand_ranking, HandRanking::Flush);
+	assert!(result1 > result2);
+    }
+    
+    
 }

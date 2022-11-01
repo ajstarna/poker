@@ -165,6 +165,10 @@ impl Handler<PlayerName> for GameHub {
         // if the player is the main lobby, find them and set their name
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
 	    println!("setting player name in the main lobby");
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("You are changing your name to {:?}", msg.name))
+		);	    
             player_config.name = Some(msg.name);
         } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change

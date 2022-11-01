@@ -6,11 +6,11 @@ use std::collections::HashMap;
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
-    PostSmallBlind(f64),
-    PostBigBlind(f64),
+    PostSmallBlind(u32),
+    PostBigBlind(u32),
     Fold,
     Check,
-    Bet(f64),
+    Bet(u32),
     Call,
     //Raise(u32), // i guess a raise is just a bet really?
 }
@@ -57,7 +57,7 @@ pub struct Player {
     pub hole_cards: Vec<Card>,
     pub is_active: bool,      // is still playing the current hand
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
-    pub money: f64,
+    pub money: u32,
     pub human_controlled: bool, // do we need user input or let the computer control it
     pub current_action: Option<PlayerAction>, // this action is set by the connection
 }
@@ -69,7 +69,7 @@ impl Player {
             hole_cards: Vec::<Card>::with_capacity(2),
             is_active: true,
             is_sitting_out: false,
-            money: 1000.0, // let them start with 1000 for now,
+            money: 1000, // let them start with 1000 for now,
             human_controlled,
             current_action: None,
         }
@@ -81,7 +81,7 @@ impl Player {
         Self::new(bot_id, false)
     }
 
-    pub fn pay(&mut self, payment: f64) {
+    pub fn pay(&mut self, payment: u32) {
         self.money += payment;
     }
 
@@ -92,6 +92,6 @@ impl Player {
     /// If the player has put all their money in, but has not folded (is_active),
     /// then they are all-in
     pub fn is_all_in(&self) -> bool {
-        self.is_active && self.money == 0.0
+        self.is_active && self.money == 0
     }
 }
