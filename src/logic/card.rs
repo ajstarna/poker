@@ -115,6 +115,7 @@ impl PartialEq for HandResult {
 impl HandResult {
     /// Given a hand ranking, along with the constituent cards and the kickers, this function returns a numerical score
     /// that determines the hand's value compared to any other hand
+    /// note that the cards have been pre-sorted by analyze_hand, and hence this shouldn't be called otherwise
     fn score_hand(
         hand_ranking: HandRanking,
         constituent_cards: &Vec<Card>,
@@ -123,34 +124,28 @@ impl HandResult {
         let mut value = hand_ranking as u32;
         value <<= 20; // shift it into the most significant area we need
 
-
-	// add the values of the constituent cards
+	// add the values of the constituent cards and then kickers
+	// note that this is only a tie breaker when the handranking is the same for both hands
+	// e.g. a pair of Kings will lead to higher "extra" bit value than a two-pair of 5s and 6s,
+	// but the original significant bits will be higher for the two-pair
+	
+	// The constituent cards have more significant value than the kickers,
+	// e.g. a pair of Queens with a highest card of 6 in its kickers will get a higher score
+	// than a pair of 10s with a highest card of King in its kickers (because the King doesn't get added
+	// until we are dealing with the kicker bits, and the Queens get a higher score than the 10s)
         let mut shift_amount = 16;
-        for card in kickers.iter().reverse() {
+        for card in constituent_cards.iter().rev() {
 	    // the highest cards are shifted all the way to the left
             let mut extra = card.rank as u32;
             extra <<= shift_amount;
             value += extra;
             shift_amount -= 4;
-        }
-	
-        let mut extra = constituent_cards.last().unwrap().rank as u32;
-        extra <<= 16;
-        value += extra;
-	
-        // the lower pair is sorted to the front
-        extra = constituent_cards[0].rank as u32;
-        extra <<= 12;
-        value += extra;
-
-        // next add the value of the kicker(s), in order
-        // Note: for rankings without kickers, this loop simply won't happen
-        let mut shift_amount = 0;
-        for kicker in kickers {
+        }	
+        for kicker in kickers.iter().rev() {
             let mut extra = kicker.rank as u32;
             extra <<= shift_amount;
             value += extra;
-            shift_amount += 4;
+            shift_amount -= 4;
         }
 
         value
@@ -181,16 +176,6 @@ impl HandResult {
                 is_straight = false;
             }
         }
-
-        /*
-        if is_flush {
-            println!("is_flush = {}", is_flush);
-        }
-        if is_straight {
-            println!("is_straight = {}", is_straight);
-        }
-         */
-        //println!("rank counts = {:?}", rank_counts);
         let mut constituent_cards = Vec::new();
 
         let mut kickers = Vec::new();
@@ -512,6 +497,31 @@ mod tests {
 	
 	let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::FullHouse);
+	assert!(result1 > result2);
+    }    
+
+    #[test]
+    fn compare_pairs() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Three, suit: Suit::Heart},
+	    Card{rank: Rank::Six, suit: Suit::Club},	    	    
+	    Card{rank: Rank::Queen, suit: Suit::Spade},
+	    Card{rank: Rank::Queen, suit: Suit::Heart},
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::Pair);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Three, suit: Suit::Heart},
+	    Card{rank: Rank::Ten, suit: Suit::Heart},
+	    Card{rank: Rank::Ten, suit: Suit::Club},
+	    Card{rank: Rank::King, suit: Suit::Diamond},	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::Pair);
 	assert!(result1 > result2);
     }    
     
