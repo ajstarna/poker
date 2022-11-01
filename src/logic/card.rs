@@ -441,6 +441,31 @@ mod tests {
 
 	assert!(result1 < result2);
     }
+
+    #[test]
+    fn compare_high_cards() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Seven, suit: Suit::Spade},
+	    Card{rank: Rank::Eight, suit: Suit::Diamond},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::HighCard);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Five, suit: Suit::Spade}, // the 5 is less than the 7
+	    Card{rank: Rank::Eight, suit: Suit::Diamond},
+	    Card{rank: Rank::Jack, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Spade},	    	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::HighCard);
+	assert!(result1 > result2);
+    }
     
     #[test]
     fn compare_straights() {
@@ -481,7 +506,6 @@ mod tests {
 	let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::Flush);
 
-	dbg!(&result1);
         let hand2 = vec![
 	    Card{rank: Rank::Two, suit: Suit::Spade},
 	    Card{rank: Rank::Five, suit: Suit::Spade}, // the 5 is less than the 7
@@ -491,10 +515,33 @@ mod tests {
 	];
 	
 	let result2 = HandResult::analyze_hand(hand2);
-	dbg!(&result2);		
         assert_eq!(result2.hand_ranking, HandRanking::Flush);
 	assert!(result1 > result2);
-    }
-    
+    }    
+
+    #[test]
+    fn compare_full_houses() {
+        let hand1 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Heart},
+	    Card{rank: Rank::Queen, suit: Suit::Spade},
+	    Card{rank: Rank::Queen, suit: Suit::Heart},
+	    Card{rank: Rank::Queen, suit: Suit::Club},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::FullHouse);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Heart},
+	    Card{rank: Rank::Two, suit: Suit::Diamond},
+	    Card{rank: Rank::Queen, suit: Suit::Heart},
+	    Card{rank: Rank::Queen, suit: Suit::Club},	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::FullHouse);
+	assert!(result1 > result2);
+    }    
     
 }
