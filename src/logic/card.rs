@@ -501,6 +501,32 @@ mod tests {
     }    
 
     #[test]
+    fn compare_full_houses_2() {
+	// the fives should beat the twos
+        let hand1 = vec![
+	    Card{rank: Rank::Five, suit: Suit::Spade},
+	    Card{rank: Rank::Five, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Diamond},
+	    Card{rank: Rank::Jack, suit: Suit::Heart},
+	    Card{rank: Rank::Jack, suit: Suit::Club},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::FullHouse);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Heart},
+	    Card{rank: Rank::Two, suit: Suit::Diamond},
+	    Card{rank: Rank::Queen, suit: Suit::Heart},
+	    Card{rank: Rank::Queen, suit: Suit::Club},	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::FullHouse);
+	assert!(result1 > result2);
+    }    
+    
+    #[test]
     fn compare_pairs() {
         let hand1 = vec![
 	    Card{rank: Rank::Two, suit: Suit::Spade},
