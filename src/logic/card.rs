@@ -115,7 +115,8 @@ impl PartialEq for HandResult {
 impl HandResult {
     /// Given a hand ranking, along with the constituent cards and the kickers, this function returns a numerical score
     /// that determines the hand's value compared to any other hand
-    /// note that the cards have been pre-sorted by analyze_hand, and hence this shouldn't be called otherwise
+    /// note that the cards have been specially pre-sorted by analyze_hand,
+    /// and hence this shouldn't be called otherwise
     fn score_hand(
         hand_ranking: HandRanking,
         constituent_cards: &Vec<Card>,
