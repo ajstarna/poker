@@ -256,6 +256,16 @@ impl HandResult {
             }
         }
         constituent_cards.sort();
+
+	if hand_ranking == HandRanking::FullHouse {
+	    // for a full house we actually want to make sure the sort has the 3 of a kind
+	    // sorted "higher" than the pair (since that is what matters more when determining
+	    // hand value)
+	    if constituent_cards[0].rank == constituent_cards[2].rank {
+		constituent_cards.reverse();
+	    }
+	}
+	
         kickers.sort();
         let value = HandResult::score_hand(hand_ranking, &constituent_cards, &kickers);
         Self {
