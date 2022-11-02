@@ -156,7 +156,6 @@ impl HandResult {
     pub fn analyze_hand(mut five_cards: Vec<Card>) -> Self {
         assert!(five_cards.len() == 5);
         five_cards.sort(); // first sort by Rank
-                           //println!("five cards = {:?}", five_cards);
 
         let hand_ranking: HandRanking;
 
@@ -164,6 +163,7 @@ impl HandResult {
         let mut is_flush = true;
         let first_suit = five_cards[0].suit;
         let mut is_straight = true;
+	let mut is_low_ace_straight = false;
         let first_rank = five_cards[0].rank as usize;
         for (i, card) in five_cards.iter().enumerate() {
             let count = rank_counts.entry(card.rank).or_insert(0);
@@ -171,8 +171,10 @@ impl HandResult {
             if card.suit != first_suit {
                 is_flush = false;
             }
-            if card.rank as usize != first_rank + i {
-                // TODO: we need to handle Ace being high or low
+	    if i == 4 && card.rank == Rank::Ace && first_rank == 2 {
+		// completing the straight with an Ace on 2-->Ace
+		is_low_ace_straight = true;
+	    } else if card.rank as usize != first_rank + i {
                 is_straight = false;
             }
         }
@@ -264,6 +266,11 @@ impl HandResult {
 	    if constituent_cards[0].rank == constituent_cards[2].rank {
 		constituent_cards.reverse();
 	    }
+	} else if is_low_ace_straight {
+	    // we want the constituent cards to be sorted with the Ace being "low",
+	    // so we need to move it to the beginning
+	    let ace = constituent_cards.pop().unwrap();
+	    constituent_cards.insert(0, ace);
 	}
 	
         kickers.sort();
@@ -319,6 +326,45 @@ mod tests {
      use super::*;
 
     #[test]
+    fn ace_high_low() {
+        let hand1 = vec![
+	    Card{rank: Rank::Ace, suit: Suit::Spade},
+	    Card{rank: Rank::Two, suit: Suit::Spade},
+	    Card{rank: Rank::Three, suit: Suit::Heart},
+	    Card{rank: Rank::Four, suit: Suit::Heart},
+	    Card{rank: Rank::Five, suit: Suit::Spade},	    
+	];
+	let result1 = HandResult::analyze_hand(hand1);
+        assert_eq!(result1.hand_ranking, HandRanking::Straight);
+
+        let hand2 = vec![
+	    Card{rank: Rank::Three, suit: Suit::Spade},
+	    Card{rank: Rank::Four, suit: Suit::Club},
+	    Card{rank: Rank::Five, suit: Suit::Spade},
+	    Card{rank: Rank::Six, suit: Suit::Heart},
+	    Card{rank: Rank::Seven, suit: Suit::Spade},	    
+	];
+	
+	let result2 = HandResult::analyze_hand(hand2);
+        assert_eq!(result2.hand_ranking, HandRanking::Straight);
+	assert!(result1 < result2);
+
+        let hand3 = vec![
+	    Card{rank: Rank::Ten, suit: Suit::Spade},
+	    Card{rank: Rank::Jack, suit: Suit::Club},
+	    Card{rank: Rank::Queen, suit: Suit::Spade},
+	    Card{rank: Rank::King, suit: Suit::Heart},
+	    Card{rank: Rank::Ace, suit: Suit::Spade},	    
+	];
+	
+	let result3 = HandResult::analyze_hand(hand3);
+        assert_eq!(result3.hand_ranking, HandRanking::Straight);
+	assert!(result1 < result3);
+	assert!(result2 < result3);		
+
+    }
+    
+    #[test]
     fn compare_high_card_and_pair() {
         let hand1 = vec![
 	    Card{rank: Rank::Two, suit: Suit::Spade},
@@ -350,19 +396,6 @@ mod tests {
 
 	assert!(result1 < result2);
     }
-
-/*
-    HighCard = 1,
-    Pair = 2,
-    TwoPair = 3,
-    ThreeOfAKind = 4,
-    Straight = 5,
-    Flush = 6,
-    FullHouse = 7,
-    FourOfAKind = 8,
-    StraightFlush = 9,
-    RoyalFlush = 10,
-*/
     
     #[test]
     fn compare_two_pair_and_three() {
