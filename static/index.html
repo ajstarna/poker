@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Chat!</title>
+    <title>Poker</title>
 
     <style>
       :root {
@@ -83,15 +83,15 @@
         </tr>
         <tr>
           <td>
-            <code>/join name</code>
+            <code>/join {table_name}</code>
           </td>
           <td>join room, if room does not exist, create new one</td>
         </tr>
         <tr>
           <td>
-            <code>/name name</code>
+            <code>/name {my_name}</code>
           </td>
-          <td>set session name</td>
+          <td>set user name</td>
         </tr>
         <tr>
           <td>
@@ -99,6 +99,13 @@
           </td>
           <td>just string, send message to all peers in same room</td>
         </tr>
+        <tr>
+          <td>
+            <code>/leave</code>
+          </td>
+          <td>leave current table and return to main lobby</td>
+        </tr>
+	
       </table>
     </section>
 

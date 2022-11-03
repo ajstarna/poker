@@ -294,48 +294,32 @@ impl<'a> GameHand<'a> {
 
     fn play(&mut self,
 	    players: &mut [Option<Player>],
-	    player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	    incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	    
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-	// how many active to start the hand
-	// note: we flatten so that we don't consider None values (empty seats)
-	self.num_active = 0;
 	for player in players.iter_mut().flatten() {
 	    if player.is_sitting_out || player.money == 0 {
 		// if a player has no money they should be sitting out, but to be safe check both
 		player.is_active = false;		
 	    } else {
-		player.is_active = true;				
+		player.is_active = true;
 	    }
 
 	}
-	// should num_active just be all the players? I have is_sitting_out? hmm
-	// cuz right now when we fold, we deactivate
-        self.num_active = players
-	    .iter()
-	    .flatten()
-	    .filter(|player| {!player.is_sitting_out && player.money > 0})
-	    .count(); 
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
             self.button_idx
         ), player_ids_to_configs);
-        if self.num_active < 2 {
-            println!(
-                "num_active players = {}, so we cannot play a hand!",
-                self.num_active
-            );
-            return;
-        }
         self.deck.shuffle();
         self.deal_hands(players, player_ids_to_configs);
 
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            self.play_street(players, player_ids_to_configs, &incoming_actions);
-            if self.num_active == 1 {
+            let finished = self.play_street(players, player_ids_to_configs, incoming_actions, incoming_meta_actions);
+	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
                 PlayerConfig::send_group_message("\nGame is ending before showdown!", player_ids_to_configs);
@@ -360,19 +344,19 @@ impl<'a> GameHand<'a> {
         starting_idx
     }
 
+    /// this method returns a bool indicating whether the hand is over or not
     fn play_street(
 	&mut self,
 	players: &mut [Option<Player>],
-	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-    ) {
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,			
+    ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0; players.len()];
 
         let starting_idx = self.get_starting_idx(players); // which player starts the betting
-                                                    // keeps track of how many players have either checked through or called
-                                                    // the last bet (or made the last bet)
 
         // if a player is still active but has no remaining money (i.e. is all-in),
         let mut num_all_in = players
@@ -381,17 +365,27 @@ impl<'a> GameHand<'a> {
             .filter(|player| player.is_all_in())
             .count();
 
+        let mut num_active = players
+            .iter()
+            .flatten() // skip over None values
+            .filter(|player| player.is_active)
+            .count();
+        if num_active < 2 {
+            println!(
+                "num_active players = {}, so we cannot play a hand!",
+                num_active
+            );
+            return true;
+        }
+	
 	// once every player is either all-in or settled, then we move to the next street	
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
-
-
-
 	
         println!("Current pot = {}", self.pot);
         PlayerConfig::send_group_message(&format!("Current pot = {}", self.pot), player_ids_to_configs);
 
-        println!("num active players = {}", self.num_active);
-        PlayerConfig::send_group_message(&format!("num active players = {}", self.num_active), player_ids_to_configs);
+        println!("num active players = {}", num_active);
+        PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
         println!("player at index {} starts the betting", starting_idx);
         PlayerConfig::send_group_message(&format!(
@@ -405,18 +399,11 @@ impl<'a> GameHand<'a> {
                 num_settled
             ), player_ids_to_configs);
         }
-        let mut loop_count = 0;
         'street: loop {
-            loop_count += 1;
-            if loop_count > 5 {
-                println!("\n\n\n\n\nTOO MANY LOOPS MUST BE A BUG!\n\n\n\n\n");
-                panic!("too many loops");
-            }
             // iterate over the players from the starting index to the end of the vec,
             // and then from the beginning back to the starting index
             let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
-		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for messages
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
@@ -430,9 +417,11 @@ impl<'a> GameHand<'a> {
                         current_bet,
                         player_cumulative,
 			player_ids_to_configs,
-			&incoming_actions,
+			incoming_actions,
+			incoming_meta_actions
                     );
-
+		    // get the name for messages		    
+		    let name = &player_ids_to_configs.get(&player.id).unwrap().name.clone(); 
                     match action {
                         PlayerAction::PostSmallBlind(amount) => {
                             println!("Player {:?} posts small blind of {}", name, amount);
@@ -470,7 +459,7 @@ impl<'a> GameHand<'a> {
 				&format!("Player {:?} folds", name),
 				player_ids_to_configs);			    
                             player.deactivate();
-                            self.num_active -= 1;
+                            num_active -= 1;
                         }
                         PlayerAction::Check => {
                             println!("Player checks!");
@@ -520,17 +509,18 @@ impl<'a> GameHand<'a> {
                 }
 
                 //println!("after player: num_active = {}, num_settled = {}", self.num_active, num_settled);
-                if self.num_active == 1 {
+                if num_active == 1 {
                     println!("Only one active player left so lets break the steet loop");
-                    break 'street;
+		    // end the street and indicate to the caller that the hand is finished
+                    break 'street true;
                 }
-                if num_settled + num_all_in == self.num_active {
-                    // every active player is ready to move onto the next street
+                if num_settled + num_all_in == num_active {
                     println!(
                         "everyone is ready to go to the next street! num_settled = {}",
                         num_settled
                     );
-                    break 'street;
+		    // end the street and indicate to the caller that the hand is going to the next street
+                    break 'street false;
                 }
             }
         }
@@ -576,13 +566,70 @@ impl<'a> GameHand<'a> {
         }
     }
 
-    fn get_and_validate_action(
+    fn handle_meta_actions(
+	&self,
+	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+    ) {
+	let mut meta_actions = incoming_meta_actions.lock().unwrap();
+	println!("meta_actions = {:?}", meta_actions);
+	for _ in 0..meta_actions.len() {
+	    match meta_actions.pop_front().unwrap() {
+		MetaAction::Chat(id, text) => {
+		    // send the message to all players,
+		    // appended by the player name
+		    println!("chat message inside the game hand wow!");
+		    let name = &player_ids_to_configs.get(&id).unwrap().name;
+		    PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
+						     &player_ids_to_configs);			
+
+		},
+		//MetaAction::Leave(id) => {
+		    // TODO figure this out
+		    // I think we can just set the player to be sitting out for now
+		    // and release the player config to the hub?
+		    // and then maybe at the veryu end of game hand when we finish() we can remove the
+		    // player that left officially?
+		    // Does the Game object even need to know this happened if the player spot is now None
+		    // and the config is gone?
+		    /*
+		    for player_spot in self.players.iter_mut() {
+			if let Some(player) = player_spot {
+			    if player.id == id {
+				*player_spot = None;
+			    }
+			}
+		    }*/
+		    
+		    // grab the associated config, and send it back to
+		    // the game hub
+		    //let config = player_ids_to_configs.remove(&id).unwrap();
+		    //PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
+		    //				     &player_ids_to_configs);
+		    // tell the hub that we left
+		    //hub_addr.do_send(Removed{config});
+		//},
+		MetaAction::PlayerName(id, new_name) => {
+		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
+		}
+		other => {
+		    // put it back onto thhe queue
+		    meta_actions.push_back(other);
+		}
+	    }
+	
+	}
+	// TODO return a list of player ids that left the game
+    }
+	
+    fn get_and_validate_action(	
 	&self, 
         player: &mut Player,
         current_bet: u32,
         player_cumulative: u32,
-	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,		
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -614,7 +661,9 @@ impl<'a> GameHand<'a> {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
         while attempts < 10000 && action.is_none() {
-            // not a blind, so get an actual choice
+	    // the first thing we do on each loop is handle meta action
+	    self.handle_meta_actions(player_ids_to_configs, incoming_meta_actions);
+		
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
                 // TODO: the computer can give a better than random guess at a move
@@ -686,6 +735,14 @@ impl<'a> GameHand<'a> {
                         println!("this should not happen!");
                         continue;
                     }
+		    // TODO: this line blew up
+		    // thread '<unnamed>' panicked at 'attempt to subtract with overflow', src/logic/game.rs:738:24
+		    // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+                    // I think we need to change the money amounts to be signed
+		    // OR it might be better to look into/fix the bet logic
+		    // like should new_bet just be a standalone thing above the current bet?
+		    // do we need to add raising?
+
                     if new_bet - player_cumulative > player.money {
 			PlayerConfig::send_specific_message(
 			    &"You can't bet more than you have!!".to_owned(),
@@ -718,7 +775,7 @@ impl<'a> GameHand<'a> {
 
 #[derive(Debug)]
 pub struct Game {
-    hub_addr: Addr<GameHub>,    
+    hub_addr: Addr<GameHub>, // needs to be able to communicate back to the hub sometimes
     deck: Deck,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
@@ -730,7 +787,7 @@ pub struct Game {
 impl Game {
     pub fn new(hub_addr: Addr<GameHub>) -> Self {
         Game {
-	    hub_addr, // needs to be able to communicate back to the hub sometimes
+	    hub_addr,
             deck: Deck::new(),
             players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
@@ -777,18 +834,6 @@ impl Game {
 	    }
 	}
     }
-
-    /// find a player with the given id, and set their name to be the given name
-    pub fn set_player_name(&mut self, id: Uuid, name: &str) {
-	if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
-            player_config.name = Some(name.to_string());
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("You are changing your name to {:?}", name))
-		);	    
-	    
-	}
-    }
         
     /// send a given message to all the players at the tabel
     pub fn send_message(&self, message: &str) {
@@ -797,7 +842,8 @@ impl Game {
     
     pub fn play_one_hand(
 	&mut self,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,		     
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	
     ) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -805,7 +851,7 @@ impl Game {
             self.small_blind,
             self.big_blind,
         );
-        game_hand.play(&mut self.players, &self.player_ids_to_configs, incoming_actions);
+        game_hand.play(&mut self.players, &mut self.player_ids_to_configs, incoming_actions, incoming_meta_actions);
     }
 
     pub fn play(
@@ -820,13 +866,12 @@ impl Game {
                 "\n\n\n=================================================\n\nplaying hand {}",
                 hand_count
             );
-	    PlayerConfig::send_group_message(&format!("================playing hand {}", hand_count ),
+	    PlayerConfig::send_group_message(&format!("================playing hand {}", hand_count),
 					     &self.player_ids_to_configs);			
 	    
 	    
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
-            self.play_one_hand(incoming_actions);
-	    //Actually. We want messages to be live, so that should happen more often, i.e. inside play one hand?
+            self.play_one_hand(incoming_actions, incoming_meta_actions);
 	    let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	    println!("meta_actions = {:?}", meta_actions);
 	    while !meta_actions.is_empty() {
@@ -871,7 +916,7 @@ impl Game {
 			self.hub_addr.do_send(Removed{config});
 		    },
 		    MetaAction::PlayerName(id, new_name) => {
-			self.set_player_name(id, &new_name);
+			PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
 		    }
 		}
 		

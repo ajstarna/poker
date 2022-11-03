@@ -48,6 +48,18 @@ impl PlayerConfig {
 	    }
 	}
     }
+
+    /// find a player with the given id, and set their name to be the given name
+    pub fn set_player_name(id: Uuid, name: &str, ids_to_configs: &mut HashMap<Uuid, PlayerConfig>) {
+	if let Some(player_config) = ids_to_configs.get_mut(&id) {
+            player_config.name = Some(name.to_string());
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("You are changing your name to {:?}", name))
+		);	    
+	    
+	}
+    }
     
 }
 
