@@ -296,7 +296,8 @@ impl<'a> GameHand<'a> {
 	    players: &mut [Option<Player>],
 	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	    incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	    
+	    incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	    hub_addr: &Addr<GameHub>,	    
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	for player in players.iter_mut().flatten() {
@@ -306,7 +307,6 @@ impl<'a> GameHand<'a> {
 	    } else {
 		player.is_active = true;
 	    }
-
 	}
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
@@ -318,7 +318,7 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            let finished = self.play_street(players, player_ids_to_configs, incoming_actions, incoming_meta_actions);
+            let finished = self.play_street(players, player_ids_to_configs, incoming_actions, incoming_meta_actions, hub_addr);
 	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -350,7 +350,8 @@ impl<'a> GameHand<'a> {
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,			
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	hub_addr: &Addr<GameHub>,
     ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
@@ -404,6 +405,13 @@ impl<'a> GameHand<'a> {
             // and then from the beginning back to the starting index
             let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
+		/*
+		I think this was redundant if we are just gunna fold further down
+		if !player_ids_to_configs.contains_key(&player.id) {
+		    println!("no player config so we are deactivating the player");
+		    player.deactivate();
+		}*/
+
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
@@ -412,16 +420,23 @@ impl<'a> GameHand<'a> {
 
                 println!("Player = {:?}, i = {}", player.id, i);
                 if player.is_active && player.money > 0 {
+		    // get the name for messages		    
+		    let name = if let Some(config) = &player_ids_to_configs.get(&player.id) {
+			config.name.as_ref().unwrap().clone()
+		    } else {
+			"Player who left".to_string()
+		    };
+		    
                     let action = self.get_and_validate_action(
                         player,
                         current_bet,
                         player_cumulative,
 			player_ids_to_configs,
 			incoming_actions,
-			incoming_meta_actions
+			incoming_meta_actions,
+			hub_addr,
                     );
-		    // get the name for messages		    
-		    let name = &player_ids_to_configs.get(&player.id).unwrap().name.clone(); 
+		    
                     match action {
                         PlayerAction::PostSmallBlind(amount) => {
                             println!("Player {:?} posts small blind of {}", name, amount);
@@ -454,7 +469,7 @@ impl<'a> GameHand<'a> {
 			    }
                         }
                         PlayerAction::Fold => {
-                            println!("Player {:?} folds!", player.id);
+                            println!("Player {:?} folds!", name);
 			    PlayerConfig::send_group_message(
 				&format!("Player {:?} folds", name),
 				player_ids_to_configs);			    
@@ -565,62 +580,6 @@ impl<'a> GameHand<'a> {
             }
         }
     }
-
-    fn handle_meta_actions(
-	&self,
-	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-    ) {
-	let mut meta_actions = incoming_meta_actions.lock().unwrap();
-	println!("meta_actions = {:?}", meta_actions);
-	for _ in 0..meta_actions.len() {
-	    match meta_actions.pop_front().unwrap() {
-		MetaAction::Chat(id, text) => {
-		    // send the message to all players,
-		    // appended by the player name
-		    println!("chat message inside the game hand wow!");
-		    let name = &player_ids_to_configs.get(&id).unwrap().name;
-		    PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
-						     &player_ids_to_configs);			
-
-		},
-		//MetaAction::Leave(id) => {
-		    // TODO figure this out
-		    // I think we can just set the player to be sitting out for now
-		    // and release the player config to the hub?
-		    // and then maybe at the veryu end of game hand when we finish() we can remove the
-		    // player that left officially?
-		    // Does the Game object even need to know this happened if the player spot is now None
-		    // and the config is gone?
-		    /*
-		    for player_spot in self.players.iter_mut() {
-			if let Some(player) = player_spot {
-			    if player.id == id {
-				*player_spot = None;
-			    }
-			}
-		    }*/
-		    
-		    // grab the associated config, and send it back to
-		    // the game hub
-		    //let config = player_ids_to_configs.remove(&id).unwrap();
-		    //PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
-		    //				     &player_ids_to_configs);
-		    // tell the hub that we left
-		    //hub_addr.do_send(Removed{config});
-		//},
-		MetaAction::PlayerName(id, new_name) => {
-		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
-		}
-		other => {
-		    // put it back onto thhe queue
-		    meta_actions.push_back(other);
-		}
-	    }
-	
-	}
-	// TODO return a list of player ids that left the game
-    }
 	
     fn get_and_validate_action(	
 	&self, 
@@ -629,7 +588,8 @@ impl<'a> GameHand<'a> {
         player_cumulative: u32,
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,		
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	hub_addr: &Addr<GameHub>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -652,7 +612,7 @@ impl<'a> GameHand<'a> {
             );
         }
 	PlayerConfig::send_specific_message(
-	    &format!("Please enter your action: {:?}", player),
+	    &format!("Please enter your action. cards = {:?}, money = {:?}: ", player.hole_cards, player.money),
 	    player.id,
 	    player_ids_to_configs
 	);
@@ -662,15 +622,26 @@ impl<'a> GameHand<'a> {
         let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
         while attempts < 10000 && action.is_none() {
 	    // the first thing we do on each loop is handle meta action
-	    self.handle_meta_actions(player_ids_to_configs, incoming_meta_actions);
+	    Game::handle_meta_actions(player_ids_to_configs, incoming_meta_actions, hub_addr);
 		
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
                 // TODO: the computer can give a better than random guess at a move
                 // Currently it might try to check when it has to call for example,
                 attempts += 1;
-            } else {
+            }
+	    if player.is_sitting_out {
+		println!("player is sitting out, so fold");
+		action = Some(PlayerAction::Fold);
+		break;
 	    }
+	    if !player_ids_to_configs.contains_key(&player.id) {
+		// the config no longer exists for this player, so they must have left
+		println!("player config no longer exists, so the player must have left");
+		action = Some(PlayerAction::Fold);
+		break;		
+	    }
+	    
             //println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {
@@ -743,7 +714,8 @@ impl<'a> GameHand<'a> {
 		    // like should new_bet just be a standalone thing above the current bet?
 		    // do we need to add raising?
 
-                    if new_bet - player_cumulative > player.money {
+		    // NOTE ---> I changed it now
+                    if new_bet > player.money + player_cumulative {
 			PlayerConfig::send_specific_message(
 			    &"You can't bet more than you have!!".to_owned(),
 			    player.id,
@@ -752,7 +724,11 @@ impl<'a> GameHand<'a> {
                         continue;
                     }
                     if new_bet <= current_bet {
-                        //println!("the new bet has to be larger than the current bet!");
+			PlayerConfig::send_specific_message(
+			    &"the new bet has to be larger than the current bet!".to_owned(),
+			    player.id,
+			    player_ids_to_configs
+			);
                         continue;
                     }
                     action = Some(PlayerAction::Bet(new_bet));
@@ -843,7 +819,7 @@ impl Game {
     pub fn play_one_hand(
 	&mut self,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) {
         let mut game_hand = GameHand::new(
             &mut self.deck,
@@ -851,7 +827,12 @@ impl Game {
             self.small_blind,
             self.big_blind,
         );
-        game_hand.play(&mut self.players, &mut self.player_ids_to_configs, incoming_actions, incoming_meta_actions);
+        game_hand.play(
+	    &mut self.players,
+	    &mut self.player_ids_to_configs,
+	    incoming_actions,
+	    incoming_meta_actions,
+	    &self.hub_addr);
     }
 
     pub fn play(
@@ -872,6 +853,20 @@ impl Game {
 	    
 	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
             self.play_one_hand(incoming_actions, incoming_meta_actions);
+
+	    // check if any player is now missing from the config mapping,
+	    // this implies that the player left mid-hand, so they should fully be removed from the game
+	    for player_spot in self.players.iter_mut() {
+		if let Some(player) = player_spot {
+		    if !self.player_ids_to_configs.contains_key(&player.id) {
+			// the player is no more
+			println!("removing player {:?} since no longer in the config between hands", player);
+			*player_spot = None;
+		    }
+		}
+	    }
+	    
+	    
 	    let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	    println!("meta_actions = {:?}", meta_actions);
 	    while !meta_actions.is_empty() {
@@ -951,6 +946,54 @@ impl Game {
             }
         }
     }
+
+    fn handle_meta_actions(
+	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	hub_addr: &Addr<GameHub>,
+    ) {
+	let mut meta_actions = incoming_meta_actions.lock().unwrap();
+	println!("meta_actions = {:?}", meta_actions);
+	for _ in 0..meta_actions.len() {
+	    match meta_actions.pop_front().unwrap() {
+		MetaAction::Chat(id, text) => {
+		    // send the message to all players,
+		    // appended by the player name
+		    println!("chat message inside the game hand wow!");
+		    let name = &player_ids_to_configs.get(&id).unwrap().name;
+		    PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
+						     &player_ids_to_configs);			
+		},
+		MetaAction::Leave(id) => {
+		    // TODO figure this out
+		    // I think we can just set the player to be sitting out for now
+		    // and release the player config to the hub?
+		    // and then maybe at the veryu end of game hand when we finish() we can remove the
+		    // player that left officially?
+		    // Does the Game object even need to know this happened if the player spot is now None
+		    // and the config is gone?		    
+		    // grab the associated config, and send it back to
+		    // the game hub
+		    println!("handling leave meta action");
+		    let config = player_ids_to_configs.remove(&id).unwrap();
+		    PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
+		    				     &player_ids_to_configs);
+		    // tell the hub that we left
+		    hub_addr.do_send(Removed{config});
+		},
+		MetaAction::PlayerName(id, new_name) => {
+		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
+		}
+		other => {
+		    // put it back onto thhe queue
+		    meta_actions.push_back(other);
+		}
+	    }
+	
+	}
+	// TODO return a list of player ids that left the game
+    }
+    
 }
 
 /*

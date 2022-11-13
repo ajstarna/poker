@@ -211,6 +211,7 @@ impl Handler<Join> for GameHub {
         }
         // unwrap since how can they join a table if they were not in the lobby already?
 	// TODO: there can be a race here if we left a game but it hasnt officially Removed us yet?
+	// TODO Also if we simply havent even left the other game and we try to join a new one!
         let player_config = self.main_lobby_connections.remove(&id).unwrap();
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());

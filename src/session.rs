@@ -193,6 +193,7 @@ impl WsGameSession {
                     .then(|res, _, ctx| {
                         match res {
                             Ok(tables) => {
+				ctx.text(format!("there are {:?} tables:", tables.len()));
                                 for table in tables {
                                     ctx.text(table);
                                 }
