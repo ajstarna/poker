@@ -16,7 +16,7 @@
       }
 
       #log {
-        width: 30em;
+        width: 50em;
         height: 20em;
         overflow: auto;
         margin: 0.5em 0;
@@ -55,7 +55,7 @@
   </head>
 
   <body>
-    <h1>Chat!</h1>
+    <h1>Poker!</h1>
 
     <div>
       <button id="connect">Connect</button>
@@ -72,6 +72,25 @@
 
     <hr />
 
+    <table style="border-spacing: 1.0em">      
+      <tr>
+	<td>Money</td>	
+	<td>Hole</td>
+	<td>Flop</td>
+	<td>Turn</td>
+	<td>River</td>
+      </tr>
+      <tr>
+      <td id="money"><font size="+2"><b>1000</b></font></td>	
+      <td id="hole"><font size="+2"><b>As Ad</b></font></td>
+      <td id="flop"><font size="+2"><b>Kh Kd Jc</b></font></td>
+      <td id="turn"><font size="+2"><b>Ac</b></font></td>
+      <td id="river"><font size="+2"><b>3h</b></font></td>
+      </tr>
+    </table>
+    
+    <hr />
+    
     <section>
       <h2>Meta Commands</h2>
       <table style="border-spacing: 0.5em">
@@ -165,7 +184,7 @@
         }
 
         socket.onmessage = (ev) => {
-          log('Received: ' + ev.data, 'message')
+          log(ev.data, 'message')
         }
 
         socket.onclose = () => {
