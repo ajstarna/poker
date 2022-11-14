@@ -81,11 +81,11 @@
 	<td>River</td>
       </tr>
       <tr>
-      <td id="money"><font size="+2"><b>1000</b></font></td>	
-      <td id="hole"><font size="+2"><b>As Ad</b></font></td>
-      <td id="flop"><font size="+2"><b>Kh Kd Jc</b></font></td>
-      <td id="turn"><font size="+2"><b>Ac</b></font></td>
-      <td id="river"><font size="+2"><b>3h</b></font></td>
+      <td id="money"><font size="+2"><b></b></font></td>	
+      <td id="hole"><font size="+2"><b></b></font></td>
+      <td id="flop"><font size="+2"><b></b></font></td>
+      <td id="turn"><font size="+2"><b></b></font></td>
+      <td id="river"><font size="+2"><b></b></font></td>
       </tr>
     </table>
     
@@ -158,7 +158,12 @@
       const $log = document.querySelector('#log')
       const $form = document.querySelector('#chatform')
       const $input = document.querySelector('#text')
-
+      const $money = document.querySelector('#money')
+      const $hole = document.querySelector('#hole')
+      const $flop = document.querySelector('#flop')
+      const $turn = document.querySelector('#turn')
+      const $river = document.querySelector('#river')      
+      
       /** @type {WebSocket | null} */
       var socket = null
 
@@ -168,30 +173,57 @@
       }
 
       function connect() {
-        disconnect()
+          disconnect()
 
-        const { location } = window
+          const { location } = window
+	  
+          const proto = location.protocol.startsWith('https') ? 'wss' : 'ws'
+          const wsUri = `${proto}://${location.host}/ws`
+	  
+          log('Connecting...')
+          socket = new WebSocket(wsUri)
 
-        const proto = location.protocol.startsWith('https') ? 'wss' : 'ws'
-        const wsUri = `${proto}://${location.host}/ws`
-
-        log('Connecting...')
-        socket = new WebSocket(wsUri)
-
-        socket.onopen = () => {
-          log('Connected')
-          updateConnectionStatus()
-        }
-
-        socket.onmessage = (ev) => {
-          log(ev.data, 'message')
-        }
-
-        socket.onclose = () => {
-          log('Disconnected')
-          socket = null
-          updateConnectionStatus()
-        }
+          socket.onopen = () => {
+              log('Connected')
+              updateConnectionStatus()
+          }
+	  
+          socket.onmessage = (ev) => {
+	      if (ev.data.startsWith("Playing hand")) {
+		  // reset the values for the next hand
+		  $hole.textContent = ""
+		  $flop.textContent = ""
+		  $turn.textContent = ""
+		  $river.textContent = ""		  		  		  
+	      }	      
+	      if (ev.data.startsWith("Hole Cards:")) {
+		  const [_, val] = ev.data.split(": ")
+		  $hole.textContent = val
+	      }
+	      else if (ev.data.startsWith("Money:")) {
+		  const [_, val] = ev.data.split(": ")
+		  $money.textContent = val
+	      }
+	      else if (ev.data.startsWith("Flop:")) {
+		  const [_, val] = ev.data.split(": ")
+		  $flop.textContent = val
+	      }
+	      else if (ev.data.startsWith("Turn:")) {
+		  const [_, val] = ev.data.split(": ")
+		  $turn.textContent = val
+	      }
+	      else if (ev.data.startsWith("River:")) {
+		  const [_, val] = ev.data.split(": ")
+		  $river.textContent = val
+	      }
+              log(ev.data, 'message')
+          }
+	  
+          socket.onclose = () => {
+              log('Disconnected')
+              socket = null
+              updateConnectionStatus()
+          }
       }
 
       function disconnect() {

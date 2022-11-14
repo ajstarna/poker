@@ -1,6 +1,7 @@
 use rand::seq::SliceRandom; // for shuffling a vec
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt;
 ///
 /// This file contains structs/enums/methods for defining, using, and comparing cards and hands of cards
 ///
@@ -24,6 +25,27 @@ enum Rank {
     Ace = 14,
 }
 
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	let string = match self {
+	    Rank::Two => "2",
+	    Rank::Three => "3",
+	    Rank::Four => "4",
+	    Rank::Five => "5",
+	    Rank::Six => "6",
+	    Rank::Seven => "7",
+	    Rank::Eight => "8",
+	    Rank::Nine => "9",
+	    Rank::Ten => "T",
+	    Rank::Jack => "J",
+	    Rank::Queen => "Q",
+	    Rank::King => "K",
+	    Rank::Ace => "A",
+	};
+        write!(f, "{}", string)
+    }
+}
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone, EnumIter)]
 enum Suit {
     Club,
@@ -32,10 +54,28 @@ enum Suit {
     Spade,
 }
 
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	let string = match self {
+	    Suit::Club => "c",
+	    Suit::Diamond => "d",
+	    Suit::Heart => "h",
+	    Suit::Spade => "s",
+	};
+        write!(f, "{}", string)
+    }
+}
+
 #[derive(Eq, Debug, Copy, Clone)]
 pub struct Card {
     rank: Rank,
     suit: Suit,
+}
+
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.rank, self.suit)
+    }
 }
 
 /// We simply compare Cards based on their rank field.

@@ -68,7 +68,10 @@ impl<'a> GameHand<'a> {
                     self.flop
                 );
                 PlayerConfig::send_group_message(
-                    &format!("\n===========================\nFlop = {:?}\n===========================", self.flop),
+                    &format!("Flop: {}{}{}",
+			     self.flop.as_ref().unwrap()[0],
+			     self.flop.as_ref().unwrap()[1],
+			     self.flop.as_ref().unwrap()[2]),
 		    player_ids_to_configs);		
             }
             Street::Flop => {
@@ -79,8 +82,8 @@ impl<'a> GameHand<'a> {
                     self.turn
                 );
                 PlayerConfig::send_group_message(
-                    &format!("\n===========================\nTurn = {:?}\n===========================", self.turn),
-		    player_ids_to_configs);				
+                    &format!("Turn: {}", self.turn.unwrap()),
+		    player_ids_to_configs);		
             }
             Street::Turn => {
                 self.street = Street::River;
@@ -90,8 +93,8 @@ impl<'a> GameHand<'a> {
                     self.river
                 );
                 PlayerConfig::send_group_message(
-                    &format!("\n===========================\nRiver = {:?}\n===========================", self.river),
-		    player_ids_to_configs);				
+                    &format!("River: {}", self.river.unwrap()),
+		    player_ids_to_configs);		
             }
             Street::River => {
                 self.street = Street::ShowDown;
@@ -117,11 +120,15 @@ impl<'a> GameHand<'a> {
                     }		    
                 }
 		PlayerConfig::send_specific_message(
-		    &format!("Your hand: {:?}", player.hole_cards),
+		    &format!("Hole Cards: {}{}", player.hole_cards[0], player.hole_cards[1]),
 		    player.id,
 		    player_ids_to_configs
 		);
-		
+		PlayerConfig::send_specific_message(
+		    &format!("Money: {}", player.money),
+		    player.id,
+		    player_ids_to_configs
+		);		
             }
         }
     }
@@ -217,7 +224,7 @@ impl<'a> GameHand<'a> {
 		);
 		PlayerConfig::send_group_message(
 		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
-			     payout, name, hand_results[idx]),
+			     payout, name.as_ref().unwrap(), hand_results[idx]),
 		    &player_ids_to_configs);			
 		
 		winning_player.pay(payout);
@@ -308,10 +315,12 @@ impl<'a> GameHand<'a> {
 		player.is_active = true;
 	    }
 	}
+	/*
         PlayerConfig::send_group_message(&format!(
             "inside of play(). button_idx = {:?}",
             self.button_idx
         ), player_ids_to_configs);
+	 */
         self.deck.shuffle();
         self.deal_hands(players, player_ids_to_configs);
 
@@ -388,11 +397,14 @@ impl<'a> GameHand<'a> {
         println!("num active players = {}", num_active);
         PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
+	
         println!("player at index {} starts the betting", starting_idx);
+	/*
         PlayerConfig::send_group_message(&format!(
             "player at index {} starts the betting",
             starting_idx
         ), player_ids_to_configs);
+	 */
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
             PlayerConfig::send_group_message(&format!(
@@ -523,6 +535,13 @@ impl<'a> GameHand<'a> {
                     }
                 }
 
+		// send a money message so the client can update accordingly
+		PlayerConfig::send_specific_message(
+		    &format!("Money: {}", player.money),
+		    player.id,
+		    player_ids_to_configs
+		);
+		
                 //println!("after player: num_active = {}, num_settled = {}", self.num_active, num_settled);
                 if num_active == 1 {
                     println!("Only one active player left so lets break the steet loop");
@@ -612,7 +631,7 @@ impl<'a> GameHand<'a> {
             );
         }
 	PlayerConfig::send_specific_message(
-	    &format!("Please enter your action. cards = {:?}, money = {:?}: ", player.hole_cards, player.money),
+	    &format!("Please enter your action (current bet = {}): ", current_bet),
 	    player.id,
 	    player_ids_to_configs
 	);
@@ -844,10 +863,10 @@ impl Game {
         loop {
             hand_count += 1;
             println!(
-                "\n\n\n=================================================\n\nplaying hand {}",
+                "\n\n\nPlaying hand {}",
                 hand_count
             );
-	    PlayerConfig::send_group_message(&format!("================playing hand {}", hand_count),
+	    PlayerConfig::send_group_message(&format!("Playing hand {}", hand_count),
 					     &self.player_ids_to_configs);			
 	    
 	    
