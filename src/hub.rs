@@ -194,25 +194,13 @@ impl Handler<Join> for GameHub {
     fn handle(&mut self, msg: Join, ctx: &mut Context<Self>) {
         let Join { id, table_name } = msg;
 
-        if let Some(old_table_name) = self.players_to_table.get(&id) {
-            if *old_table_name != table_name {
-                // we already exist at a table, so we must leave that table
-                // we can unwrap since the mappings must always be in sync
-		if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
-		    println!("passing leave to the existing!");
-		    meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
-		    println!("meta actions = {:?}", meta_actions);		    
-		} else {
-		    // TODO this should never happen
-		}
-
-		
-            }
-        }
-        // unwrap since how can they join a table if they were not in the lobby already?
-	// TODO: there can be a race here if we left a game but it hasnt officially Removed us yet?
-	// TODO Also if we simply havent even left the other game and we try to join a new one!
-        let player_config = self.main_lobby_connections.remove(&id).unwrap();
+        let player_config_option = self.main_lobby_connections.remove(&id);
+	if player_config_option.is_none() {
+	    // the player is not in the main lobby, so we must be waiting for the game to remove the player still
+	    println!("player config not in the main lobby, so they must already be at a game");
+	    return;
+	} 
+	let player_config = player_config_option.unwrap();		
         // update the mapping to find the player at a table
         self.players_to_table.insert(id, table_name.clone());
 
