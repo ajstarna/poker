@@ -194,6 +194,9 @@ impl Handler<Join> for GameHub {
     fn handle(&mut self, msg: Join, ctx: &mut Context<Self>) {
         let Join { id, table_name } = msg;
 
+	//TODO, make sure the player has a name before entering.
+	//    maybe make the name field not an option, and just default to "Player" on connect hmm
+	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
 	    // the player is not in the main lobby, so we must be waiting for the game to remove the player still
@@ -213,7 +216,7 @@ impl Handler<Join> for GameHub {
 	    println!("meta actions = {:?}", meta_actions);
         } else {
 	    // we need to create the game for the first time
-            let mut game = Game::new(ctx.address());
+            let mut game = Game::new(Some(ctx.address()));
             game.add_user(player_config);
 	    
             let num_bots = 2;

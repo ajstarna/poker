@@ -26,7 +26,6 @@ enum Street {
 #[derive(Debug)]
 struct GameHand<'a> {
     deck: &'a mut Deck,
-    num_active: usize,
     button_idx: usize, // the button index dictates where the action starts
     small_blind: u32,
     big_blind: u32,
@@ -46,7 +45,6 @@ impl<'a> GameHand<'a> {
     ) -> Self {
         GameHand {
             deck,
-            num_active: 0,
             button_idx,
             small_blind,
             big_blind,
@@ -304,7 +302,7 @@ impl<'a> GameHand<'a> {
 	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
 	    incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	    hub_addr: &Addr<GameHub>,	    
+	    hub_addr: Option<&Addr<GameHub>>,	    
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	for player in players.iter_mut().flatten() {
@@ -327,7 +325,8 @@ impl<'a> GameHand<'a> {
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
-            let finished = self.play_street(players, player_ids_to_configs, incoming_actions, incoming_meta_actions, hub_addr);
+            let finished = self.play_street(players, player_ids_to_configs,
+					    incoming_actions, incoming_meta_actions, hub_addr);
 	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -360,7 +359,7 @@ impl<'a> GameHand<'a> {
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: &Addr<GameHub>,
+	hub_addr: Option<&Addr<GameHub>>,
     ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
@@ -608,7 +607,7 @@ impl<'a> GameHand<'a> {
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: &Addr<GameHub>,
+	hub_addr: Option<&Addr<GameHub>>,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -770,7 +769,7 @@ impl<'a> GameHand<'a> {
 
 #[derive(Debug)]
 pub struct Game {
-    hub_addr: Addr<GameHub>, // needs to be able to communicate back to the hub sometimes
+    hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
     deck: Deck,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
@@ -780,7 +779,9 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(hub_addr: Addr<GameHub>) -> Self {
+
+    // the address of the GameHub is optional so that unit tests need not worry about it
+    pub fn new(hub_addr: Option<Addr<GameHub>>) -> Self {
         Game {
 	    hub_addr,
             deck: Deck::new(),
@@ -816,20 +817,7 @@ impl Game {
 	}
 	added
     }
-    
-    /// remove the player from the vec of players with the given id
-    /// and remove it from the id to config mapping
-    pub fn remove_player(&mut self, id: Uuid) {
-	for player_spot in self.players.iter_mut() {
-	    if let Some(player) = player_spot{
-		if player.id == id {
-		    *player_spot = None;
-		    self.player_ids_to_configs.remove(&id);		    
-		}
-	    }
-	}
-    }
-        
+            
     /// send a given message to all the players at the tabel
     pub fn send_message(&self, message: &str) {
         PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
@@ -851,7 +839,7 @@ impl Game {
 	    &mut self.player_ids_to_configs,
 	    incoming_actions,
 	    incoming_meta_actions,
-	    &self.hub_addr);
+	    self.hub_addr.as_ref());
     }
 
     pub fn play(
@@ -926,8 +914,10 @@ impl Game {
 			// the game hub
 			let config = self.player_ids_to_configs.remove(&id).unwrap();
 			PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
-							 &self.player_ids_to_configs);			
-			self.hub_addr.do_send(Removed{config});
+							 &self.player_ids_to_configs);
+			if self.hub_addr.is_some() {
+			    self.hub_addr.as_ref().unwrap().do_send(Removed{config});
+			}
 		    },
 		    MetaAction::PlayerName(id, new_name) => {
 			PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
@@ -969,7 +959,7 @@ impl Game {
     fn handle_meta_actions(
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: &Addr<GameHub>,
+	hub_addr: Option<&Addr<GameHub>>,
     ) {
 	let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	println!("meta_actions = {:?}", meta_actions);
@@ -997,8 +987,10 @@ impl Game {
 		    let config = player_ids_to_configs.remove(&id).unwrap();
 		    PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
 		    				     &player_ids_to_configs);
-		    // tell the hub that we left
-		    hub_addr.do_send(Removed{config});
+		    if hub_addr.is_some() {
+			// tell the hub that we left			
+			hub_addr.unwrap().do_send(Removed{config});
+		    }
 		},
 		MetaAction::PlayerName(id, new_name) => {
 		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
@@ -1010,47 +1002,67 @@ impl Game {
 	    }
 	
 	}
-	// TODO return a list of player ids that left the game
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::{HashMap, HashSet};
+    
+    #[test]
+    fn add_bot() {
+        let mut game = Game::new(None);
+        let name = "Mr Bot".to_string();
+        game.add_bot(name);
+        assert_eq!(game.players.len(), 9);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+        assert!(!game.players[0].as_ref().unwrap().human_controlled);
+    }
+    
+    #[test]
+    fn add_user_no_connection() {
+        let mut game = Game::new(None);	
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+        game.add_user(settings);
+        assert_eq!(game.players.len(), 9);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+    }
+
+
+    #[test]
+    fn play_one_hand() {
+        let mut game = Game::new(None);	
+
+
+	let id = uuid::Uuid::new_v4();
+        let name = "Human1".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+        game.add_user(settings);
+
+	let id = uuid::Uuid::new_v4();
+        let name = "Human1".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+        game.add_user(settings);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let actions = Arc::new(Mutex::new(HashMap::new()));	
+	let cloned_actions = actions.clone();
+	    
+	let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+	let cloned_meta_actions = meta_actions.clone();	
     }
     
 }
 
-/*
-#[cfg(test)]
-mod tests {
-    use super::PlayerConfig;
-    use super::*;
-
-    #[test]
-    fn add_bot() {
-        let mut game = Game::new();
-        let name = "Mr Bot".to_string();
-        game.add_bot(name);
-        assert_eq!(game.players.len(), 1);
-        assert!(!game.players[0].human_controlled);
-    }
-
-    #[test]
-    fn add_user_no_connection() {
-        let mut game = Game::new();
-        let id = uuid::Uuid::new_v4();
-        let name = "Human".to_string();
-        let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
-        assert_eq!(game.players.len(), 1);
-        assert!(game.players[0].human_controlled);
-    }
-
-    #[test]
-    fn remove_player() {
-        let mut game = Game::new();
-        let id = uuid::Uuid::new_v4();
-        let name = "Human".to_string();
-        let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
-        assert_eq!(game.players.len(), 1);
-        game.remove_player(id);
-        assert!(game.players.is_empty());
-    }
-}
-*/

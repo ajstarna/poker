@@ -56,11 +56,9 @@ impl PlayerConfig {
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
 		    WsMessage(format!("You are changing your name to {:?}", name))
-		);	    
-	    
+		);	    	    
 	}
-    }
-    
+    }    
 }
 
 #[derive(Debug)]
