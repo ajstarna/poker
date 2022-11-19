@@ -437,6 +437,11 @@ impl<'a> GameHand<'a> {
 		    // end the street and indicate to the caller that the hand is going to the next street
                     break 'street false;
                 }
+		if num_all_in + 1 == num_active {
+		    println!("only one person is not all in, so just move on!");
+                    break 'street false;		    
+		}
+
 		
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
@@ -517,7 +522,7 @@ impl<'a> GameHand<'a> {
 				&format!("Player {:?} calls", name),
 				player_ids_to_configs);			    
                             let difference = current_bet - player_cumulative;
-                            if difference > player.money {
+                            if difference >= player.money {
                                 println!("you have to put in the rest of your chips");
                                 self.pot += player.money;
                                 cumulative_bets[i] += player.money;
@@ -723,7 +728,6 @@ impl<'a> GameHand<'a> {
 		    }
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
-                    println!("Player bets {}!", new_bet);
                     if current_bet < player_cumulative {
                         // will this case happen?
                         println!("this should not happen!");
@@ -739,6 +743,7 @@ impl<'a> GameHand<'a> {
 
 		    // NOTE ---> I changed it now
                     if new_bet > player.money + player_cumulative {
+			println!("cant bet more than you have");
 			PlayerConfig::send_specific_message(
 			    &"You can't bet more than you have!!".to_owned(),
 			    player.id,
@@ -1333,7 +1338,7 @@ mod tests {
 	});
 	
 	// set the action that player2 bets
-	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(508));
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(500));
 	// player1 calls
 	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
 	
@@ -1342,9 +1347,9 @@ mod tests {
 	
 	// one of them has all the money
 	assert!(game.players[0].as_ref().unwrap().money == 0 || 
-		game.players[1].as_ref().unwrap().money == 0);	
+		game.players[1].as_ref().unwrap().money == 500);	
 	assert!(game.players[0].as_ref().unwrap().money == 1000 || 
-		game.players[1].as_ref().unwrap().money == 1000);	
+		game.players[1].as_ref().unwrap().money == 1500);	
     }
     
 }
