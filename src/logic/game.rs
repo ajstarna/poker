@@ -203,7 +203,8 @@ impl<'a> GameHand<'a> {
                     //println!("found an NON active player remaining");
                 }
             }
-            assert!(best_indices.len() == 1); // if we didn't make it to show down, there better be only one player left
+	    // if we didn't make it to show down, there better be only one player left	    
+            assert!(best_indices.len() == 1); 
         }
 
         // divy the pot to all the winners
@@ -212,6 +213,7 @@ impl<'a> GameHand<'a> {
         let num_winners = best_indices.len();
         let payout = (self.pot as f64 / num_winners as f64) as u32;
 
+	println!("best_indices = {:?}", best_indices);
         for idx in best_indices {
             let winning_spot = &mut players[idx];
 	    if let Some(ref mut winning_player) = winning_spot {
@@ -398,12 +400,6 @@ impl<'a> GameHand<'a> {
 
 	
         println!("player at index {} starts the betting", starting_idx);
-	/*
-        PlayerConfig::send_group_message(&format!(
-            "player at index {} starts the betting",
-            starting_idx
-        ), player_ids_to_configs);
-	 */
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
             PlayerConfig::send_group_message(&format!(
@@ -478,6 +474,8 @@ impl<'a> GameHand<'a> {
                             if player.is_all_in() {
                                 num_all_in += 1;
 			    }
+			    // note: we dont count the big blind as a "settled" player,
+			    // since they still get a chance to act after the small blind
                         }
                         PlayerAction::Fold => {
                             println!("Player {:?} folds!", name);
@@ -540,8 +538,9 @@ impl<'a> GameHand<'a> {
 		    player.id,
 		    player_ids_to_configs
 		);
-		
-                //println!("after player: num_active = {}, num_settled = {}", self.num_active, num_settled);
+
+                println!("after player: num_active = {}, num_settled = {}, num_all_in = {}",
+			 num_active, num_settled, num_all_in);
                 if num_active == 1 {
                     println!("Only one active player left so lets break the steet loop");
 		    // end the street and indicate to the caller that the hand is finished
@@ -568,7 +567,7 @@ impl<'a> GameHand<'a> {
     {
         if player.human_controlled {
 	    let mut actions = incoming_actions.lock().unwrap();	    
-	    //println!("incoming_actions = {:?}", actions);	    
+	    println!("incoming_actions = {:?}", actions);	    
             if let Some(action) = actions.get_mut(&player.id) {
                 println!(
                     "Player: {:?} has action {:?}",
@@ -660,7 +659,7 @@ impl<'a> GameHand<'a> {
 		break;		
 	    }
 	    
-            //println!("Attempting to get player action on attempt {:?}", attempts);
+            println!("Attempting to get player action on attempt {:?}", attempts);
             match GameHand::get_action_from_player(player, incoming_actions) {
 		None => {
                     // println!("No action is set for the player {:?}", player.id);
@@ -718,7 +717,7 @@ impl<'a> GameHand<'a> {
 		    }
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
-                    //println!("Player bets {}!", new_bet);
+                    println!("Player bets {}!", new_bet);
                     if current_bet < player_cumulative {
                         // will this case happen?
                         println!("this should not happen!");
@@ -742,6 +741,7 @@ impl<'a> GameHand<'a> {
                         continue;
                     }
                     if new_bet <= current_bet {
+			println!("new bet must be larger than current");
 			PlayerConfig::send_specific_message(
 			    &"the new bet has to be larger than the current bet!".to_owned(),
 			    player.id,
@@ -930,6 +930,7 @@ impl Game {
                 loop_count += 1;
                 if loop_count >= 5 {
                     // couldn't find a valid button position. how does this happen?
+		    println!("could not find a button spot!");
                     break 'find_button;
                 }
                 self.button_idx += 1; // and modulo length
@@ -962,7 +963,7 @@ impl Game {
 	hub_addr: Option<&Addr<GameHub>>,
     ) {
 	let mut meta_actions = incoming_meta_actions.lock().unwrap();
-	println!("meta_actions = {:?}", meta_actions);
+	//println!("meta_actions = {:?}", meta_actions);
 	for _ in 0..meta_actions.len() {
 	    match meta_actions.pop_front().unwrap() {
 		MetaAction::Chat(id, text) => {
@@ -1038,31 +1039,258 @@ mod tests {
     }
 
 
+    /// the small blind folds, so the big blind should win and get paid
     #[test]
-    fn play_one_hand() {
+    fn instant_fold() {
         let mut game = Game::new(None);	
 
 
-	let id = uuid::Uuid::new_v4();
-        let name = "Human1".to_string();
-        let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
 
-	let id = uuid::Uuid::new_v4();
-        let name = "Human1".to_string();
-        let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
 	// flatten to get all the Some() players
 	let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 	
-	let actions = Arc::new(Mutex::new(HashMap::new()));	
-	let cloned_actions = actions.clone();
-	    
-	let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-	let cloned_meta_actions = meta_actions.clone();	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 folds
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// check that the money changed hands
+	assert_eq!(game.players[0].as_ref().unwrap().money, 1004);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 996);	
+
+	
+    }
+
+
+    /// the small blind calls, the big blind checks to the flop
+    /// the small blind bets on the flop, and the big blind folds
+    #[test]
+    fn call_check_bet_fold() {
+        let mut game = Game::new(None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 calls
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Call);
+	// player1 checks
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Check);
+
+
+	// wait for the flop
+        let wait_duration = time::Duration::from_secs(7);
+	std::thread::sleep(wait_duration);
+
+	// player2 bets on the flop
+	println!("now sending the flop actions");	
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(10));
+	// player1 folds
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// check that the money changed hands
+	assert_eq!(game.players[0].as_ref().unwrap().money, 992);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1008);	
+    }
+
+    /// the small blind bets, the big blind folds
+    #[test]
+    fn pre_flop_bet_fold() {
+        let mut game = Game::new(None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 bets
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(22));
+	// player1 folds
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// check that the money changed hands
+	assert_eq!(game.players[0].as_ref().unwrap().money, 992);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1008);	
+    }
+
+    /// the small blind bets, the big blind calls
+    /// the small blind bets on the flop, and the big blind folds
+    #[test]
+    fn bet_call_bet_fold() {
+        let mut game = Game::new(None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 bets
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(22));
+	// player1 calls
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
+
+	// wait for the flop
+        let wait_duration = time::Duration::from_secs(7);
+	std::thread::sleep(wait_duration);
+
+	// player2 bets on the flop
+	println!("now sending the flop actions");	
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(10));
+	// player1 folds
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// check that the money changed hands
+	assert_eq!(game.players[0].as_ref().unwrap().money, 978);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1022);	
+    }
+
+    /// the small blind goes all in and the big blind calls
+    /// the rest will just happen automatically
+    #[test]
+    fn all_in_call() {
+        let mut game = Game::new(None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 bets
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(1000));
+	// player1 calls
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// one of them has all the money
+	assert!(game.players[0].as_ref().unwrap().money == 0 || 
+		game.players[1].as_ref().unwrap().money == 0);	
+	assert!(game.players[0].as_ref().unwrap().money == 2000 || 
+		game.players[1].as_ref().unwrap().money == 2000);	
     }
     
 }
+
 
