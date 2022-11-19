@@ -30,6 +30,7 @@ struct GameHand {
     big_blind: u32,
     street: Street,
     pot: u32, // current size of the pot
+    total_contributions: [u32; 9], // keep track of how many a given player contributed to the pot during the whole hand
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -47,6 +48,7 @@ impl GameHand {
             big_blind,
             street: Street::Preflop,
             pot: 0,
+	    total_contributions: [0; 9],
             flop: None,
             turn: None,
             river: None,
@@ -104,7 +106,8 @@ impl GameHand {
         }
     }
 
-    fn deal_hands(&mut self, deck: &mut Box<dyn Deck>, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
+		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         for player in players.iter_mut().flatten() {
             if player.is_active {
                 for _ in 0..2 {
@@ -151,82 +154,66 @@ impl GameHand {
     fn finish(&mut self, players: &mut [Option<Player>],
 	      player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
     ) {
-        let mut best_indices = HashSet::<usize>::new();
-        let hand_results = players
+        let mut hand_results = players
             .iter()
-            .flatten() // skip None values
-            .map(|player| self.determine_best_hand(player))
+            .map(|player| self.determine_best_hand(player.as_ref()))
             .collect::<Vec<Option<HandResult>>>();
 
+	println!("hand results = {:?}", hand_results);
         if let Street::ShowDown = self.street {
             // if we made it to show down, there are multiple plauers left, so we need to see who
             // has the best hand.
             println!("Multiple active players made it to showdown!");
-            let mut best_idx = 0;
-            best_indices.insert(best_idx);
-            println!("starting best hand_result = {:?}", hand_results[best_idx]);
-            // TODO: is there a chance hand_results[0] == None and we blow up?
-            for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
-                i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
-                        //println!("Index = {}, Current result = {:?}", i, current_result);
 
-                if current_result.is_none() {
-                    //println!("no hand result at index {:?}", i);
-                    continue;
-                }
-                if hand_results[best_idx] == None || *current_result > hand_results[best_idx] {
-                    // TODO: this was working before the == None condition, but that seemed weird to me...
-                    // anything > None == true in Rust perhaps? I added the check to be clear when reading the code.
-                    println!("new best hand at index {:?}", i);
-                    best_indices.clear();
-                    best_indices.insert(i); // only one best hand now
-                    best_idx = i;
-                } else if *current_result == hand_results[best_idx] {
-                    println!("equally good hand at index {:?}", i);
-                    best_indices.insert(i); // another index that also has the best hand
-                } else {
-                    println!("hand worse at index {:?}", i);
-                    continue;
-                }
-            }
+	    while self.pot > 0 {
+		let mut best_indices = HashSet::<usize>::new();		
+		let mut best_idx = 0;		
+		best_indices.insert(best_idx);
+		println!("starting best hand_result = {:?}", hand_results[best_idx]);
+			for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
+                    i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
+                    //println!("Index = {}, Current result = {:?}", i, current_result);
+		    
+                    if current_result.is_none() {
+			//println!("no hand result at index {:?}", i);
+			continue;
+                    }
+                    if hand_results[best_idx] == None || *current_result > hand_results[best_idx] {
+			println!("new best hand at index {:?}", i);
+			best_indices.clear();
+			best_indices.insert(i); // only one best hand now
+			best_idx = i;
+                    } else if *current_result == hand_results[best_idx] {
+			println!("equally good hand at index {:?}", i);
+			best_indices.insert(i); // another index that also has the best hand
+                    } else {
+			println!("hand worse at index {:?}", i);
+			continue;
+                    }
+		}
+		// divy the pot to all the winners
+		let num_winners = best_indices.len();
+		let payout = (self.pot as f64 / num_winners as f64) as u32;
+		self.pot = 0;		
+		self.pay_players(players, player_ids_to_configs, best_indices, payout, &mut hand_results);
+	    }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
-            for (i, player) in players.iter().flatten().enumerate() {
-                // TODO: make this more functional/rusty
-                if player.is_active {
+            let mut best_indices = HashSet::<usize>::new();	    
+            for (i, player) in players.iter().enumerate() {
+		if player.is_none() {
+		    continue;
+		}
+                if player.as_ref().unwrap().is_active {
                     //println!("found an active player remaining");
                     best_indices.insert(i);
                 } else {
-                    //println!("found an NON active player remaining");
+                    println!("found an NON active player remaining");
                 }
             }
 	    // if we didn't make it to show down, there better be only one player left	    
-            assert!(best_indices.len() == 1); 
-        }
-
-        // divy the pot to all the winners
-        // TODO: if a player was all_in (i.e. money left is 0?) then we need to figure out
-        // how much of the pot they actually get to win if multiple other players made it to showdown
-        let num_winners = best_indices.len();
-        let payout = (self.pot as f64 / num_winners as f64) as u32;
-
-	println!("best_indices = {:?}", best_indices);
-        for idx in best_indices {
-            let winning_spot = &mut players[idx];
-	    if let Some(ref mut winning_player) = winning_spot {
-		let name = &player_ids_to_configs.get(&winning_player.id).unwrap().name; // get the name for message
-		println!(
-                    "paying out: {:?} \n  with hand result = {:?}",
-                    name, hand_results[idx]
-		);
-		PlayerConfig::send_group_message(
-		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
-			     payout, name.as_ref().unwrap(), hand_results[idx]),
-		    &player_ids_to_configs);			
-		
-		winning_player.pay(payout);
-		println!("after payment: {:?}", winning_player);
-	    }
+            assert!(best_indices.len() == 1);
+	    self.pay_players(players, player_ids_to_configs, best_indices, self.pot, &mut hand_results);
         }
 
         // take the players' cards
@@ -245,8 +232,46 @@ impl GameHand {
         }
     }
 
+
+    fn pay_players(
+	&mut self,
+	players: &mut [Option<Player>],
+	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,		   
+	best_indices: HashSet::<usize>,
+	payout: u32,
+	hand_results: &mut Vec<Option<HandResult>>,
+    ) {
+	println!("best_indices = {:?}", best_indices);
+        for idx in best_indices {
+            let winning_spot = &mut players[idx];
+	    if let Some(ref mut winning_player) = winning_spot {
+		let name = &player_ids_to_configs.get(&winning_player.id).unwrap().name; // get the name for message
+		println!(
+                    "paying out: {:?} \n  with hand result = {:?}",
+                    name, hand_results[idx]
+		);
+		PlayerConfig::send_group_message(
+		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
+			     payout, name.as_ref().unwrap(), hand_results[idx]),
+		    &player_ids_to_configs);			
+		
+		winning_player.pay(payout);
+		println!("after payment: {:?}", winning_player);
+	    } else {
+		panic!("we did not find a player at one of the suposed best indices!");
+	    }
+        }
+    }
+    
     /// Given a player, we need to determine which 5 cards make the best hand for this player
-    fn determine_best_hand(&self, player: &Player) -> Option<HandResult> {
+    /// If a player spot is empty, i.e. player.is_none(), then we simply return None
+    fn determine_best_hand(&self, player_opt: Option<&Player>) -> Option<HandResult> {
+	let player = if player_opt.is_none() {
+	    return None;
+	} else {
+	    player_opt.unwrap()
+	};
+	
         if !player.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
