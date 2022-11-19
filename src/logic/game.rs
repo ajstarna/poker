@@ -410,6 +410,8 @@ impl<'a> GameHand<'a> {
         'street: loop {
             // iterate over the players from the starting index to the end of the vec,
             // and then from the beginning back to the starting index
+	    // TODO: can i change this to loop over indixes instead? then we don't need to borrow the
+	    // players the whole time? then we can loop over the players inside this loop as needed perhaps?
             let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
 		/*
@@ -508,8 +510,8 @@ impl<'a> GameHand<'a> {
                                 self.pot += difference;
                                 cumulative_bets[i] += difference;
                                 player.money -= difference;
+				num_settled += 1;				
                             }
-                            num_settled += 1;
                         }
                         PlayerAction::Bet(new_bet) => {
                             println!("Player bets {}!", new_bet);
@@ -1289,6 +1291,56 @@ mod tests {
 		game.players[1].as_ref().unwrap().money == 0);	
 	assert!(game.players[0].as_ref().unwrap().money == 2000 || 
 		game.players[1].as_ref().unwrap().money == 2000);	
+    }
+
+    /// the small blind bets and the big blind calls
+    /// this call makes the big blind go all-in
+    #[test]
+    fn call_all_in() {
+        let mut game = Game::new(None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
+    
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 bets
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(508));
+	// player1 calls
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// one of them has all the money
+	assert!(game.players[0].as_ref().unwrap().money == 0 || 
+		game.players[1].as_ref().unwrap().money == 0);	
+	assert!(game.players[0].as_ref().unwrap().money == 1000 || 
+		game.players[1].as_ref().unwrap().money == 1000);	
     }
     
 }
