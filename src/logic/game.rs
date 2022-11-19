@@ -421,6 +421,23 @@ impl<'a> GameHand<'a> {
 		    player.deactivate();
 		}*/
 
+                println!("start loop: num_active = {}, num_settled = {}, num_all_in = {}",
+			 num_active, num_settled, num_all_in);
+		
+                if num_active == 1 {
+                    println!("Only one active player left so lets break the steet loop");
+		    // end the street and indicate to the caller that the hand is finished
+                    break 'street true;
+                }
+                if num_settled + num_all_in == num_active {
+                    println!(
+                        "everyone is ready to go to the next street! num_settled = {}",
+                        num_settled
+                    );
+		    // end the street and indicate to the caller that the hand is going to the next street
+                    break 'street false;
+                }
+		
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
 			 self.pot,
@@ -543,19 +560,6 @@ impl<'a> GameHand<'a> {
 
                 println!("after player: num_active = {}, num_settled = {}, num_all_in = {}",
 			 num_active, num_settled, num_all_in);
-                if num_active == 1 {
-                    println!("Only one active player left so lets break the steet loop");
-		    // end the street and indicate to the caller that the hand is finished
-                    break 'street true;
-                }
-                if num_settled + num_all_in == num_active {
-                    println!(
-                        "everyone is ready to go to the next street! num_settled = {}",
-                        num_settled
-                    );
-		    // end the street and indicate to the caller that the hand is going to the next street
-                    break 'street false;
-                }
             }
         }
     }
