@@ -216,7 +216,7 @@ impl Handler<Join> for GameHub {
 	    println!("meta actions = {:?}", meta_actions);
         } else {
 	    // we need to create the game for the first time
-            let mut game = Game::new(Some(ctx.address()));
+            let mut game = Game::new(Some(ctx.address()), None);
             game.add_user(player_config);
 	    
             let num_bots = 2;

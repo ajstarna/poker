@@ -5,9 +5,9 @@ use std::iter;
 use std::sync::{Arc, Mutex};
 use actix::Addr;
 
-use super::card::{Card, Deck, StandardDeck, HandResult};
+use super::card::{Card, Deck, RiggedDeck, StandardDeck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
-use crate::messages::{MetaAction, Removed, WsMessage};
+use crate::messages::{MetaAction, Removed};
 use crate::hub::GameHub;
 
 use std::{thread, time};
@@ -386,6 +386,11 @@ impl GameHand {
             );
             return true;
         }
+
+	if num_all_in + 1 == num_active {
+	    println!("only one person is not all in, so don't bother with the street!");
+            return false;		    
+	}
 	
 	// once every player is either all-in or settled, then we move to the next street	
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
@@ -435,11 +440,6 @@ impl GameHand {
 		    // end the street and indicate to the caller that the hand is going to the next street
                     break 'street false;
                 }
-		if num_all_in + 1 == num_active {
-		    println!("only one person is not all in, so just move on!");
-                    break 'street false;		    
-		}
-
 		
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
@@ -789,11 +789,17 @@ pub struct Game {
 
 impl Game {
 
-    // the address of the GameHub is optional so that unit tests need not worry about it
-    pub fn new(hub_addr: Option<Addr<GameHub>>) -> Self {
+    /// the address of the GameHub is optional so that unit tests need not worry about it
+    /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
+    pub fn new(hub_addr: Option<Addr<GameHub>>, deck_opt: Option<Box<dyn Deck>>) -> Self {
+	let deck = if deck_opt.is_some() {
+	    deck_opt.unwrap()
+	} else {
+	    Box::new(StandardDeck::new())
+	};
         Game {
 	    hub_addr,
-            deck: Box::new(StandardDeck::new()),
+            deck,
             players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             small_blind: 4,
@@ -1018,12 +1024,12 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::collections::{HashMap, HashSet};
+    use crate::logic::card::{Card, Suit, Rank, RiggedDeck};
+    use std::collections::{HashMap};
     
     #[test]
     fn add_bot() {
-        let mut game = Game::new(None);
+        let mut game = Game::new(None, None);
         let name = "Mr Bot".to_string();
         game.add_bot(name);
         assert_eq!(game.players.len(), 9);
@@ -1035,7 +1041,7 @@ mod tests {
     
     #[test]
     fn add_user_no_connection() {
-        let mut game = Game::new(None);	
+        let mut game = Game::new(None, None);	
         let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
         let settings = PlayerConfig::new(id, Some(name), None);
@@ -1051,7 +1057,7 @@ mod tests {
     /// the small blind folds, so the big blind should win and get paid
     #[test]
     fn instant_fold() {
-        let mut game = Game::new(None);	
+        let mut game = Game::new(None, None);	
 
 
 	// player1 will start as the button
@@ -1098,7 +1104,7 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     #[test]
     fn call_check_bet_fold() {
-        let mut game = Game::new(None);	
+        let mut game = Game::new(None, None);	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1154,7 +1160,7 @@ mod tests {
     /// the small blind bets, the big blind folds
     #[test]
     fn pre_flop_bet_fold() {
-        let mut game = Game::new(None);	
+        let mut game = Game::new(None, None);	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1200,7 +1206,7 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     #[test]
     fn bet_call_bet_fold() {
-        let mut game = Game::new(None);	
+        let mut game = Game::new(None, None);	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1256,7 +1262,24 @@ mod tests {
     /// the rest will just happen automatically
     #[test]
     fn all_in_call() {
-        let mut game = Game::new(None);	
+	let mut deck = RiggedDeck::new();
+
+	// we want the button/big blind to lose for testing purposes
+	deck.push(Card{rank: Rank::Two, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Three, suit: Suit::Club});	
+
+	// now the small blind's hole cards
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Heart});
+	
+	// now the full run out
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Diamond});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Spade});	
+	deck.push(Card{rank: Rank::King, suit: Suit::Club});
+	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
+	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
+	
+        let mut game = Game::new(None, Some(Box::new(deck)));	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1293,18 +1316,35 @@ mod tests {
 	// get the game back from the thread
 	let game = handler.join().unwrap();
 	
-	// one of them has all the money
-	assert!(game.players[0].as_ref().unwrap().money == 0 || 
-		game.players[1].as_ref().unwrap().money == 0);	
-	assert!(game.players[0].as_ref().unwrap().money == 2000 || 
-		game.players[1].as_ref().unwrap().money == 2000);	
+	// the small blind won
+	assert_eq!(game.players[0].as_ref().unwrap().money, 0);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 2000);
     }
 
     /// the small blind bets and the big blind calls
     /// this call makes the big blind go all-in
     #[test]
     fn call_all_in() {
-        let mut game = Game::new(None);	
+	let mut deck = RiggedDeck::new();
+
+	// we want the button/big blind to lose for testing purposes
+	deck.push(Card{rank: Rank::Two, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Three, suit: Suit::Club});	
+
+	// now the small blind's hole cards
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Heart});
+	
+	// now the full run out
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Diamond});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Spade});	
+	deck.push(Card{rank: Rank::King, suit: Suit::Club});
+	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
+	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
+
+	
+        let mut game = Game::new(None, Some(Box::new(deck)));	
+	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1342,12 +1382,10 @@ mod tests {
 	
 	// get the game back from the thread
 	let game = handler.join().unwrap();
-	
-	// one of them has all the money
-	assert!(game.players[0].as_ref().unwrap().money == 0 || 
-		game.players[1].as_ref().unwrap().money == 500);	
-	assert!(game.players[0].as_ref().unwrap().money == 1000 || 
-		game.players[1].as_ref().unwrap().money == 1500);	
+
+	// the small blind won
+	assert_eq!(game.players[0].as_ref().unwrap().money, 0);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1500);	
     }
 
     
