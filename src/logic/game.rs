@@ -5,7 +5,7 @@ use std::iter;
 use std::sync::{Arc, Mutex};
 use actix::Addr;
 
-use super::card::{Card, Deck, HandResult};
+use super::card::{Card, Deck, StandardDeck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::messages::{MetaAction, Removed, WsMessage};
 use crate::hub::GameHub;
@@ -53,11 +53,11 @@ impl GameHand {
         }
     }
 
-    fn transition(&mut self, player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn transition(&mut self, deck: &mut Box<dyn Deck>,  player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         match self.street {
             Street::Preflop => {
                 self.street = Street::Flop;
-                self.deal_flop();
+                self.deal_flop(deck);
                 println!(
                     "\n===========================\nFlop = {:?}\n===========================",
                     self.flop
@@ -71,7 +71,7 @@ impl GameHand {
             }
             Street::Flop => {
                 self.street = Street::Turn;
-                self.deal_turn();
+                self.deal_turn(deck);
                 println!(
                     "\n==========================\nTurn = {:?}\n==========================",
                     self.turn
@@ -82,7 +82,7 @@ impl GameHand {
             }
             Street::Turn => {
                 self.street = Street::River;
-                self.deal_river();
+                self.deal_river(deck);
                 println!(
                     "\n==========================\nRiver = {:?}\n==========================",
                     self.river
@@ -104,11 +104,11 @@ impl GameHand {
         }
     }
 
-    fn deal_hands(&mut self, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+    fn deal_hands(&mut self, deck: &mut Box<dyn Deck>, players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         for player in players.iter_mut().flatten() {
             if player.is_active {
                 for _ in 0..2 {
-                    if let Some(card) = self.deck.draw_card() {
+                    if let Some(card) = deck.draw_card() {
                         player.hole_cards.push(card)
                     } else {
                         panic!();
@@ -128,10 +128,10 @@ impl GameHand {
         }
     }
 
-    fn deal_flop(&mut self) {
+    fn deal_flop(&mut self, deck: &mut Box<dyn Deck>) {
         let mut flop = Vec::<Card>::with_capacity(3);
         for _ in 0..3 {
-            if let Some(card) = self.deck.draw_card() {
+            if let Some(card) = deck.draw_card() {
                 flop.push(card)
             } else {
                 panic!();
@@ -140,12 +140,12 @@ impl GameHand {
         self.flop = Some(flop);
     }
 
-    fn deal_turn(&mut self) {
-        self.turn = self.deck.draw_card();
+    fn deal_turn(&mut self, deck: &mut Box<dyn Deck>) {
+        self.turn = deck.draw_card();
     }
 
-    fn deal_river(&mut self) {
-        self.river = self.deck.draw_card();
+    fn deal_river(&mut self, deck: &mut Box<dyn Deck>) {
+        self.river = deck.draw_card();
     }
 
     fn finish(&mut self, players: &mut [Option<Player>],
@@ -297,7 +297,7 @@ impl GameHand {
     }
 
     fn play(&mut self,
-            deck: & mut impl Deck,	    
+            deck: &mut Box<dyn Deck>,	    
 	    players: &mut [Option<Player>],
 	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
@@ -319,8 +319,8 @@ impl GameHand {
             self.button_idx
         ), player_ids_to_configs);
 	 */
-        self.deck.shuffle();
-        self.deal_hands(players, player_ids_to_configs);
+        deck.shuffle();
+        self.deal_hands(deck, players, player_ids_to_configs);
 
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
@@ -334,7 +334,7 @@ impl GameHand {
                 break;
             } else {
                 // otherwise we move to the next street
-                self.transition(player_ids_to_configs);
+                self.transition(deck, player_ids_to_configs);
             }
         }
         // now we finish up and pay the pot to the winner
@@ -779,7 +779,7 @@ impl GameHand {
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    deck: Deck,
+    deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
     button_idx: usize, // index of the player with the button
@@ -793,7 +793,7 @@ impl Game {
     pub fn new(hub_addr: Option<Addr<GameHub>>) -> Self {
         Game {
 	    hub_addr,
-            deck: Deck::new(),
+            deck: Box::new(StandardDeck::new()),
             players: Default::default(), 
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             small_blind: 4,
@@ -838,12 +838,12 @@ impl Game {
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) {
         let mut game_hand = GameHand::new(
-            &mut self.deck,
             self.button_idx,
             self.small_blind,
             self.big_blind,
         );
         game_hand.play(
+	    &mut self.deck,	    
 	    &mut self.players,
 	    &mut self.player_ids_to_configs,
 	    incoming_actions,

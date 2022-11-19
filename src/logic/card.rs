@@ -329,7 +329,7 @@ impl HandResult {
 /// trait to define behaviour that you would expect out of a deck of cards
 /// in unit tests, we may want to provide a rigged deck, wherease in a normal game
 /// we just want a standard random deck of cards
-pub trait Deck {
+pub trait Deck: Send + std::fmt::Debug {
     /// shuffle the deck to randomize (possibly) the output of future cards
     fn shuffle(&mut self);
 
@@ -357,13 +357,13 @@ impl StandardDeck {
 }
 
 impl Deck for StandardDeck {
-    pub fn shuffle(&mut self) {
+    fn shuffle(&mut self) {
         // shuffle the deck of cards
         self.cards.shuffle(&mut rand::thread_rng());
         self.top = 0;
     }
 
-    pub fn draw_card(&mut self) -> Option<Card> {
+    fn draw_card(&mut self) -> Option<Card> {
         // take the top card from the deck and move the index of the top of the deck
         if self.top == self.cards.len() {
             // the deck is exhausted, no card to give
