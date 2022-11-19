@@ -483,7 +483,7 @@ impl GameHand {
 			    }
                         }
                         PlayerAction::PostBigBlind(amount) => {
-                            println!("Player posts big blind of {}", amount);
+                            println!("Player {:?} posts big blind of {}", name, amount);			    
 			    PlayerConfig::send_group_message(
 				&format!("Player {:?} posts big blind of {}", name, amount),
 				player_ids_to_configs);
@@ -1417,21 +1417,21 @@ mod tests {
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
-        let name1 = "Human1".to_string();
+        let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
         game.add_user(settings1);
-	// set the player to have less money so there is a side pot	
+	// set the button to have less money so there is a side pot	
 	game.players[0].as_mut().unwrap().money = 500; 
 	
 	// player2 will start as the small blind
 	let id2 = uuid::Uuid::new_v4();
-        let name2 = "Human1".to_string();
+        let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
         game.add_user(settings2);
 
 	// player3 will start as the big blind
 	let id3 = uuid::Uuid::new_v4();
-        let name3 = "Human3".to_string();
+        let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
         game.add_user(settings3);
 	
@@ -1452,12 +1452,12 @@ mod tests {
 	    game // return the game back
 	});
 	
-	// the small blind goes all in
-	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(1000));
-	// the big blind calls
+	// the button goes all in with the short stack
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Bet(500));
+	// the small blind goes all in with a full stack
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(1000));	
+	// the big blind calls the full all-in
 	incoming_actions.lock().unwrap().insert(id3, PlayerAction::Call);
-	// the buttong calls
-	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
 	
 	// get the game back from the thread
 	let game = handler.join().unwrap();
@@ -1465,8 +1465,8 @@ mod tests {
 	// the button won the side pot
 	assert_eq!(game.players[0].as_ref().unwrap().money, 1500);
 
-	// the small blind won the main pot
-	assert_eq!(game.players[1].as_ref().unwrap().money, 1500);
+	// the small blind won the remainder
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1000);
 	
 	// the big blind lost everything
 	assert_eq!(game.players[1].as_ref().unwrap().money, 0);	
