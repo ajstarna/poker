@@ -24,8 +24,7 @@ enum Street {
 }
 
 #[derive(Debug)]
-struct GameHand<'a> {
-    deck: &'a mut Deck,
+struct GameHand {
     button_idx: usize, // the button index dictates where the action starts
     small_blind: u32,
     big_blind: u32,
@@ -36,15 +35,13 @@ struct GameHand<'a> {
     river: Option<Card>,
 }
 
-impl<'a> GameHand<'a> {
+impl GameHand {
     fn new(
-        deck: &'a mut Deck,
         button_idx: usize,
         small_blind: u32,
         big_blind: u32,
     ) -> Self {
         GameHand {
-            deck,
             button_idx,
             small_blind,
             big_blind,
@@ -300,6 +297,7 @@ impl<'a> GameHand<'a> {
     }
 
     fn play(&mut self,
+            deck: & mut impl Deck,	    
 	    players: &mut [Option<Player>],
 	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
@@ -1351,6 +1349,7 @@ mod tests {
 	assert!(game.players[0].as_ref().unwrap().money == 1000 || 
 		game.players[1].as_ref().unwrap().money == 1500);	
     }
+
     
 }
 

@@ -325,13 +325,25 @@ impl HandResult {
     }
 }
 
+
+/// trait to define behaviour that you would expect out of a deck of cards
+/// in unit tests, we may want to provide a rigged deck, wherease in a normal game
+/// we just want a standard random deck of cards
+pub trait Deck {
+    /// shuffle the deck to randomize (possibly) the output of future cards
+    fn shuffle(&mut self);
+
+    /// give us a single card. Optional, because the deck may be exhausted
+    fn draw_card(&mut self) -> Option<Card>;
+}
+
 #[derive(Debug)]
-pub struct Deck {
+pub struct StandardDeck {
     cards: Vec<Card>,
     top: usize, // index that we deal the next card from
 }
 
-impl Deck {
+impl StandardDeck {
     pub fn new() -> Self {
         // returns a new unshuffled deck of 52 cards
         let mut cards = Vec::<Card>::with_capacity(52);
@@ -340,9 +352,11 @@ impl Deck {
                 cards.push(Card { rank, suit });
             }
         }
-        Deck { cards, top: 0 }
+        Self { cards, top: 0 }
     }
+}
 
+impl Deck for StandardDeck {
     pub fn shuffle(&mut self) {
         // shuffle the deck of cards
         self.cards.shuffle(&mut rand::thread_rng());
