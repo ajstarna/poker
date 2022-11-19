@@ -1388,6 +1388,90 @@ mod tests {
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1500);	
     }
 
+    /// if a player goes all-in, then can only win as much as is called up to that amount,
+    /// even if other players keep playing and betting during this hand
+    #[test]
+    fn side_pot() {
+	let mut deck = RiggedDeck::new();
+
+	// we want the button to win his side pot
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Diamond});	
+
+	// the small blind will win the main pot against the big blind
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Heart});
+
+	// the big blind loses
+	deck.push(Card{rank: Rank::Two, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Four, suit: Suit::Heart});
+	
+	// now the full run out
+	deck.push(Card{rank: Rank::Three, suit: Suit::Diamond});
+	deck.push(Card{rank: Rank::Eight, suit: Suit::Spade});	
+	deck.push(Card{rank: Rank::Nine, suit: Suit::Club});
+	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
+	deck.push(Card{rank: Rank::King, suit: Suit::Club});
+	
+        let mut game = Game::new(None, Some(Box::new(deck)));		
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+	// set the player to have less money so there is a side pot	
+	game.players[0].as_mut().unwrap().money = 500; 
+	
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+
+	// player3 will start as the big blind
+	let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        game.add_user(settings3);
+	
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+        assert!(game.players[1].as_ref().unwrap().human_controlled);
+        assert!(game.players[2].as_ref().unwrap().human_controlled);	
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// the small blind goes all in
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(1000));
+	// the big blind calls
+	incoming_actions.lock().unwrap().insert(id3, PlayerAction::Call);
+	// the buttong calls
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+
+	// the button won the side pot
+	assert_eq!(game.players[0].as_ref().unwrap().money, 1500);
+
+	// the small blind won the main pot
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1500);
+	
+	// the big blind lost everything
+	assert_eq!(game.players[1].as_ref().unwrap().money, 0);	
+    }
+    
     
 }
 
