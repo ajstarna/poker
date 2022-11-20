@@ -5,7 +5,7 @@ use std::iter;
 use std::sync::{Arc, Mutex};
 use actix::Addr;
 
-use super::card::{Card, Deck, RiggedDeck, StandardDeck, HandResult};
+use super::card::{Card, Deck, StandardDeck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::messages::{MetaAction, Removed};
 use crate::hub::GameHub;
@@ -23,13 +23,34 @@ enum Street {
     ShowDown,
 }
 
+/// A pot keeps track of the total money, and which player (indices) contributed
+/// A game hand can have multiple pots, when players go all-in, and bettingcontinues
+#[derive(Debug)]
+struct Pot {
+    money: u32, // total amount in this pot
+    eligible_players: HashSet<usize>, // which players have contributed to it
+    cap: u32, // the most that any one player can put in. money should be eligible_players.len() * cap?
+    Not sure if this is gunna work? if one guy goes all in for 1000, then someone bets 2000, then someone calls all-in
+	at 500, this pot needs to be capped at 500. Does (1000-500) and (2000 - 500) need to be moved out or something?
+	Do we need these pots afterall? Or does it simply come down to the total_contributions for each player by the end? hmmmmm
+}
+
+impl Pot {
+    fn new() -> Self {
+	Self {
+	    money: 0,
+	    eligible_players: HashSet::new(),
+	}
+    }
+}
+
 #[derive(Debug)]
 struct GameHand {
     button_idx: usize, // the button index dictates where the action starts
     small_blind: u32,
     big_blind: u32,
     street: Street,
-    pot: u32, // current size of the pot
+    pots: Vec<Pot>,
     total_contributions: [u32; 9], // keep track of how many a given player contributed to the pot during the whole hand
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
@@ -47,7 +68,7 @@ impl GameHand {
             small_blind,
             big_blind,
             street: Street::Preflop,
-            pot: 0,
+            pots: vec![Pot::new()],
 	    total_contributions: [0; 9],
             flop: None,
             turn: None,
@@ -165,7 +186,7 @@ impl GameHand {
             // has the best hand.
             println!("Multiple active players made it to showdown!");
 
-	    while self.pot > 0 {
+	    while self.pots.last().unwrap().money > 0 {
 		let mut best_indices = HashSet::<usize>::new();		
 		let mut best_idx = 0;		
 		best_indices.insert(best_idx);
@@ -193,8 +214,8 @@ impl GameHand {
 		}
 		// divy the pot to all the winners
 		let num_winners = best_indices.len();
-		let payout = (self.pot as f64 / num_winners as f64) as u32;
-		self.pot = 0;		
+		let payout = (self.pots.last().unwrap().money as f64 / num_winners as f64) as u32;
+		self.pots.last_mut().unwrap().money = 0;		
 		self.pay_players(players, player_ids_to_configs, best_indices, payout, &mut hand_results);
 	    }
         } else {
@@ -213,7 +234,8 @@ impl GameHand {
             }
 	    // if we didn't make it to show down, there better be only one player left	    
             assert!(best_indices.len() == 1);
-	    self.pay_players(players, player_ids_to_configs, best_indices, self.pot, &mut hand_results);
+	    self.pay_players(players, player_ids_to_configs, best_indices,
+			     self.pots.last().unwrap().money, &mut hand_results);
         }
 
         // take the players' cards
@@ -420,8 +442,8 @@ impl GameHand {
 	// once every player is either all-in or settled, then we move to the next street	
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
 	
-        println!("Current pot = {}", self.pot);
-        PlayerConfig::send_group_message(&format!("Current pot = {}", self.pot), player_ids_to_configs);
+        println!("Current pot = {:?}", self.pots.last());
+        PlayerConfig::send_group_message(&format!("Current pot = {:?}", self.pots.last()), player_ids_to_configs);
 
         println!("num active players = {}", num_active);
         PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
@@ -468,7 +490,7 @@ impl GameHand {
 		
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-			 self.pot,
+			 self.pots,
 			 current_bet,
 			 player_cumulative);
 
@@ -498,8 +520,9 @@ impl GameHand {
 				&format!("Player {:?} posts small blind of {}", name, amount),
 				player_ids_to_configs);
 			    
-                            self.pot += amount;
+                            self.pots.last_mut().unwrap().money += amount;
                             cumulative_bets[i] += amount;
+			    self.total_contributions[i] += amount;
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
                             current_bet = self.small_blind;
@@ -513,8 +536,9 @@ impl GameHand {
 				&format!("Player {:?} posts big blind of {}", name, amount),
 				player_ids_to_configs);
 			    
-                            self.pot += amount;
+                            self.pots.last_mut().unwrap().money += amount;
                             cumulative_bets[i] += amount;
+			    self.total_contributions[i] += amount;			    
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
                             current_bet = self.big_blind;
@@ -547,13 +571,15 @@ impl GameHand {
                             let difference = current_bet - player_cumulative;
                             if difference >= player.money {
                                 println!("you have to put in the rest of your chips");
-                                self.pot += player.money;
+                                self.pots.last_mut().unwrap().money += player.money;
                                 cumulative_bets[i] += player.money;
+				self.total_contributions[i] += player.money;				
                                 player.money = 0;
                                 num_all_in += 1;
                             } else {
-                                self.pot += difference;
+                                self.pots.last_mut().unwrap().money += difference;
                                 cumulative_bets[i] += difference;
+				self.total_contributions[i] += difference;
                                 player.money -= difference;
 				num_settled += 1;				
                             }
@@ -564,10 +590,11 @@ impl GameHand {
 				&format!("Player {:?} bets {:?}", name, new_bet),
 				player_ids_to_configs);			    			    
                             let difference = new_bet - player_cumulative;
-                            self.pot += difference;
+                            self.pots.last_mut().unwrap().money += difference;
                             player.money -= difference;
                             current_bet = new_bet;
-                            cumulative_bets[i] = new_bet;
+                            cumulative_bets[i] += difference;
+			    self.total_contributions[i] += difference;
                             if player.is_all_in() {
                                 println!("Just bet the rest of our money!");
                                 num_all_in += 1;
