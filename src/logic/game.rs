@@ -24,23 +24,104 @@ enum Street {
 }
 
 /// A pot keeps track of the total money, and which player (indices) contributed
-/// A game hand can have multiple pots, when players go all-in, and bettingcontinues
+/// A game hand can have multiple pots, when players go all-in, and betting continues
 #[derive(Debug)]
 struct Pot {
     money: u32, // total amount in this pot
-    eligible_players: HashSet<usize>, // which players have contributed to it
-    cap: u32, // the most that any one player can put in. money should be eligible_players.len() * cap?
-    Not sure if this is gunna work? if one guy goes all in for 1000, then someone bets 2000, then someone calls all-in
-	at 500, this pot needs to be capped at 500. Does (1000-500) and (2000 - 500) need to be moved out or something?
-	Do we need these pots afterall? Or does it simply come down to the total_contributions for each player by the end? hmmmmm
+    contributions: HashMap<Uuid, u32>, // which players have contributed to the pot, and how much
+    // the most that any one player can put in. If a player goes all-in into a pot, 
+    // then the cap is the amount that player has put in
+    cap: Option<u32>, 
 }
 
 impl Pot {
     fn new() -> Self {
 	Self {
 	    money: 0,
-	    eligible_players: HashSet::new(),
+	    contributions: HashMap::new(),
+	    cap: None
 	}
+    }
+}
+
+/// The pot manager keeps track of how many pots there are and which players
+/// how contributed how much to each.
+#[derive(Debug)]
+struct PotManager {
+    pots: Vec<Pot>
+}
+
+impl PotManager {
+    fn new() -> Self {
+	// the pot manager starts with a single main pot
+	Self {
+	    pots: vec![Pot::new()],
+	}
+    }
+
+    fn contribute(&mut self, player_id: Uuid, new: u32, all_in: bool) {
+	println!("inside contribute: {:?}, {:?}, all_in={:?}", player_id, new, all_in);
+	let mut to_contribute = new;
+	let mut push_pot = false;
+	let mut insert_pot: Option<usize> = None;
+	for (i, pot) in self.pots.iter_mut().enumerate() {
+	    let so_far = pot.contributions.entry(player_id).or_insert(0);
+	    if let Some(cap) = pot.cap {
+		println!("cap of {}", cap);		
+		if *so_far > cap {
+		    panic!("dont get in this situation");
+		} else if *so_far == cap {
+		    println!("we have already filled up this pot");
+		    continue
+		}
+		// else, we need to put more into the pot
+		let remaining = cap - *so_far; // amount left before the cap
+		if remaining >= to_contribute {
+		    println!("the new contribution fits since {} > {}", remaining, to_contribute);
+		    *so_far += to_contribute;
+		    pot.money += to_contribute;
+		    if all_in {
+			// our all-in is smaller than the previous all-in
+			println!("our all-in is smaller than the previous all-in");
+			pot.cap = Some(pot.contributions[&player_id]);						
+			insert_pot = Some(i+1);
+		    }
+		    break;
+		} else {
+		    // we need to contribute to the cap, then put more in the next pot
+		    println!("we need to contribute to the cap, then put more in the next pot");
+		    *so_far += remaining;
+		    assert!(*so_far == cap);
+		    to_contribute -= remaining;
+		    println!("still need to contribute {}", to_contribute)
+		}
+	    } else {
+		// there is not cap on this pot, so simply put the new money in for this player
+		println!("no cap");
+		*so_far += to_contribute;
+		pot.money += to_contribute;
+		if all_in {
+		    pot.cap = Some(pot.contributions[&player_id]);
+		    push_pot = true;
+		}
+		break;
+	    }
+	}
+	if push_pot {
+	    // need to add a new pot
+	    println!("adding a new pot!");
+	    self.pots.push(Pot::new());
+	} else if let Some(index) = insert_pot {
+	    println!("iunserting a pot at index {}", index);
+	    self.pots.insert(index, Pot::new());
+	    self.transfer_excess(index)
+	}
+    }
+
+    /// give the index of a newly created pot, we move any excess contributions from the pot
+    /// at index-1 in the vecdeque
+    /// this happens when a smaller all-in happens after a larger all-in
+    fn transfer_excess(&mut self, index: usize) {
     }
 }
 
@@ -50,8 +131,8 @@ struct GameHand {
     small_blind: u32,
     big_blind: u32,
     street: Street,
-    pots: Vec<Pot>,
-    total_contributions: [u32; 9], // keep track of how many a given player contributed to the pot during the whole hand
+    pot_manager: PotManager,
+    total_contributions: [u32; 9], // keep track of how much a player contributed to the pot during the whole hand
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -68,7 +149,7 @@ impl GameHand {
             small_blind,
             big_blind,
             street: Street::Preflop,
-            pots: vec![Pot::new()],
+            pot_manager: PotManager::new(),
 	    total_contributions: [0; 9],
             flop: None,
             turn: None,
@@ -185,8 +266,8 @@ impl GameHand {
             // if we made it to show down, there are multiple plauers left, so we need to see who
             // has the best hand.
             println!("Multiple active players made it to showdown!");
-
-	    while self.pots.last().unwrap().money > 0 {
+	    println!("{:?}", self.pot_manager);
+	    for pot in self.pot_manager.pots.iter() {
 		let mut best_indices = HashSet::<usize>::new();		
 		let mut best_idx = 0;		
 		best_indices.insert(best_idx);
@@ -214,9 +295,9 @@ impl GameHand {
 		}
 		// divy the pot to all the winners
 		let num_winners = best_indices.len();
-		let payout = (self.pots.last().unwrap().money as f64 / num_winners as f64) as u32;
-		self.pots.last_mut().unwrap().money = 0;		
-		self.pay_players(players, player_ids_to_configs, best_indices, payout, &mut hand_results);
+		let payout = (pot.money as f64 / num_winners as f64) as u32;
+		//self.pot_manager.pots.first_mut().unwrap().money = 0;		
+		GameHand::pay_players(players, player_ids_to_configs, best_indices, payout, &mut hand_results);
 	    }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
@@ -234,8 +315,8 @@ impl GameHand {
             }
 	    // if we didn't make it to show down, there better be only one player left	    
             assert!(best_indices.len() == 1);
-	    self.pay_players(players, player_ids_to_configs, best_indices,
-			     self.pots.last().unwrap().money, &mut hand_results);
+	    GameHand::pay_players(players, player_ids_to_configs, best_indices,
+			     self.pot_manager.pots.first().unwrap().money, &mut hand_results);
         }
 
         // take the players' cards
@@ -256,7 +337,6 @@ impl GameHand {
 
 
     fn pay_players(
-	&mut self,
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,		   
 	best_indices: HashSet::<usize>,
@@ -442,8 +522,9 @@ impl GameHand {
 	// once every player is either all-in or settled, then we move to the next street	
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
 	
-        println!("Current pot = {:?}", self.pots.last());
-        PlayerConfig::send_group_message(&format!("Current pot = {:?}", self.pots.last()), player_ids_to_configs);
+        println!("Current pot = {:?}", self.pot_manager.pots.last());
+        PlayerConfig::send_group_message(&format!("Current pot = {:?}",
+						  self.pot_manager.pots.last()), player_ids_to_configs);
 
         println!("num active players = {}", num_active);
         PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
@@ -490,7 +571,7 @@ impl GameHand {
 		
                 let player_cumulative = cumulative_bets[i];
                 println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-			 self.pots,
+			 self.pot_manager,
 			 current_bet,
 			 player_cumulative);
 
@@ -520,15 +601,19 @@ impl GameHand {
 				&format!("Player {:?} posts small blind of {}", name, amount),
 				player_ids_to_configs);
 			    
-                            self.pots.last_mut().unwrap().money += amount;
+                            //self.pot_manager.pots.last_mut().unwrap().money += amount;
                             cumulative_bets[i] += amount;
 			    self.total_contributions[i] += amount;
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
                             current_bet = self.small_blind;
-                            if player.is_all_in() {
+                            let all_in = if player.is_all_in() {
                                 num_all_in += 1;
-			    }
+				true
+			    } else {
+				false
+			    };
+			    self.pot_manager.contribute(player.id, amount, all_in);
                         }
                         PlayerAction::PostBigBlind(amount) => {
                             println!("Player {:?} posts big blind of {}", name, amount);			    
@@ -536,15 +621,19 @@ impl GameHand {
 				&format!("Player {:?} posts big blind of {}", name, amount),
 				player_ids_to_configs);
 			    
-                            self.pots.last_mut().unwrap().money += amount;
+                            //self.pots.last_mut().unwrap().money += amount;
                             cumulative_bets[i] += amount;
 			    self.total_contributions[i] += amount;			    
                             player.money -= amount;
                             // regardless if the player couldn't afford it, the new street bet is the big blind
                             current_bet = self.big_blind;
-                            if player.is_all_in() {
+                            let all_in = if player.is_all_in() {
                                 num_all_in += 1;
-			    }
+				true
+			    } else {
+				false
+			    };
+			    self.pot_manager.contribute(player.id, amount, all_in);			    
 			    // note: we dont count the big blind as a "settled" player,
 			    // since they still get a chance to act after the small blind
                         }
@@ -571,13 +660,15 @@ impl GameHand {
                             let difference = current_bet - player_cumulative;
                             if difference >= player.money {
                                 println!("you have to put in the rest of your chips");
-                                self.pots.last_mut().unwrap().money += player.money;
+                                //self.pots.last_mut().unwrap().money += player.money;
+				self.pot_manager.contribute(player.id, player.money, true);
                                 cumulative_bets[i] += player.money;
 				self.total_contributions[i] += player.money;				
                                 player.money = 0;
                                 num_all_in += 1;
                             } else {
-                                self.pots.last_mut().unwrap().money += difference;
+                                //self.pots.last_mut().unwrap().money += difference;
+				self.pot_manager.contribute(player.id, difference, false);
                                 cumulative_bets[i] += difference;
 				self.total_contributions[i] += difference;
                                 player.money -= difference;
@@ -590,18 +681,21 @@ impl GameHand {
 				&format!("Player {:?} bets {:?}", name, new_bet),
 				player_ids_to_configs);			    			    
                             let difference = new_bet - player_cumulative;
-                            self.pots.last_mut().unwrap().money += difference;
+                            //self.pots.last_mut().unwrap().money += difference;
                             player.money -= difference;
                             current_bet = new_bet;
                             cumulative_bets[i] += difference;
 			    self.total_contributions[i] += difference;
-                            if player.is_all_in() {
+                            let all_in = if player.is_all_in() {
                                 println!("Just bet the rest of our money!");
                                 num_all_in += 1;
 				num_settled = 0;
+				true
 			    } else {
 				num_settled = 1;
-			    }
+				false
+			    };
+			    self.pot_manager.contribute(player.id, difference, all_in);			    
                         }
                     }
                 }
@@ -1111,7 +1205,6 @@ mod tests {
     fn instant_fold() {
         let mut game = Game::new(None, None);	
 
-
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
@@ -1311,7 +1404,6 @@ mod tests {
     }
 
     /// the small blind goes all in and the big blind calls
-    /// the rest will just happen automatically
     #[test]
     fn all_in_call() {
 	let mut deck = RiggedDeck::new();
@@ -1372,7 +1464,7 @@ mod tests {
 	assert_eq!(game.players[0].as_ref().unwrap().money, 0);
 	assert_eq!(game.players[1].as_ref().unwrap().money, 2000);
     }
-
+    
     /// the small blind bets and the big blind calls
     /// this call makes the big blind go all-in
     #[test]
@@ -1393,10 +1485,8 @@ mod tests {
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
-
 	
         let mut game = Game::new(None, Some(Box::new(deck)));	
-	
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1440,6 +1530,75 @@ mod tests {
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1500);	
     }
 
+    /// the small blind bets and the big blind calls
+    /// this call makes the big blind go all-in
+    /// In this test, the original bet is more than the big blind even has,
+    /// and the big blind wins only the amount it puts in (500)
+    #[test]
+    fn small_stack_call_all_in() {
+	let mut deck = RiggedDeck::new();
+
+	// we want the button/big blind to win for testing purposes
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Heart});
+
+	// now the small blind's losing hole cards	
+	deck.push(Card{rank: Rank::Two, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Three, suit: Suit::Club});	
+	
+	// now the full run out
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Diamond});
+	deck.push(Card{rank: Rank::Ten, suit: Suit::Spade});	
+	deck.push(Card{rank: Rank::King, suit: Suit::Club});
+	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
+	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
+	
+        let mut game = Game::new(None, Some(Box::new(deck)));	
+
+	// player1 will start as the button/big
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Big".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
+    
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Small".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 bets a bunch
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(1000));
+	// player1 calls
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+
+	// the big blind caller won, but only doubles its money
+	assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
+
+	// the small blind only loses half
+	assert_eq!(game.players[1].as_ref().unwrap().money, 500);	
+    }
+    
     /// if a player goes all-in, then can only win as much as is called up to that amount,
     /// even if other players keep playing and betting during this hand
     /// In this test, the side point is won by the short stack, then the remaining is won
@@ -1528,17 +1687,17 @@ mod tests {
 
     /// if a player goes all-in, then can only win as much as is called up to that amount,
     /// even if other players keep playing and betting during this hand
-    /// In this test, the small stack ties with one of the other players, so the side spot should be split
-    /// This other player beats the third player
+    /// In this test, the small stack ties with one of the other players, so the main spot should be split
+    /// This other player beats the third player in the side pot
     #[test]
     fn tie_side_pot() {
 	let mut deck = RiggedDeck::new();
 
-	// we want the button to win his side pot
+	// we want the button to win the main pot
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Club});
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Diamond});	
 
-	// the small blind will tie the sidepot and win the main pot against the big blind
+	// the small blind will tie the main and win the side pot against the big blind
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Club});
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Heart});
 
@@ -1614,14 +1773,14 @@ mod tests {
 
     /// if a player goes all-in, then can only win as much as is called up to that amount,
     /// even if other players keep playing and betting during this hand
-    /// In this test, the side point is won by the small stack, then medium stack wins a separate
+    /// In this test, the main pot is won by the small stack, then medium stack wins a separate
     /// side pot, and finally, the rest of the chips are won by a third player
     
     #[test]
     fn multiple_side_pots() {
 	let mut deck = RiggedDeck::new();
 
-	// we want the button to win his side pot
+	// we want the button to win the main pot
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Club});
 	deck.push(Card{rank: Rank::Ace, suit: Suit::Diamond});	
 
