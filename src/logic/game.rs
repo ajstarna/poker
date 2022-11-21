@@ -120,8 +120,11 @@ impl PotManager {
 
     /// give the index of a newly created pot, we move any excess contributions from the pot
     /// at index-1 in the vecdeque
-    /// this happens when a smaller all-in happens after a larger all-in
+    /// this happens when a smaller all-in happens after a larger bet
     fn transfer_excess(&mut self, index: usize) {
+	let new_pot = self.pots[index];	
+	let prev_pot = self.pots[index - 1];
+
     }
 }
 
