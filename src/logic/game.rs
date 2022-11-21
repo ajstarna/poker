@@ -63,7 +63,7 @@ impl PotManager {
 	println!("inside contribute: {:?}, {:?}, all_in={:?}", player_id, new, all_in);
 	let mut to_contribute = new;
 	let mut push_pot = false;
-	let mut insert_pot: Option<usize> = None;
+	let mut insert_pot: Option<(usize, u32)> = None; 
 	for (i, pot) in self.pots.iter_mut().enumerate() {
 	    let so_far = pot.contributions.entry(player_id).or_insert(0);
 	    if let Some(cap) = pot.cap {
@@ -83,14 +83,15 @@ impl PotManager {
 		    if all_in {
 			// our all-in is smaller than the previous all-in
 			println!("our all-in is smaller than the previous all-in");
-			pot.cap = Some(pot.contributions[&player_id]);						
-			insert_pot = Some(i+1);
+			//pot.cap = Some(pot.contributions[&player_id]);
+			insert_pot = Some((i, pot.contributions[&player_id]));
 		    }
 		    break;
 		} else {
 		    // we need to contribute to the cap, then put more in the next pot
 		    println!("we need to contribute to the cap, then put more in the next pot");
 		    *so_far += remaining;
+		    pot.money += remaining;
 		    assert!(*so_far == cap);
 		    to_contribute -= remaining;
 		    println!("still need to contribute {}", to_contribute)
@@ -111,20 +112,43 @@ impl PotManager {
 	    // need to add a new pot
 	    println!("adding a new pot!");
 	    self.pots.push(Pot::new());
-	} else if let Some(index) = insert_pot {
-	    println!("iunserting a pot at index {}", index);
-	    self.pots.insert(index, Pot::new());
-	    self.transfer_excess(index)
+	} else if let Some((index, new_cap)) = insert_pot {
+	    println!("iunserting a pot at index {} and a new cap {}", index+1, new_cap);
+	    self.pots.insert(index+1, Pot::new());
+	    self.transfer_excess(index, new_cap)
 	}
     }
 
     /// give the index of a newly created pot, we move any excess contributions from the pot
-    /// at index-1 in the vecdeque
+    /// to the next one in the vecdeque. We also move the existing cap into the pot at index+1 and
+    /// se the new_cap
     /// this happens when a smaller all-in happens after a larger bet
-    fn transfer_excess(&mut self, index: usize) {
-	let new_pot = self.pots[index];	
-	let prev_pot = self.pots[index - 1];
+    fn transfer_excess(&mut self, index: usize, new_cap: u32) {
+	let prev_pot = self.pots.get_mut(index).unwrap();
+	println!("prev_pot = {:?}", prev_pot);
+	let mut transfers = HashMap::<Uuid, u32>::new();
+	let prev_cap = prev_pot.cap.unwrap();
+	prev_pot.cap = Some(new_cap);
+	for (id, amount)  in prev_pot.contributions.iter_mut() {
+	    //let b: bool = id;
+	    if *amount > new_cap {
+		// we need to move the excess above the cap of the pot to the new pot
+		let excess = *amount - new_cap;
+		transfers.insert(*id, excess);
+		*amount = new_cap;
+		prev_pot.money -= excess;
+	    }
+	}
+	println!("after taking = {:?}", prev_pot);
+	println!("transfers = {:?}", transfers);	
+	let mut new_pot = self.pots.get_mut(index+1).unwrap();
+	new_pot.money = transfers.values().sum();	
+	new_pot.contributions = transfers;
 
+	// the new pot is capped at the difference
+	// e.g. if someone was all-in with 750, then someone calls to go all-in with 500,
+	// the the pre_pot is NOW capped at 500, and the next pot is capped at 250
+	new_pot.cap = Some(prev_cap - new_cap); 
     }
 }
 
@@ -259,67 +283,68 @@ impl GameHand {
     fn finish(&mut self, players: &mut [Option<Player>],
 	      player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
     ) {
-        let mut hand_results = players
+        let hand_results: HashMap<Uuid, Option<HandResult>>  = players
             .iter()
-            .map(|player| self.determine_best_hand(player.as_ref()))
-            .collect::<Vec<Option<HandResult>>>();
+            .flatten()
+            .map(|player| {return (player.id, self.determine_best_hand(player))})
+            .collect();
 
 	println!("hand results = {:?}", hand_results);
         if let Street::ShowDown = self.street {
-            // if we made it to show down, there are multiple plauers left, so we need to see who
+            // if we made it to show down, there are multiple players left, so we need to see who
             // has the best hand.
             println!("Multiple active players made it to showdown!");
 	    println!("{:?}", self.pot_manager);
 	    for pot in self.pot_manager.pots.iter() {
-		let mut best_indices = HashSet::<usize>::new();		
-		let mut best_idx = 0;		
-		best_indices.insert(best_idx);
-		println!("starting best hand_result = {:?}", hand_results[best_idx]);
-			for (mut i, current_result) in hand_results.iter().skip(1).enumerate() {
-                    i += 1; // increment i to get the actual index, since we are skipping the first element at idx 0
-                    //println!("Index = {}, Current result = {:?}", i, current_result);
-		    
-                    if current_result.is_none() {
-			//println!("no hand result at index {:?}", i);
+		// for each pot, we determine who should get paid out
+		// a player can only get paid for a pot that they contributed to
+		// so each pot has its own best_hand calculation
+		println!("Looking at pot {:?}", pot);
+		let mut best_ids = HashSet::<Uuid>::new();		
+		let mut best_hand: Option<&HandResult> = None;		
+		for (id, current_opt) in hand_results.iter() {
+		    if pot.contributions.get(&id).is_none() {
+			println!("player id {} did not contribute to this pot!", id);
+			continue;
+		    }
+                    if current_opt.is_none() {
 			continue;
                     }
-                    if hand_results[best_idx] == None || *current_result > hand_results[best_idx] {
-			println!("new best hand at index {:?}", i);
-			best_indices.clear();
-			best_indices.insert(i); // only one best hand now
-			best_idx = i;
-                    } else if *current_result == hand_results[best_idx] {
-			println!("equally good hand at index {:?}", i);
-			best_indices.insert(i); // another index that also has the best hand
+		    let current_result = current_opt.as_ref().unwrap();
+                    if best_hand.is_none() || current_result > best_hand.unwrap() {
+			println!("new best hand for id {:?}", id);
+			best_hand = Some(current_result);
+			best_ids.clear();
+			best_ids.insert(*id); // only one best hand now
+                    } else if current_result == best_hand.unwrap() {
+			println!("equally good hand for id {:?}", id);
+			best_ids.insert(*id); // another index that also has the best hand
                     } else {
-			println!("hand worse at index {:?}", i);
+			println!("hand worse for id {:?}", id);
 			continue;
                     }
 		}
 		// divy the pot to all the winners
-		let num_winners = best_indices.len();
+		let num_winners = best_ids.len();
 		let payout = (pot.money as f64 / num_winners as f64) as u32;
 		//self.pot_manager.pots.first_mut().unwrap().money = 0;		
-		GameHand::pay_players(players, player_ids_to_configs, best_indices, payout, &mut hand_results);
+		GameHand::pay_players(players, player_ids_to_configs, best_ids, payout, &hand_results);
 	    }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
-            let mut best_indices = HashSet::<usize>::new();	    
-            for (i, player) in players.iter().enumerate() {
-		if player.is_none() {
-		    continue;
-		}
-                if player.as_ref().unwrap().is_active {
+            let mut best_ids = HashSet::<Uuid>::new();	    
+            for player in players.iter().flatten() {
+                if player.is_active {
                     //println!("found an active player remaining");
-                    best_indices.insert(i);
+                    best_ids.insert(player.id);
                 } else {
                     println!("found an NON active player remaining");
                 }
             }
 	    // if we didn't make it to show down, there better be only one player left	    
-            assert!(best_indices.len() == 1);
-	    GameHand::pay_players(players, player_ids_to_configs, best_indices,
-			     self.pot_manager.pots.first().unwrap().money, &mut hand_results);
+            assert!(best_ids.len() == 1);
+	    GameHand::pay_players(players, player_ids_to_configs, best_ids,
+			     self.pot_manager.pots.first().unwrap().money, &hand_results);
         }
 
         // take the players' cards
@@ -342,41 +367,31 @@ impl GameHand {
     fn pay_players(
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,		   
-	best_indices: HashSet::<usize>,
+	best_ids: HashSet::<Uuid>,
 	payout: u32,
-	hand_results: &mut Vec<Option<HandResult>>,
+        hand_results: &HashMap<Uuid, Option<HandResult>>,
     ) {
-	println!("best_indices = {:?}", best_indices);
-        for idx in best_indices {
-            let winning_spot = &mut players[idx];
-	    if let Some(ref mut winning_player) = winning_spot {
-		let name = &player_ids_to_configs.get(&winning_player.id).unwrap().name; // get the name for message
+	println!("best_indices = {:?}", best_ids);
+	for player in players.iter_mut().flatten() {
+	    if best_ids.contains(&player.id) {
+		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for message
 		println!(
                     "paying out: {:?} \n  with hand result = {:?}",
-                    name, hand_results[idx]
+                    name, hand_results.get(&player.id)
 		);
 		PlayerConfig::send_group_message(
 		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
-			     payout, name.as_ref().unwrap(), hand_results[idx]),
+			     payout, name.as_ref().unwrap(), hand_results.get(&player.id)),
 		    &player_ids_to_configs);			
 		
-		winning_player.pay(payout);
-		println!("after payment: {:?}", winning_player);
-	    } else {
-		panic!("we did not find a player at one of the suposed best indices!");
-	    }
+		player.pay(payout);
+		println!("after payment: {:?}", player);
+	    } 
         }
     }
     
     /// Given a player, we need to determine which 5 cards make the best hand for this player
-    /// If a player spot is empty, i.e. player.is_none(), then we simply return None
-    fn determine_best_hand(&self, player_opt: Option<&Player>) -> Option<HandResult> {
-	let player = if player_opt.is_none() {
-	    return None;
-	} else {
-	    player_opt.unwrap()
-	};
-	
+    fn determine_best_hand(&self, player: &Player) -> Option<HandResult> {	
         if !player.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
@@ -443,12 +458,6 @@ impl GameHand {
 		player.is_active = true;
 	    }
 	}
-	/*
-        PlayerConfig::send_group_message(&format!(
-            "inside of play(). button_idx = {:?}",
-            self.button_idx
-        ), player_ids_to_configs);
-	 */
         deck.shuffle();
         self.deal_hands(deck, players, player_ids_to_configs);
 
@@ -685,9 +694,11 @@ impl GameHand {
 				player_ids_to_configs);			    			    
                             let difference = new_bet - player_cumulative;
                             //self.pots.last_mut().unwrap().money += difference;
+			    println!("difference = {}", difference);
                             player.money -= difference;
                             current_bet = new_bet;
                             cumulative_bets[i] += difference;
+			    println!("sup {:?}", player);
 			    self.total_contributions[i] += difference;
                             let all_in = if player.is_all_in() {
                                 println!("Just bet the rest of our money!");
@@ -1604,7 +1615,7 @@ mod tests {
     
     /// if a player goes all-in, then can only win as much as is called up to that amount,
     /// even if other players keep playing and betting during this hand
-    /// In this test, the side point is won by the short stack, then the remaining is won
+    /// In this test, the side pot is won by the short stack, then the remaining is won
     /// by another player
     #[test]
     fn outright_side_pot() {
@@ -1685,7 +1696,7 @@ mod tests {
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1000);
 	
 	// the big blind lost everything
-	assert_eq!(game.players[1].as_ref().unwrap().money, 0);	
+	assert_eq!(game.players[2].as_ref().unwrap().money, 0);	
     }
 
     /// if a player goes all-in, then can only win as much as is called up to that amount,
@@ -1771,7 +1782,7 @@ mod tests {
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1750);
 	
 	// the big blind lost everything
-	assert_eq!(game.players[1].as_ref().unwrap().money, 0);	
+	assert_eq!(game.players[2].as_ref().unwrap().money, 0);	
     }
 
     /// if a player goes all-in, then can only win as much as is called up to that amount,
@@ -1834,7 +1845,7 @@ mod tests {
         let settings4 = PlayerConfig::new(id4, Some(name4), None);
         game.add_user(settings4);
 	// set UTG to have medium money so there is a second side pot	
-	game.players[0].as_mut().unwrap().money = 750; 
+	game.players[3].as_mut().unwrap().money = 750; 
 	
 	// flatten to get all the Some() players
 	let some_players = game.players.iter().flatten().count();
@@ -1855,7 +1866,7 @@ mod tests {
 	});
 
 	// UTG goes all in with the medium stack
-	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Bet(750));
+	incoming_actions.lock().unwrap().insert(id4, PlayerAction::Bet(750));
 	// the button calls (and thus goes all in with the short stack)
 	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Call);
 	// the small blind goes all in with a full stack
@@ -1873,13 +1884,17 @@ mod tests {
 	assert_eq!(game.players[1].as_ref().unwrap().money, 500);
 	
 	// the big blind lost everything
-	assert_eq!(game.players[1].as_ref().unwrap().money, 0);
+	assert_eq!(game.players[2].as_ref().unwrap().money, 0);
 	
 	// UTG won the second side pot
-	assert_eq!(game.players[4].as_ref().unwrap().money, 750);	
+	assert_eq!(game.players[3].as_ref().unwrap().money, 750);	
     }
     
     
 }
+
+
+
+
 
 
