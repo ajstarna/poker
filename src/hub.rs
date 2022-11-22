@@ -233,7 +233,8 @@ impl Handler<Join> for GameHub {
 	    let cloned_meta_actions = meta_actions.clone();
 	    //let b: bool = cloned_queue;
 	    thread::spawn(move || {
-		game.play(&cloned_actions, &cloned_meta_actions);
+		// start a game with no hand limit
+		game.play(&cloned_actions, &cloned_meta_actions, None);
 	    });
 	    
             self.tables_to_actions.insert(table_name.clone(), actions);

@@ -1021,14 +1021,22 @@ impl Game {
 	&mut self,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	hand_limit: Option<u32>, // how many hands total should be play? None == no limit
     ) {
         let mut hand_count = 0;
         loop {
             hand_count += 1;
+	    if let Some(limit) = hand_limit {
+		if hand_count > limit {
+		    println!("hand limit has been reached");
+		    break;
+		}
+	    }	    
             println!(
                 "\n\n\nPlaying hand {}",
                 hand_count
             );
+	    	    
 	    PlayerConfig::send_group_message(&format!("Playing hand {}", hand_count),
 					     &self.player_ids_to_configs);			
 	    
@@ -1048,7 +1056,6 @@ impl Game {
 		}
 	    }
 	    
-	    
 	    let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	    println!("meta_actions = {:?}", meta_actions);
 	    while !meta_actions.is_empty() {
@@ -1060,7 +1067,6 @@ impl Game {
 			let name = &self.player_ids_to_configs.get(&id).unwrap().name;
 			PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
 							 &self.player_ids_to_configs);			
-			
 		    },
 		    MetaAction::Join(player_config) => {
 			// add a new player to the game
@@ -1072,9 +1078,7 @@ impl Game {
 				&"Unable to join game, it must be full!".to_owned(),
 				id,
 				&self.player_ids_to_configs,
-			    );
-			    
-			    
+			    );			    			    
 			}
 		    },
 		    MetaAction::Leave(id) => {
@@ -1098,40 +1102,36 @@ impl Game {
 			PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
 		    }
 		}
-		
 	    }
-            let mut loop_count = 0;
-            'find_button: loop {
-                loop_count += 1;
-                if loop_count >= 5 {
-                    // couldn't find a valid button position. how does this happen?
-		    println!("could not find a button spot!");
-                    break 'find_button;
-                }
-                self.button_idx += 1; // and modulo length
-		// TODO there is a bug here. should not use players.len()
-		// should look at the number of active?, or we should do this at the START of the next one?
-                if self.button_idx as usize >= self.players.len() {
-                    self.button_idx = 0;
-                }
-		let button_spot = &mut self.players[self.button_idx];
-		if let Some(button_player) = button_spot {
-                    if button_player.is_sitting_out {
-			println!(
-                            "Player at index {} is sitting out so cannot be the button",
-                            self.button_idx
-			);
-			continue;
-                    } else {
-			// We found a player who is not sitting out, so it is a valid
-			// button position
-			break 'find_button;		    
-		    }
-                }
-            }
+	    // attempt to set the next button
+	    self.button_idx = self.find_next_button().expect("we could not find a valid button index!");
         }
     }
 
+    /// move the button to the next Player who is not sitting out
+    /// if non can be found, then return false
+    fn find_next_button(&mut self) -> Result<usize, &'static str> {
+	for i in (self.button_idx+1..9).chain(0..self.button_idx+1) {
+            //self.button_idx += 1; 
+	    //self.button_idx %= 9; // loop back to 0 if we reach the end
+	    println!("checking for next button at index {}", i);
+	    let button_spot = &mut self.players[i];
+	    if let Some(button_player) = button_spot {
+                if button_player.is_sitting_out {
+		    println!(
+                        "Player at index {} is sitting out so cannot be the button", i
+		    );
+                } else {
+		    // We found a player who is not sitting out, so it is a valid
+		    // button position
+		    println!("found the button!");
+		    return Ok(i);
+		}
+            }
+        }
+	Err("could not find a valid button")
+    }
+    
     fn handle_meta_actions(
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
@@ -1888,6 +1888,143 @@ mod tests {
 	
 	// UTG won the second side pot
 	assert_eq!(game.players[3].as_ref().unwrap().money, 750);	
+    }
+
+    /// can we pass a hand limit of 2 and the game comes to an end
+    #[test]
+    fn hand_limit() {
+        let mut game = Game::new(None, None);	
+
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play(&cloned_actions, &cloned_meta_actions, Some(2));
+	    game // return the game back
+	});
+	
+	// set the action that player2 folds
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+
+	// then player1 folds next hand
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);	
+
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+	
+	// check that the money balances out
+	assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1000);
+    }
+    
+    /// check that the button moves around properly
+    /// we play 5 hands with 4 players with everyone folding whenever it gets to them,
+    #[test]
+    fn button_movement() {
+        let mut game = Game::new(None, None);
+	
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+
+	let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        game.add_user(settings3);
+
+	let id4 = uuid::Uuid::new_v4();
+        let name4 = "Human4".to_string();
+        let settings4 = PlayerConfig::new(id4, Some(name4), None);
+        game.add_user(settings4);
+		
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 4);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let num_hands = 5;
+	let handler = thread::spawn( move || {
+	    game.play(&cloned_actions, &cloned_meta_actions, Some(num_hands));
+	    game // return the game back
+	});
+
+	// id3 should not have to act as the big blind
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);	
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);	
+
+	// wait for next hand
+        let wait_duration = time::Duration::from_secs(6);
+	std::thread::sleep(wait_duration);
+
+	// id4 should not have to act as the big blind
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id3, PlayerAction::Fold);		
+
+	// wait for next hand
+	std::thread::sleep(wait_duration);
+
+	// id1 should not have to act as the big blind
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id3, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);		
+
+	// wait for next hand
+	std::thread::sleep(wait_duration);	
+
+	// id2 should not have to act as the big blind
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id3, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);			
+
+	// wait for next hand
+	std::thread::sleep(wait_duration);	
+
+	// We should be back to the beginning with the button,
+	// so id1 should be the button, and id3 should be the big bline
+	// id3 should not have to act as the big blind
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Fold);
+	incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);			
+	
+	let game = handler.join().unwrap();
+	
+	// Everyone lost their small blind and won someone else's small blind
+	// then in the last hand, id3 won the small blind from id2
+	assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 996);
+	assert_eq!(game.players[2].as_ref().unwrap().money, 1004);
+	assert_eq!(game.players[3].as_ref().unwrap().money, 1000);	
     }
     
     
