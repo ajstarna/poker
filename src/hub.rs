@@ -73,10 +73,6 @@ impl Handler<Connect> for GameHub {
 
         self.main_lobby_connections.insert(id, player_config); // put them in the main lobby to wait to join a table
 
-        //self.players_to_table.insert(id, "main".to_owned());
-        //let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
-        //self.send_message("main", &format!("Total visitors {count}"), None);
-
         // send id back
         MessageResult(id)
     }
@@ -179,9 +175,11 @@ impl Handler<PlayerName> for GameHub {
             } else {
                 // TODO: this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_meta_actions
+		panic!("we can not find the meta actions for table named {:?}", table_name);
             }
         } else {
             // player id not found anywhere. this should never happen
+	    panic!("how can we set a name if no config exists anywhere!");	    
         }
     }
 }
@@ -193,9 +191,6 @@ impl Handler<Join> for GameHub {
 
     fn handle(&mut self, msg: Join, ctx: &mut Context<Self>) {
         let Join { id, table_name } = msg;
-
-	//TODO, make sure the player has a name before entering.
-	//    maybe make the name field not an option, and just default to "Player" on connect hmm
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
@@ -204,9 +199,20 @@ impl Handler<Join> for GameHub {
 	    return;
 	} 
 	let player_config = player_config_option.unwrap();		
-        // update the mapping to find the player at a table
-        self.players_to_table.insert(id, table_name.clone());
 
+	if player_config.name.is_none() {
+	    // they are not allowed to join a game without a Name set
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("You cannt join a game until you set your name!"))
+		);
+	    // put them back in the lobby
+	    self.main_lobby_connections.insert(player_config.id, player_config);
+	    return
+	}
+
+        // update the mapping to find the player at a table	
+        self.players_to_table.insert(id, table_name.clone());
 
         if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
 	    // since the meta actions already exist, this means the game already exists

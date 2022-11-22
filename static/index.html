@@ -67,7 +67,10 @@
 
     <form id="chatform">
       <input type="text" id="text" />
-      <input type="submit" id="send" />
+      <input type="submit" name="send" value="Send Message" />
+      <input type="submit" name="check" value="Check" />
+      <input type="submit" name="bet" value="Bet" />
+      <input type="submit" name="fold" value="Fold" />                  
     </form>
 
     <hr />
@@ -75,7 +78,7 @@
     <table style="border-spacing: 1.0em">      
       <tr>
 	<td>Money</td>	
-	<td>Hole</td>
+	<td>Hand</td>
 	<td>Flop</td>
 	<td>Turn</td>
 	<td>River</td>
@@ -262,15 +265,33 @@
       })
 
       $form.addEventListener('submit', (ev) => {
-        ev.preventDefault()
-
-        const text = $input.value
-
-        log('Sending: ' + text)
-        socket.send(text)
-
-        $input.value = ''
-        $input.focus()
+          ev.preventDefault()
+	  var text = ''
+	  log(ev.originalEvent)
+	  if ($form['id'] == 'check') {
+	      log('check')
+	      text = '/check'
+	  } else if ($form['id'] == 'bet') {	      
+	      log('bet')	      
+              text = '\bet ' + $input.value 	      
+	  } else if ($form['id'] == 'call') {	      	      
+	      log('call')	      	      
+	      text = '/call'	      
+	  } else if ($form['id'] == 'fold') {	      	      	      
+	      log('fold')	      	      	      
+	      text = '/fold'
+	  } else {
+	      log('else')	      	      	      	      
+	      text = 'I DUNNO'
+              log('Sending: ' + text)
+              socket.send(text)
+	  }
+	  
+          log('Sending: ' + text)
+          socket.send(text)
+	  
+          $input.value = ''
+          $input.focus()
       })
 
       updateConnectionStatus()
