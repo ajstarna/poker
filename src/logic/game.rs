@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter;
 use std::sync::{Arc, Mutex};
 use actix::Addr;
+use json::object;
 
 use super::card::{Card, Deck, StandardDeck, HandResult};
 use super::player::{Player, PlayerAction, PlayerConfig};
@@ -432,7 +433,6 @@ impl GameHand {
                 }
             }
             assert!(hand_count == 21); // 7 choose 5
-                                       //println!("Looked at {} possible hands", hand_count);
             println!("player = {:?}", player.id);
             println!("best result = {:?}", best_result);
             best_result
@@ -557,16 +557,8 @@ impl GameHand {
 	    // players the whole time? then we can loop over the players inside this loop as needed perhaps?
             let (left, right) = players.split_at_mut(starting_idx);
             for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
-		/*
-		I think this was redundant if we are just gunna fold further down
-		if !player_ids_to_configs.contains_key(&player.id) {
-		    println!("no player config so we are deactivating the player");
-		    player.deactivate();
-		}*/
-
                 println!("start loop: num_active = {}, num_settled = {}, num_all_in = {}",
-			 num_active, num_settled, num_all_in);
-		
+			 num_active, num_settled, num_all_in);		
                 if num_active == 1 {
                     println!("Only one active player left so lets break the steet loop");
 		    // end the street and indicate to the caller that the hand is finished
@@ -605,15 +597,15 @@ impl GameHand {
 			incoming_meta_actions,
 			hub_addr,
                     );
+
+		    let mut message = object!{
+			player_name: name
+		    };
 		    
-                    match action {
+                    match action {			
                         PlayerAction::PostSmallBlind(amount) => {
-                            println!("Player {:?} posts small blind of {}", name, amount);
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} posts small blind of {}", name, amount),
-				player_ids_to_configs);
-			    
-                            //self.pot_manager.pots.last_mut().unwrap().money += amount;
+			    message["action"] = "smalll blind".into();
+			    message["amount"] = amount.into();			    
                             cumulative_bets[i] += amount;
 			    self.total_contributions[i] += amount;
                             player.money -= amount;
@@ -628,12 +620,8 @@ impl GameHand {
 			    self.pot_manager.contribute(player.id, amount, all_in);
                         }
                         PlayerAction::PostBigBlind(amount) => {
-                            println!("Player {:?} posts big blind of {}", name, amount);			    
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} posts big blind of {}", name, amount),
-				player_ids_to_configs);
-			    
-                            //self.pots.last_mut().unwrap().money += amount;
+			    message["action"] = "big blind".into();
+			    message["amount"] = amount.into();			    			    
                             cumulative_bets[i] += amount;
 			    self.total_contributions[i] += amount;			    
                             player.money -= amount;
@@ -650,50 +638,34 @@ impl GameHand {
 			    // since they still get a chance to act after the small blind
                         }
                         PlayerAction::Fold => {
-                            println!("Player {:?} folds!", name);
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} folds", name),
-				player_ids_to_configs);			    
+			    message["action"] = "fold".into();			    
                             player.deactivate();
                             num_active -= 1;
                         }
                         PlayerAction::Check => {
-                            println!("Player checks!");
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} checks", name),
-				player_ids_to_configs);			    
+			    message["action"] = "check".into();			    
                             num_settled += 1;
                         }
                         PlayerAction::Call => {
-                            println!("Player calls!");
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} calls", name),
-				player_ids_to_configs);			    
+			    message["action"] = "call".into();
                             let difference = current_bet - player_cumulative;
                             if difference >= player.money {
                                 println!("you have to put in the rest of your chips");
-                                //self.pots.last_mut().unwrap().money += player.money;
 				self.pot_manager.contribute(player.id, player.money, true);
                                 cumulative_bets[i] += player.money;
 				self.total_contributions[i] += player.money;				
                                 player.money = 0;
                                 num_all_in += 1;
                             } else {
-                                //self.pots.last_mut().unwrap().money += difference;
 				self.pot_manager.contribute(player.id, difference, false);
                                 cumulative_bets[i] += difference;
 				self.total_contributions[i] += difference;
                                 player.money -= difference;
 				num_settled += 1;				
-                            }
+                            }			    
                         }
                         PlayerAction::Bet(new_bet) => {
-                            println!("Player bets {}!", new_bet);
-			    PlayerConfig::send_group_message(
-				&format!("Player {:?} bets {:?}", name, new_bet),
-				player_ids_to_configs);			    			    
                             let difference = new_bet - player_cumulative;
-                            //self.pots.last_mut().unwrap().money += difference;
 			    println!("difference = {}", difference);
                             player.money -= difference;
                             current_bet = new_bet;
@@ -709,20 +681,17 @@ impl GameHand {
 				num_settled = 1;
 				false
 			    };
-			    self.pot_manager.contribute(player.id, difference, all_in);			    
+			    self.pot_manager.contribute(player.id, difference, all_in);
+			    message["action"] = "bet".into();
+			    message["amount"] = new_bet.into();
                         }
                     }
+		    message["money"] = player.money.into();
+		    println!("{}", message.dump());
+		    PlayerConfig::send_group_message(
+			&message.dump(),
+			player_ids_to_configs);			    
                 }
-
-		// send a money message so the client can update accordingly
-		PlayerConfig::send_specific_message(
-		    &format!("Money: {}", player.money),
-		    player.id,
-		    player_ids_to_configs
-		);
-
-                println!("after player: num_active = {}, num_settled = {}, num_all_in = {}",
-			 num_active, num_settled, num_all_in);
             }
         }
     }
@@ -805,7 +774,7 @@ impl GameHand {
 	
         let mut action = None;
         let mut attempts = 0;
-        let retry_duration = time::Duration::from_secs(2); // how long to wait between trying again
+        let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
         while attempts < 10000 && action.is_none() {
 	    // the first thing we do on each loop is handle meta action
 	    Game::handle_meta_actions(player_ids_to_configs, incoming_meta_actions, hub_addr);
