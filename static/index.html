@@ -67,10 +67,11 @@
 
     <form id="chatform">
       <input type="text" id="text" />
-      <input type="submit" name="send" value="Send Message" />
-      <input type="submit" name="check" value="Check" />
-      <input type="submit" name="bet" value="Bet" />
-      <input type="submit" name="fold" value="Fold" />                  
+      <input type="submit" id="send" onclick=pressButton('send') value="Send Message" />
+      <input type="submit" id="check" onclick=pressButton('check') value="Check" />
+      <input type="submit" id="call" onclick=pressButton('call') value="Call" />      
+      <input type="submit" id="bet" onclick=pressButton('bet') value="Bet" />
+      <input type="submit" id="fold" onclick=pressButton('fold') value="Fold" />                  
     </form>
 
     <hr />
@@ -264,34 +265,39 @@
         updateConnectionStatus()
       })
 
-      $form.addEventListener('submit', (ev) => {
-          ev.preventDefault()
-	  var text = ''
-	  log(ev.originalEvent)
-	  if ($form['id'] == 'check') {
-	      log('check')
+      function pressButton (button) {
+	  var text
+	  switch(button) {
+	  case 'send':
+	      text = $input.value
+	      break
+	  case 'check':
 	      text = '/check'
-	  } else if ($form['id'] == 'bet') {	      
-	      log('bet')	      
-              text = '\bet ' + $input.value 	      
-	  } else if ($form['id'] == 'call') {	      	      
-	      log('call')	      	      
-	      text = '/call'	      
-	  } else if ($form['id'] == 'fold') {	      	      	      
-	      log('fold')	      	      	      
+	      break
+	  case 'call':
+	      text = '/call'
+	      break
+	  case 'fold':
 	      text = '/fold'
-	  } else {
-	      log('else')	      	      	      	      
-	      text = 'I DUNNO'
-              log('Sending: ' + text)
-              socket.send(text)
+	      break
+	  case 'bet':
+	      text = '/bet ' + $input.value	      
+	      break
 	  }
-	  
-          log('Sending: ' + text)
+
+          log('Sending: ' + text)	      	  
           socket.send(text)
 	  
           $input.value = ''
           $input.focus()
+	  
+      }
+
+      
+      $form.addEventListener('submit', (ev) => {
+	  // this remnant from the template is needed for the app not to crash
+	  // I guess it prevents the form from doing something?
+          ev.preventDefault()	  
       })
 
       updateConnectionStatus()

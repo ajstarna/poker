@@ -377,11 +377,11 @@ impl GameHand {
 		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for message
 		println!(
                     "paying out: {:?} \n  with hand result = {:?}",
-                    name, hand_results.get(&player.id)
+                    name, hand_results.get(&player.id).unwrap()
 		);
 		PlayerConfig::send_group_message(
 		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
-			     payout, name.as_ref().unwrap(), hand_results.get(&player.id)),
+			     payout, name.as_ref().unwrap(), hand_results.get(&player.id).unwrap()),
 		    &player_ids_to_configs);			
 		
 		player.pay(payout);
