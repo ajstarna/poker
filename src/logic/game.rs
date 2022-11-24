@@ -550,150 +550,152 @@ impl GameHand {
                 num_settled
             ), player_ids_to_configs);
         }
-        'street: loop {
-            // iterate over the players from the starting index to the end of the vec,
-            // and then from the beginning back to the starting index
-	    // TODO: can i change this to loop over indixes instead? then we don't need to borrow the
-	    // players the whole time? then we can loop over the players inside this loop as needed perhaps?
-            let (left, right) = players.split_at_mut(starting_idx);
-            for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
-                println!("start loop: num_active = {}, num_settled = {}, num_all_in = {}",
-			 num_active, num_settled, num_all_in);		
-                if num_active == 1 {
-                    println!("Only one active player left so lets break the steet loop");
-		    // end the street and indicate to the caller that the hand is finished
-                    break 'street true;
-                }
-                if num_settled + num_all_in == num_active {
-                    println!(
-                        "everyone is ready to go to the next street! num_settled = {}",
-                        num_settled
-                    );
-		    // end the street and indicate to the caller that the hand is going to the next street
-                    break 'street false;
-                }
-		
-                let player_cumulative = cumulative_bets[i];
-                println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-			 self.pot_manager,
-			 current_bet,
-			 player_cumulative);
+        // iterate over the players from the starting index to the end of the vec,
+        // and then from the beginning back to the starting index
+        //let (left, right) = players.split_at_mut(starting_idx);
+        //for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
+	for i in (starting_idx..9).chain(0..starting_idx).cycle() {
+            println!("start loop index = {}: num_active = {}, num_settled = {}, num_all_in = {}",
+		     i, num_active, num_settled, num_all_in);		
+	    if num_active == 1 {
+		println!("Only one active player left so lets break the steet loop");
+		// end the street and indicate to the caller that the hand is finished
+		return true;
+	    }
+	    if num_settled + num_all_in == num_active {
+		println!(
+		    "everyone is ready to go to the next street! num_settled = {}",
+		    num_settled
+		);
+		// end the street and indicate to the caller that the hand is going to the next street
+		return false;
+	    }
 
-                println!("Player = {:?}, i = {}", player.id, i);
-                if player.is_active && player.money > 0 {
-		    // get the name for messages		    
-		    let name = if let Some(config) = &player_ids_to_configs.get(&player.id) {
-			config.name.as_ref().unwrap().clone()
-		    } else {
-			"Player who left".to_string()
-		    };
-		    
-                    let action = self.get_and_validate_action(
-                        player,
-                        current_bet,
-                        player_cumulative,
-			player_ids_to_configs,
-			incoming_actions,
-			incoming_meta_actions,
-			hub_addr,
-                    );
+	    if players[i].is_none() {
+		continue;
+	    }
+	    let mut player = players[i].as_mut().unwrap();
+	    let player_cumulative = cumulative_bets[i];
+	    println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+		     self.pot_manager,
+		     current_bet,
+		     player_cumulative);
+	    println!("Player = {:?}, i = {}", player.id, i);
+	    if player.is_active && player.money > 0 {
+		// get the name for messages		    
+		let name = if let Some(config) = &player_ids_to_configs.get(&player.id) {
+		    config.name.as_ref().unwrap().clone()
+		} else {
+		    "Player who left".to_string()
+		};
 
-		    let mut message = object!{
-			player_name: name
-		    };
-		    
-                    match action {			
-                        PlayerAction::PostSmallBlind(amount) => {
-			    message["action"] = "smalll blind".into();
-			    message["amount"] = amount.into();			    
-                            cumulative_bets[i] += amount;
-			    self.total_contributions[i] += amount;
-                            player.money -= amount;
-                            // regardless if the player couldn't afford it, the new street bet is the big blind
-                            current_bet = self.small_blind;
-                            let all_in = if player.is_all_in() {
-                                num_all_in += 1;
-				true
-			    } else {
-				false
-			    };
-			    self.pot_manager.contribute(player.id, amount, all_in);
-                        }
-                        PlayerAction::PostBigBlind(amount) => {
-			    message["action"] = "big blind".into();
-			    message["amount"] = amount.into();			    			    
-                            cumulative_bets[i] += amount;
-			    self.total_contributions[i] += amount;			    
-                            player.money -= amount;
-                            // regardless if the player couldn't afford it, the new street bet is the big blind
-                            current_bet = self.big_blind;
-                            let all_in = if player.is_all_in() {
-                                num_all_in += 1;
-				true
-			    } else {
-				false
-			    };
-			    self.pot_manager.contribute(player.id, amount, all_in);			    
-			    // note: we dont count the big blind as a "settled" player,
-			    // since they still get a chance to act after the small blind
-                        }
-                        PlayerAction::Fold => {
-			    message["action"] = "fold".into();			    
-                            player.deactivate();
-                            num_active -= 1;
-                        }
-                        PlayerAction::Check => {
-			    message["action"] = "check".into();			    
-                            num_settled += 1;
-                        }
-                        PlayerAction::Call => {
-			    message["action"] = "call".into();
-                            let difference = current_bet - player_cumulative;
-                            if difference >= player.money {
-                                println!("you have to put in the rest of your chips");
-				self.pot_manager.contribute(player.id, player.money, true);
-                                cumulative_bets[i] += player.money;
-				self.total_contributions[i] += player.money;				
-                                player.money = 0;
-                                num_all_in += 1;
-                            } else {
-				self.pot_manager.contribute(player.id, difference, false);
-                                cumulative_bets[i] += difference;
-				self.total_contributions[i] += difference;
-                                player.money -= difference;
-				num_settled += 1;				
-                            }			    
-                        }
-                        PlayerAction::Bet(new_bet) => {
-                            let difference = new_bet - player_cumulative;
-			    println!("difference = {}", difference);
-                            player.money -= difference;
-                            current_bet = new_bet;
-                            cumulative_bets[i] += difference;
-			    println!("sup {:?}", player);
+		let action = self.get_and_validate_action(
+		    player,
+		    current_bet,
+		    player_cumulative,
+		    player_ids_to_configs,
+		    incoming_actions,
+		    incoming_meta_actions,
+		    hub_addr,
+		);
+
+		let mut message = object!{
+		    index: i,
+		    player_name: name
+		};
+
+		match action {			
+		    PlayerAction::PostSmallBlind(amount) => {
+			message["action"] = "smalll blind".into();
+			message["amount"] = amount.into();			    
+			cumulative_bets[i] += amount;
+			self.total_contributions[i] += amount;
+			player.money -= amount;
+			// regardless if the player couldn't afford it, the new street bet is the big blind
+			current_bet = self.small_blind;
+			let all_in = if player.is_all_in() {
+			    num_all_in += 1;
+			    true
+			} else {
+			    false
+			};
+			self.pot_manager.contribute(player.id, amount, all_in);
+		    }
+		    PlayerAction::PostBigBlind(amount) => {
+			message["action"] = "big blind".into();
+			message["amount"] = amount.into();			    			    
+			cumulative_bets[i] += amount;
+			self.total_contributions[i] += amount;			    
+			player.money -= amount;
+			// regardless if the player couldn't afford it, the new street bet is the big blind
+			current_bet = self.big_blind;
+			let all_in = if player.is_all_in() {
+			    num_all_in += 1;
+			    true
+			} else {
+			    false
+			};
+			self.pot_manager.contribute(player.id, amount, all_in);			    
+			// note: we dont count the big blind as a "settled" player,
+			// since they still get a chance to act after the small blind
+		    }
+		    PlayerAction::Fold => {
+			message["action"] = "fold".into();			    
+			player.deactivate();
+			num_active -= 1;
+		    }
+		    PlayerAction::Check => {
+			message["action"] = "check".into();			    
+			num_settled += 1;
+		    }
+		    PlayerAction::Call => {
+			message["action"] = "call".into();
+			let difference = current_bet - player_cumulative;
+			if difference >= player.money {
+			    println!("you have to put in the rest of your chips");
+			    self.pot_manager.contribute(player.id, player.money, true);
+			    cumulative_bets[i] += player.money;
+			    self.total_contributions[i] += player.money;				
+			    player.money = 0;
+			    num_all_in += 1;
+			} else {
+			    self.pot_manager.contribute(player.id, difference, false);
+			    cumulative_bets[i] += difference;
 			    self.total_contributions[i] += difference;
-                            let all_in = if player.is_all_in() {
-                                println!("Just bet the rest of our money!");
-                                num_all_in += 1;
-				num_settled = 0;
-				true
-			    } else {
-				num_settled = 1;
-				false
-			    };
-			    self.pot_manager.contribute(player.id, difference, all_in);
-			    message["action"] = "bet".into();
-			    message["amount"] = new_bet.into();
-                        }
-                    }
-		    message["money"] = player.money.into();
-		    println!("{}", message.dump());
-		    PlayerConfig::send_group_message(
-			&message.dump(),
-			player_ids_to_configs);			    
-                }
-            }
-        }
+			    player.money -= difference;
+			    num_settled += 1;				
+			}			    
+		    }
+		    PlayerAction::Bet(new_bet) => {
+			let difference = new_bet - player_cumulative;
+			println!("difference = {}", difference);
+			player.money -= difference;
+			current_bet = new_bet;
+			cumulative_bets[i] += difference;
+			println!("sup {:?}", player);
+			self.total_contributions[i] += difference;
+			let all_in = if player.is_all_in() {
+			    println!("Just bet the rest of our money!");
+			    num_all_in += 1;
+			    num_settled = 0;
+			    true
+			} else {
+			    num_settled = 1;
+			    false
+			};
+			self.pot_manager.contribute(player.id, difference, all_in);
+			message["action"] = "bet".into();
+			message["amount"] = new_bet.into();
+		    }
+		}
+		message["money"] = player.money.into();
+		println!("{}", message.dump());
+		PlayerConfig::send_group_message(
+		    &message.dump(),
+		    player_ids_to_configs);			    
+	    }
+	}
+	true // we can't actually get to this line
     }
 
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
