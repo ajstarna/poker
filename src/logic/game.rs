@@ -1001,16 +1001,27 @@ impl Game {
 		    break;
 		}
 	    }	    
-            println!(
-                "\n\n\nPlaying hand {}",
-                hand_count
-            );
-	    	    
+            println!("\n\n\nPlaying hand {}, button_idx = {}", hand_count, self.button_idx);
 	    PlayerConfig::send_group_message(&format!("Playing hand {}", hand_count),
 					     &self.player_ids_to_configs);			
 	    
+	    for (i, player_spot) in self.players.iter().enumerate() {
+		// display the play positions for the front end to consume
+		let mut message = object!{
+		    index: i
+		};
+		if let Some(player) = player_spot {
+		    let config = self.player_ids_to_configs.get(&player.id).unwrap();
+		    let name = config.name.as_ref().unwrap().clone();
+		    message["player_name"] = name.into();
+		    message["money"] = player.money.into();
+		} else {
+		    message["player_name"] = json::Null;
+		}
+		PlayerConfig::send_group_message(&message.dump(),
+						 &self.player_ids_to_configs);			
+	    }	    	    
 	    
-	    println!("self.incoming_actions = {:?}", incoming_actions.lock().unwrap());
             self.play_one_hand(incoming_actions, incoming_meta_actions);
 
 	    // check if any player is now missing from the config mapping,
@@ -1032,7 +1043,6 @@ impl Game {
 		    MetaAction::Chat(id, text) => {
 			// send the message to all players,
 			// appended by the player name
-			// TODO we want chat to happen more in real-time, not between hands
 			let name = &self.player_ids_to_configs.get(&id).unwrap().name;
 			PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
 							 &self.player_ids_to_configs);			
