@@ -78,11 +78,50 @@
 
     <table style="border-spacing: 1.0em">      
       <tr>
+	<td id="idx0" ></td>
+	<td id="idx1" ></td>
+	<td id="idx2" ></td>
+	<td id="idx3" ></td>
+	<td id="idx4" ></td>
+	<td id="idx5" ></td>
+	<td id="idx6" ></td>
+	<td id="idx7" ></td>
+	<td id="idx8" ></td>		
+      </tr>
+      <tr>
+	<td id="money0" ></td>
+	<td id="money1" ></td>
+	<td id="money2" ></td>
+	<td id="money3" ></td>
+	<td id="money4" ></td>
+	<td id="money5" ></td>
+	<td id="money6" ></td>
+	<td id="money7" ></td>
+	<td id="money8" ></td>		
+      </tr>
+      <tr>
+	<td id="action0" ></td>
+	<td id="action1" ></td>
+	<td id="action2" ></td>
+	<td id="action3" ></td>
+	<td id="action4" ></td>
+	<td id="action5" ></td>
+	<td id="action6" ></td>
+	<td id="action7" ></td>
+	<td id="action8" ></td>		
+      </tr>
+    </table>
+    
+    <hr />
+    
+    <table style="border-spacing: 1.0em">      
+      <tr>
 	<td>Money</td>	
 	<td>Hand</td>
 	<td>Flop</td>
 	<td>Turn</td>
 	<td>River</td>
+	<td>Pot(s)</td>	
       </tr>
       <tr>
       <td id="money"><font size="+2"><b></b></font></td>	
@@ -90,6 +129,7 @@
       <td id="flop"><font size="+2"><b></b></font></td>
       <td id="turn"><font size="+2"><b></b></font></td>
       <td id="river"><font size="+2"><b></b></font></td>
+      <td id="pots"><font size="+2"><b></b></font></td>      
       </tr>
     </table>
     
@@ -168,32 +208,53 @@
           }
 	  
           socket.onmessage = (ev) => {
-	      if (ev.data.startsWith("Playing hand")) {
-		  // reset the values for the next hand
-		  $hole.textContent = ""
-		  $flop.textContent = ""
-		  $turn.textContent = ""
-		  $river.textContent = ""		  		  		  
-	      }	      
-	      if (ev.data.startsWith("Hole Cards:")) {
-		  const [_, val] = ev.data.split(": ")
-		  $hole.textContent = val
+	      var msg
+	      try {
+		  msg = JSON.parse(ev.data)
+	      } catch {}
+	      if (msg != null) {
+		  log('we found a json message: ' + JSON.stringify(msg))
+		  if (msg.index != null) {
+		      var name_spot = document.getElementById("idx" + msg.index.toString())
+		      name_spot.textContent = msg.player_name
+		  }
+		  if (msg.money != null) {		  
+		      var money_spot = document.getElementById("money" + msg.index.toString())
+		      money_spot.textContent = msg.money
+		  }
+		  if (msg.player_action != null) {
+		      var action_spot = document.getElementById("action" + msg.index.toString())
+		      action_spot.textContent = msg.player_action
+		  }
 	      }
-	      else if (ev.data.startsWith("Money:")) {
-		  const [_, val] = ev.data.split(": ")
-		  $money.textContent = val
-	      }
-	      else if (ev.data.startsWith("Flop:")) {
-		  const [_, val] = ev.data.split(": ")
-		  $flop.textContent = val
-	      }
-	      else if (ev.data.startsWith("Turn:")) {
-		  const [_, val] = ev.data.split(": ")
-		  $turn.textContent = val
-	      }
-	      else if (ev.data.startsWith("River:")) {
-		  const [_, val] = ev.data.split(": ")
-		  $river.textContent = val
+	      else {
+		  if (ev.data.startsWith("Playing hand")) {
+		      // reset the values for the next hand
+		      $hole.textContent = ""
+		      $flop.textContent = ""
+		      $turn.textContent = ""
+		      $river.textContent = ""		  		  		  
+		  }	      
+		  if (ev.data.startsWith("Hole Cards:")) {
+		      const [_, val] = ev.data.split(": ")
+		      $hole.textContent = val
+		  }
+		  else if (ev.data.startsWith("Money:")) {
+		      const [_, val] = ev.data.split(": ")
+		      $money.textContent = val
+		  }
+		  else if (ev.data.startsWith("Flop:")) {
+		      const [_, val] = ev.data.split(": ")
+		      $flop.textContent = val
+		  }
+		  else if (ev.data.startsWith("Turn:")) {
+		      const [_, val] = ev.data.split(": ")
+		      $turn.textContent = val
+		  }
+		  else if (ev.data.startsWith("River:")) {
+		      const [_, val] = ev.data.split(": ")
+		      $river.textContent = val
+		  }
 	      }
               log(ev.data, 'message')
           }
