@@ -191,10 +191,14 @@
         $log.scrollTop += 1000
       }
 
-      function clearActions() {
+      function clearActions(clear_fold) {
 	  // go through each spot and set the text to be blank
+	  // if clear_fold is true, we also clear "fold", if not, we leave it
 	  for (let i = 0; i < 9; i++) {
 	      var action_spot = document.getElementById("action" + i.toString())
+	      if (action_spot.textContent == "fold" && !clear_fold) {
+		  continue;
+	      }
 	      action_spot.textContent = ''
 	  } 	  
       }
@@ -231,13 +235,17 @@
 		  }
 		  if (msg.action != null) {
 		      var action_spot = document.getElementById("action" + msg.index.toString())
-		      action_spot.textContent = msg.action
+		      if (msg.amount != null) {
+			  action_spot.textContent = msg.action + ":" + msg.amount
+		      } else {
+			  action_spot.textContent = msg.action
+		      }
+		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  if (msg.pots != null) {
 		      var pots_spot = document.getElementById("pots")
 		      pots_spot.textContent = msg.pots
-		  }
-		  
+		  }		  
 	      }
 	      else {
 		  if (ev.data.startsWith("Playing hand")) {
@@ -246,7 +254,7 @@
 		      $flop.textContent = ""
 		      $turn.textContent = ""
 		      $river.textContent = ""
-		      clearActions()
+		      clearActions(true)
 		  }	      
 		  if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
@@ -259,20 +267,21 @@
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $flop.textContent = val
-		      clearActions()		      
+		      clearActions(false)		      
 		  }
 		  else if (ev.data.startsWith("Turn:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $turn.textContent = val
-		      clearActions()		      
+		      clearActions(false)		      
 		  }
 		  else if (ev.data.startsWith("River:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $river.textContent = val
-		      clearActions()		      
+		      clearActions(false)		      
 		  }
-		  log(ev.data, 'message')		  
+		  log(ev.data, 'message')		  	      		  
 	      }
+
           }
 	  
           socket.onclose = () => {

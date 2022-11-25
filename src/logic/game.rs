@@ -541,8 +541,8 @@ impl GameHand {
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
 	
         println!("Current pot = {:?}", self.pot_manager.pots.last());
-        PlayerConfig::send_group_message(&format!("Current pot = {:?}",
-						  self.pot_manager.pots.last()), player_ids_to_configs);
+        //PlayerConfig::send_group_message(&format!("Current pot = {:?}",
+	//					  self.pot_manager.pots.last()), player_ids_to_configs);
 
         println!("num active players = {}", num_active);
         PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
@@ -595,6 +595,11 @@ impl GameHand {
 		    "Player who left".to_string()
 		};
 
+		PlayerConfig::send_group_message(&format!(
+                    "{}'s turn to act!",
+                    name
+		), player_ids_to_configs);
+		
 		let action = self.get_and_validate_action(
 		    player,
 		    current_bet,
@@ -612,7 +617,7 @@ impl GameHand {
 
 		match action {			
 		    PlayerAction::PostSmallBlind(amount) => {
-			message["action"] = "smalll blind".into();
+			message["action"] = "small blind".into();
 			message["amount"] = amount.into();			    
 			cumulative_bets[i] += amount;
 			self.total_contributions[i] += amount;
