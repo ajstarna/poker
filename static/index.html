@@ -86,7 +86,7 @@
 	<td id="idx5" ></td>
 	<td id="idx6" ></td>
 	<td id="idx7" ></td>
-	<td id="idx8" ></td>		
+	<td id="idx8" ></td>
       </tr>
       <tr>
 	<td id="money0" ></td>
@@ -97,7 +97,7 @@
 	<td id="money5" ></td>
 	<td id="money6" ></td>
 	<td id="money7" ></td>
-	<td id="money8" ></td>		
+	<td id="money8" ></td>
       </tr>
       <tr>
 	<td id="action0" ></td>
@@ -191,6 +191,14 @@
         $log.scrollTop += 1000
       }
 
+      function clearActions() {
+	  // go through each spot and set the text to be blank
+	  for (let i = 0; i < 9; i++) {
+	      var action_spot = document.getElementById("action" + i.toString())
+	      action_spot.textContent = ''
+	  } 	  
+      }
+      
       function connect() {
           disconnect()
 
@@ -213,7 +221,6 @@
 		  msg = JSON.parse(ev.data)
 	      } catch {}
 	      if (msg != null) {
-		  log('we found a json message: ' + JSON.stringify(msg))
 		  if (msg.index != null) {
 		      var name_spot = document.getElementById("idx" + msg.index.toString())
 		      name_spot.textContent = msg.player_name
@@ -226,6 +233,11 @@
 		      var action_spot = document.getElementById("action" + msg.index.toString())
 		      action_spot.textContent = msg.action
 		  }
+		  if (msg.pots != null) {
+		      var pots_spot = document.getElementById("pots")
+		      pots_spot.textContent = msg.pots
+		  }
+		  
 	      }
 	      else {
 		  if (ev.data.startsWith("Playing hand")) {
@@ -233,7 +245,8 @@
 		      $hole.textContent = ""
 		      $flop.textContent = ""
 		      $turn.textContent = ""
-		      $river.textContent = ""		  		  		  
+		      $river.textContent = ""
+		      clearActions()
 		  }	      
 		  if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
@@ -246,17 +259,20 @@
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $flop.textContent = val
+		      clearActions()		      
 		  }
 		  else if (ev.data.startsWith("Turn:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $turn.textContent = val
+		      clearActions()		      
 		  }
 		  else if (ev.data.startsWith("River:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $river.textContent = val
+		      clearActions()		      
 		  }
+		  log(ev.data, 'message')		  
 	      }
-              log(ev.data, 'message')
           }
 	  
           socket.onclose = () => {

@@ -60,6 +60,12 @@ impl PotManager {
 	}
     }
 
+    /// returns a vec of each pot.money for the all pots
+    /// useful to pass to the front end
+    fn simple_repr(&self) -> Vec<u32> {
+	self.pots.iter().map(|x| x.money).collect()
+    }
+    
     fn contribute(&mut self, player_id: Uuid, new: u32, all_in: bool) {
 	println!("inside contribute: {:?}, {:?}, all_in={:?}", player_id, new, all_in);
 	let mut to_contribute = new;
@@ -689,10 +695,18 @@ impl GameHand {
 		    }
 		}
 		message["money"] = player.money.into();
+		message["pots"] = self.pot_manager.simple_repr().into();
 		println!("{}", message.dump());
 		PlayerConfig::send_group_message(
 		    &message.dump(),
-		    player_ids_to_configs);			    
+		    player_ids_to_configs
+		);
+		PlayerConfig::send_specific_message(
+		    &format!("Money: {}", player.money),
+		    player.id,
+		    player_ids_to_configs
+		);		
+		
 	    }
 	}
 	true // we can't actually get to this line
