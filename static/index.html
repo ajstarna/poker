@@ -182,6 +182,8 @@
       const $flop = document.querySelector('#flop')
       const $turn = document.querySelector('#turn')
       const $river = document.querySelector('#river')      
+
+      var buttonIdx = 0 // this will move around
       
       /** @type {WebSocket | null} */
       var socket = null
@@ -227,7 +229,11 @@
 	      if (msg != null) {
 		  if (msg.index != null) {
 		      var name_spot = document.getElementById("idx" + msg.index.toString())
-		      name_spot.textContent = msg.player_name
+		      var name_string = msg.player_name
+		      if (buttonIdx == msg.index) {
+			  name_string += "(*)"
+		      }
+		      name_spot.textContent = name_string 
 		  }
 		  if (msg.money != null) {		  
 		      var money_spot = document.getElementById("money" + msg.index.toString())
@@ -255,6 +261,9 @@
 		      $turn.textContent = ""
 		      $river.textContent = ""
 		      clearActions(true)
+		      // e.g. button_idx = 3
+		      buttonIdx = parseInt(ev.data.slice(-1))
+		      log("\n\n", 'message')
 		  }	      
 		  if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")

@@ -151,6 +151,23 @@ impl PartialEq for HandResult {
         self.value == other.value
     }
 }
+impl ToString for HandResult {
+    fn to_string(&self) -> String {
+	format!("{:?}: {}, {}",
+		self.hand_ranking,
+		self.constituent_cards
+		.iter()
+		.map(|x| x.to_string())
+		.collect::<Vec<String>>()
+		.join("-"),
+		self.kickers
+		.iter()
+		.map(|x| x.to_string())
+		.collect::<Vec<String>>()
+		.join("-")
+	)
+    }
+}
 
 impl HandResult {
     /// Given a hand ranking, along with the constituent cards and the kickers, this function returns a numerical score

@@ -201,7 +201,7 @@ impl GameHand {
                     self.flop
                 );
                 PlayerConfig::send_group_message(
-                    &format!("Flop: {}{}{}",
+                    &format!("Flop: {}-{}-{}",
 			     self.flop.as_ref().unwrap()[0],
 			     self.flop.as_ref().unwrap()[1],
 			     self.flop.as_ref().unwrap()[2]),
@@ -254,7 +254,7 @@ impl GameHand {
                     }		    
                 }
 		PlayerConfig::send_specific_message(
-		    &format!("Hole Cards: {}{}", player.hole_cards[0], player.hole_cards[1]),
+		    &format!("Hole Cards: {}-{}", player.hole_cards[0], player.hole_cards[1]),
 		    player.id,
 		    player_ids_to_configs
 		);
@@ -290,12 +290,18 @@ impl GameHand {
     fn finish(&mut self, players: &mut [Option<Player>],
 	      player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
     ) {
+
+	// pause for a second for dramatic effect heh
+        let pause_duration = time::Duration::from_secs(2); 	
+        thread::sleep(pause_duration);
+	
         let hand_results: HashMap<Uuid, Option<HandResult>>  = players
             .iter()
             .flatten()
             .map(|player| {return (player.id, self.determine_best_hand(player))})
             .collect();
 
+	let is_showdown = self.street == Street::ShowDown;
 	println!("hand results = {:?}", hand_results);
         if let Street::ShowDown = self.street {
             // if we made it to show down, there are multiple players left, so we need to see who
@@ -317,6 +323,10 @@ impl GameHand {
                     if current_opt.is_none() {
 			continue;
                     }
+		    if !player_ids_to_configs.contains_key(id) {
+			println!("player id {} no longer exists in the configs, they must have left!", id);
+			continue
+		    }
 		    let current_result = current_opt.as_ref().unwrap();
                     if best_hand.is_none() || current_result > best_hand.unwrap() {
 			println!("new best hand for id {:?}", id);
@@ -335,7 +345,7 @@ impl GameHand {
 		let num_winners = best_ids.len();
 		let payout = (pot.money as f64 / num_winners as f64) as u32;
 		//self.pot_manager.pots.first_mut().unwrap().money = 0;		
-		GameHand::pay_players(players, player_ids_to_configs, best_ids, payout, &hand_results);
+		GameHand::pay_players(players, player_ids_to_configs, best_ids, payout, &hand_results, is_showdown);
 	    }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
@@ -351,7 +361,7 @@ impl GameHand {
 	    // if we didn't make it to show down, there better be only one player left	    
             assert!(best_ids.len() == 1);
 	    GameHand::pay_players(players, player_ids_to_configs, best_ids,
-			     self.pot_manager.pots.first().unwrap().money, &hand_results);
+			     self.pot_manager.pots.first().unwrap().money, &hand_results, is_showdown);
         }
 
         // take the players' cards
@@ -377,18 +387,33 @@ impl GameHand {
 	best_ids: HashSet::<Uuid>,
 	payout: u32,
         hand_results: &HashMap<Uuid, Option<HandResult>>,
+	is_showdown: bool
     ) {
 	println!("best_indices = {:?}", best_ids);
 	for player in players.iter_mut().flatten() {
 	    if best_ids.contains(&player.id) {
 		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for message
+		let ranking_string = if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+		    hand_result.to_string()
+		} else {
+		    "Unknown".to_string()
+		};
 		println!(
-                    "paying out: {:?} \n  with hand result = {:?}",
-                    name, hand_results.get(&player.id).unwrap()
+                    "paying out {:?} to {:?}, with hand result = {:?}",
+                    payout, name, ranking_string
 		);
+		let hole_string = if is_showdown {
+		    format!("{}-{}",player.hole_cards[0], player.hole_cards[1])
+		} else {
+		    "Unknown".to_string()
+		};
 		PlayerConfig::send_group_message(
-		    &format!("paying out {:?} to {:?}, with hand result = {:?}",
-			     payout, name.as_ref().unwrap(), hand_results.get(&player.id).unwrap()),
+		    &format!("paying out {:?} to {:?}, with hole cards = {:?}",
+			     payout, name.as_ref().unwrap(), hole_string),
+		    &player_ids_to_configs);			
+		PlayerConfig::send_group_message(
+		    &format!("hand result = {:?}",
+			     ranking_string),
 		    &player_ids_to_configs);			
 		
 		player.pay(payout);
@@ -470,8 +495,11 @@ impl GameHand {
         println!("players = {:?}", players);
         //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
         while self.street != Street::ShowDown {
+	    // pause for a second for dramatic effect heh
+            let pause_duration = time::Duration::from_secs(2); 	
+            thread::sleep(pause_duration);	    
             let finished = self.play_street(players, player_ids_to_configs,
-					    incoming_actions, incoming_meta_actions, hub_addr);
+					    incoming_actions, incoming_meta_actions, hub_addr);	    
 	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -480,7 +508,7 @@ impl GameHand {
             } else {
                 // otherwise we move to the next street
                 self.transition(deck, player_ids_to_configs);
-            }
+            }	    
         }
         // now we finish up and pay the pot to the winner
         self.finish(players, player_ids_to_configs);
@@ -787,11 +815,18 @@ impl GameHand {
                 cmp::min(self.big_blind, player.money),
             );
         }
+        let prompt = if current_bet > player_cumulative {
+	    let diff = current_bet - player_cumulative;
+	    format!("Enter action ({} to call): ", diff)
+	} else {
+	    format!("Enter action (current bet = {}): ", current_bet)	    
+	};
 	PlayerConfig::send_specific_message(
-	    &format!("Please enter your action (current bet = {}): ", current_bet),
+	    &prompt,
 	    player.id,
 	    player_ids_to_configs
 	);
+	
 	
         let mut action = None;
         let mut attempts = 0;
@@ -1023,8 +1058,9 @@ impl Game {
 		}
 	    }	    
             println!("\n\n\nPlaying hand {}, button_idx = {}", hand_count, self.button_idx);
-	    PlayerConfig::send_group_message(&format!("Playing hand {}", hand_count),
-					     &self.player_ids_to_configs);			
+	    PlayerConfig::send_group_message(
+		&format!("Playing hand {}, button_idx = {}", hand_count, self.button_idx),
+		&self.player_ids_to_configs);			
 	    
 	    for (i, player_spot) in self.players.iter().enumerate() {
 		// display the play positions for the front end to consume
@@ -2029,9 +2065,6 @@ mod tests {
     
     
 }
-
-
-
 
 
 
