@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html>
   <head>
     <meta charset="utf-8" />
@@ -55,6 +56,9 @@
   </head>
 
   <body>
+    <script src="static/drawCard.js"></script>
+    <script src="static/drawTable.js"></script>
+    
     <h1>Poker!</h1>
 
     <div>
@@ -171,7 +175,31 @@
 	
       </table>
     </section>
+
+    <div>
+      <canvas id="pokerTable" width="1200" height="720" style="border:1px solid #000000;">
+      </canvas>
+    </div>
+       
     <script>
+      // Get canvas and context
+      var canvas = document.getElementById("pokerTable");
+      var context = canvas.getContext("2d");
+      var width = canvas.width;
+      var height = canvas.height;
+      console.log(context)
+      
+      // Draws the background and the table
+      drawTable(context, width, height)
+
+      // Draw example cards - top corner
+      drawFrontCard(context, width/2-60, height-80, 'J', 'c');
+      drawFrontCard(context, width/2+5, height-80, '2', 's');
+      drawFrontCard(context, 130, 10, '3', 'd');
+      drawFrontCard(context, 190, 10, 'A', 'h');
+
+      drawBackCard(context, 10, 100);      
+      
       const $status = document.querySelector('#status')
       const $connectButton = document.querySelector('#connect')
       const $log = document.querySelector('#log')
