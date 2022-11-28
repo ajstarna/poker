@@ -61,7 +61,7 @@ impl PlayerConfig {
     }    
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Player {
     pub id: Uuid,    
     pub hole_cards: Vec<Card>,
