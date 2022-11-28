@@ -76,7 +76,7 @@ impl Player {
         Player {
             id,
             hole_cards: Vec::<Card>::with_capacity(2),
-            is_active: true,
+            is_active: false, // a branch new player is not active in a hand
             is_sitting_out: false,
             money: 1000, // let them start with 1000 for now,
             human_controlled,
