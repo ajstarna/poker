@@ -233,3 +233,4 @@ function drawBackCard(ctx, x, y, size=55) {
     // Draw card base
     drawCardBase(ctx, x, y, width, height, color='rgb(100, 100, 100)');
 }
+
