@@ -233,6 +233,7 @@
       const $river = document.querySelector('#river')      
 
       var buttonIdx = 0 // this will move around
+      var yourIdx // the position of players on the UI depends on your index
       
       /** @type {WebSocket | null} */
       var socket = null
@@ -276,6 +277,7 @@
 		  msg = JSON.parse(ev.data)
 	      } catch {}
 	      if (msg != null) {
+		  // handle json messages
 		  if (msg.index != null) {
 		      var name_spot = document.getElementById("idx" + msg.index.toString())
 		      var name_string = msg.player_name
@@ -295,7 +297,10 @@
 		      } else {
 			  action_spot.textContent = msg.action
 		      }
-		      log(ev.data, 'message')		  	      		  		      
+		      log(ev.data, 'message')
+		      var mapped_index = (((msg.index - yourIdx) % 9) + 9) % 9
+		      log("mapped index = " + mapped_index, 'message')
+		      
 		  }
 		  if (msg.pots != null) {
 		      var pots_spot = document.getElementById("pots")
@@ -321,6 +326,13 @@
 		  else if (ev.data.startsWith("Money:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $money.textContent = val
+		  }
+		  else if (ev.data.startsWith("Joining game")) {
+		      // when we join the game, we get the index
+		      // this dictates where the players are positioned
+		      // around the board
+		      const [_, val] = ev.data.split(": ")
+		      yourIdx = val
 		  }
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")

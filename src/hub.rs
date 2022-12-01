@@ -223,15 +223,19 @@ impl Handler<Join> for GameHub {
         } else {
 	    // we need to create the game for the first time
             let mut game = Game::new(Some(ctx.address()), None);
-            game.add_user(player_config);
 	    
-            let num_bots = 1;
+            let num_bots = 2;
             for i in 0..num_bots {
 		let name = format!("Mr {}", i);
 		game.add_bot(name);
             }
+
+            if game.add_user(player_config).is_none() {
+		panic!("how were we unable to join a fresh game?");
+	    } else {
+		println!("in the hub. we just joined fine?");
+	    }
 	    
-            game.send_message("Someone connected");
 	    let actions = Arc::new(Mutex::new(HashMap::new()));	
 	    let cloned_actions = actions.clone();
 	    

@@ -120,7 +120,7 @@ impl PotManager {
 	    println!("adding a new pot!");
 	    self.pots.push(Pot::new());
 	} else if let Some((index, new_cap)) = insert_pot {
-	    println!("iunserting a pot at index {} and a new cap {}", index+1, new_cap);
+	    println!("inserting a pot at index {} and a new cap {}", index+1, new_cap);
 	    self.pots.insert(index+1, Pot::new());
 	    self.transfer_excess(index, new_cap)
 	}
@@ -244,7 +244,11 @@ impl GameHand {
 
     fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
 		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-        for player in players.iter_mut().flatten() {
+        for (i, player_spot) in players.iter_mut().enumerate() {
+	    if player_spot.is_none() {
+		continue;
+	    }
+	    let player = player_spot.as_mut().unwrap();
             if player.is_active {
                 for _ in 0..2 {
                     if let Some(card) = deck.draw_card() {
@@ -1010,11 +1014,12 @@ impl Game {
 
     /// add a given playerconfig to an empty seat
     /// TODO: eventually we wanmt the player to select an open seat I guess
-    pub fn add_user(&mut self, player_config: PlayerConfig) -> bool {
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true)	    
+    /// returns the index of the seat that they joined (if they were able to join)
+    pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
+	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true)
     }
 
-    pub fn add_bot(&mut self, name: String) -> bool {
+    pub fn add_bot(&mut self, name: String) -> Option<usize> {
 	let new_bot = Player::new_bot();
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
 	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false)
@@ -1024,17 +1029,25 @@ impl Game {
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	player_config: PlayerConfig,
-	human_controlled: bool) -> bool{
-	let mut added = false;
-	for player_spot in players.iter_mut() {
+	human_controlled: bool
+    ) -> Option<usize> {
+	let mut index = None;
+	for (i, player_spot) in players.iter_mut().enumerate() {
 	    if player_spot.is_none() {
+		let id = player_config.id; // copy the id for sending a message after we add the config
 		*player_spot = Some(Player::new(player_config.id, human_controlled));
 		player_ids_to_configs.insert(player_config.id, player_config);
-		added = true;
+		index = Some(i);
+		println!("Joining game at index: {}", i);
+		PlayerConfig::send_specific_message(
+		    &format!("Joining game at index: {}", i),
+		    id,
+		    &player_ids_to_configs,
+		);			    			    
 		break;
 	    }
 	}
-	added
+	index
     }
             
     /// send a given message to all the players at the tabel
@@ -1167,20 +1180,18 @@ impl Game {
 		MetaAction::Join(player_config) => {
 		    // add a new player to the game
 		    let id = player_config.id; // copy the id so we can use to send a message later
-		    let added = Game::add_player(
+		    if Game::add_player(
 			players,
 			player_ids_to_configs,
 			player_config,
-			true);
-		    if !added {
+			true).is_none()
+		    {
 			// we were unable to add the player
 			PlayerConfig::send_specific_message(
 			    &"Unable to join game, it must be full!".to_owned(),
 			    id,
 			    &player_ids_to_configs,
-			);			    			    
-		    } else {
-			println!("player {} added", id);
+			);
 		    }
 		},
 		MetaAction::Leave(id) => {
@@ -1195,11 +1206,7 @@ impl Game {
 		},
 		MetaAction::PlayerName(id, new_name) => {
 		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
-		}
-		other => {
-		    // put it back onto thhe queue
-		    meta_actions.push_back(other);
-		}
+		},
 	    }
 	
 	}
