@@ -182,37 +182,73 @@
     </div>
        
     <script>
-
-      function drawPair(ctx, x, y, value1, suit1, value2, suit2, size=55) {
-	  // TODO i want this to be in the other file, but it cant find the new function?
-	  // maybe a cache issue or something?
-	  drawFrontCard(ctx, x-60, y, value1, suit1, size)
-	  drawFrontCard(ctx, x+5, y, value2, suit2, size)    
-      }
-      
       // Get canvas and context      
       var canvas = document.getElementById("pokerTable");
       var context = canvas.getContext("2d");
       var width = canvas.width;
       var height = canvas.height;
-      console.log(context)
+
+      // this gives us the position of UI for a given MAPPED index 
+      // (e.g. the main player always maps to index 0)
+      mappedIndexToCardPosition = {
+	  0: [width/2, height - 100],
+	  1: [240, height - 120],
+	  2: [80, height - 330],
+	  3: [100, 140],
+	  4: [width/3 + 20, 20],
+	  5: [2*width/3, 20],
+	  6: [width - 100, 140],
+	  7: [width - 80, height - 330],
+	  8: [width - 240, height - 120]
+      }
+      mappedIndexToNamePosition = {
+	  0: [width/2 + 80, height - 80],
+	  1: [240 + 80, height - 100],
+	  2: [20, height - 220],
+	  3: [40, 250],
+	  4: [width/3 + 90, 40],
+	  5: [2*width/3 + 70, 40],
+	  6: [width - 155, 250],
+	  7: [width - 140, height - 220],
+	  8: [width - 160, height - 100]
+      }
+            
+      function drawFrontPairAtIndex(ctx, index, value1, suit1, value2, suit2, size=55) {
+	  // TODO i want this to be in the other file, but it cant find the new function?
+	  // maybe a cache issue or something?
+	  const [x, y] = mappedIndexToCardPosition[index];
+	  drawFrontCard(ctx, x-60, y, value1, suit1, size)
+	  drawFrontCard(ctx, x+5, y, value2, suit2, size)    
+      }
+      
+      function drawBackPairAtIndex(ctx, index, size=55) {
+	  // TODO i want this to be in the other file, but it cant find the new function?
+	  // maybe a cache issue or something?
+	  const [x, y] = mappedIndexToCardPosition[index];
+	  drawBackCard(ctx, x-60, y, size)
+	  drawBackCard(ctx, x+5, y, size)    
+      }
+
+      function drawNameAndMoneyAtIndex(ctx, index) {
+	  const [x, y] = mappedIndexToNamePosition[index];
+	  context.strokeText("Player" + index, x, y);
+	  context.strokeText("960", x, y + 20);      
+	  
+      }
       
       // Draws the background and the table
       drawTable(context, width, height)
-      drawPair(context, width/2, height - 100, 'J', 'c', '2', 's');
 
+      // player
+      drawFrontPairAtIndex(context, 0, 'J', 'c', '2', 's');
+      drawNameAndMoneyAtIndex(context, 0);
+      
       // left side
-      drawPair(context, 240, height - 120, 'Q', 's', 'J', 'h');
-      drawPair(context, 80, height - 330, '7', 'd', '6', 'd');
-      drawPair(context, 100, 140 , 'K', 'h', 'T', 'c');            
-      drawPair(context, width/3 +20, 20, 'A', 's', 'A', 'd');
-
-      // right side
-      drawPair(context, 2*width/3 -20, 20, 'A', 's', 'A', 'd');                  
-      drawPair(context, width-100, 140 , 'K', 'h', 'T', 'c');
-      drawPair(context, width-80, height - 330, '7', 'd', '6', 'd');      
-      drawPair(context, width-240, height - 120, 'Q', 's', 'J', 'h');
-
+      //drawFront(context, 240, height - 120, 'Q', 's', 'J', 'h');
+      for (var i = 1; i < 9; i++) {
+	  drawBackPairAtIndex(context, i)
+	  drawNameAndMoneyAtIndex(context, i)
+      }
 
       // table cards
       drawFrontCard(context, width/3 +50, height/2  -50, '4', 's')
@@ -279,6 +315,18 @@
 	      if (msg != null) {
 		  // handle json messages
 		  if (msg.index != null) {
+		      // the mapped_index is where we draw that player on the UI
+		      // Our index is always mapped to index 0 (bottom middle)
+		      // e.g. If we are index 4, and another player is index 2,
+		      // then they map to 7 (i.e. two to our right)
+		      // Note: we need to add 9 in the equation because javascript does
+		      // modulo wrong for negative numbers lol
+		      var mapped_index = ((msg.index - yourIdx) + 9) % 9
+		      log("mapped index = " + mapped_index, 'message')
+		      
+
+
+		      
 		      var name_spot = document.getElementById("idx" + msg.index.toString())
 		      var name_string = msg.player_name
 		      if (buttonIdx == msg.index) {
@@ -297,10 +345,7 @@
 		      } else {
 			  action_spot.textContent = msg.action
 		      }
-		      log(ev.data, 'message')
-		      var mapped_index = (((msg.index - yourIdx) % 9) + 9) % 9
-		      log("mapped index = " + mapped_index, 'message')
-		      
+		      log(ev.data, 'message')		      
 		  }
 		  if (msg.pots != null) {
 		      var pots_spot = document.getElementById("pots")
