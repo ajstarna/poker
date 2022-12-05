@@ -85,63 +85,6 @@
       </canvas>
     </div>
     
-    <table style="border-spacing: 1.0em">      
-      <tr>
-	<td id="idx0" ></td>
-	<td id="idx1" ></td>
-	<td id="idx2" ></td>
-	<td id="idx3" ></td>
-	<td id="idx4" ></td>
-	<td id="idx5" ></td>
-	<td id="idx6" ></td>
-	<td id="idx7" ></td>
-	<td id="idx8" ></td>
-      </tr>
-      <tr>
-	<td id="money0" ></td>
-	<td id="money1" ></td>
-	<td id="money2" ></td>
-	<td id="money3" ></td>
-	<td id="money4" ></td>
-	<td id="money5" ></td>
-	<td id="money6" ></td>
-	<td id="money7" ></td>
-	<td id="money8" ></td>
-      </tr>
-      <tr>
-	<td id="action0" ></td>
-	<td id="action1" ></td>
-	<td id="action2" ></td>
-	<td id="action3" ></td>
-	<td id="action4" ></td>
-	<td id="action5" ></td>
-	<td id="action6" ></td>
-	<td id="action7" ></td>
-	<td id="action8" ></td>		
-      </tr>
-    </table>
-    
-    <hr />
-    
-    <table style="border-spacing: 1.0em">      
-      <tr>
-	<td>Money</td>	
-	<td>Hand</td>
-	<td>Flop</td>
-	<td>Turn</td>
-	<td>River</td>
-	<td>Pot(s)</td>	
-      </tr>
-      <tr>
-      <td id="money"><font size="+2"><b></b></font></td>	
-      <td id="hole"><font size="+2"><b></b></font></td>
-      <td id="flop"><font size="+2"><b></b></font></td>
-      <td id="turn"><font size="+2"><b></b></font></td>
-      <td id="river"><font size="+2"><b></b></font></td>
-      <td id="pots"><font size="+2"><b></b></font></td>      
-      </tr>
-    </table>
-    
     <hr />
     
     <section>
@@ -196,15 +139,16 @@
       const $log = document.querySelector('#log')
       const $form = document.querySelector('#chatform')
       const $input = document.querySelector('#text')
-      const $money = document.querySelector('#money')
-      const $hole = document.querySelector('#hole')
-      const $flop = document.querySelector('#flop')
-      const $turn = document.querySelector('#turn')
-      const $river = document.querySelector('#river')      
-
+      
+      var hole = ''
+      var flop = ''
+      var turn = ''
+      var river = ''
+      var pots = ''
+      
       var buttonIdx = 0 // this will move around
       var yourIdx // the position of players on the UI depends on your index
-
+      var toActIdx // whose turn is it to act?
       
       // this gives us the position of UI for a given MAPPED index 
       // (e.g. the main player always maps to index 0)
@@ -260,10 +204,9 @@
 
       function drawPots(ctx) {
 	  // eventually we might want to draw something visual here?
-	  var pots_spot = document.getElementById("pots")
-	  if (pots_spot.textContent != '') {
+	  if (pots != '') {
 	      context.fillStyle = 'white'
-	      context.fillText('Pot(s): ' + pots_spot.textContent, width/2 -20, height/2 + 70)
+	      context.fillText('Pot(s): ' + pots, width/2 -40, height/2 + 80)
 	  }
       }
       
@@ -285,9 +228,9 @@
 	      }
 	      drawNameAndMoneyAtMappedIndex(context, mapped_index,
 					    name=name_string, money=latest.money, action_string)
-	      if (mapped_index == 0 ) {
+	      if (mapped_index == 0 && hole != '' ) {
 		  // we draw our cards
-		  const chars = $hole.textContent.split('')
+		  const chars = hole.split('')
 		  drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3])
 		  
 	      } else {
@@ -296,18 +239,18 @@
 	  }
 
 	  // table cards
-	  if ($flop.textContent != "") {
-	      const chars = $flop.textContent.split('')	      
+	  if (flop != "") {
+	      const chars = flop.split('')	      
 	      drawFrontCard(context, width/3 +50, height/2  -50, chars[0], chars[1])
 	      drawFrontCard(context, width/3 +110, height/2 -50, chars[2], chars[3])
 	      drawFrontCard(context, width/3 +170, height/2 -50, chars[4], chars[5])
 	  }
-	  if ($turn.textContent != "") {
-	      const chars = $turn.textContent.split('')
+	  if (turn != "") {
+	      const chars = turn.split('')
 	      drawFrontCard(context, width/3 +230, height/2 -50, chars[0], chars[1])	      
 	  }
-	  if ($river.textContent != "") {
-	      const chars = $river.textContent.split('')
+	  if (river != "") {
+	      const chars = river.split('')
 	      drawFrontCard(context, width/3 +290, height/2 -50, chars[0], chars[1])	      
 	  }
 
@@ -327,15 +270,14 @@
       }
 
       function clearActions(clear_fold) {
-	  // go through each spot and set the text to be blank
+	  // go through each player state and set their action to be blank
 	  // if clear_fold is true, we also clear "fold", if not, we leave it
-	  for (let i = 0; i < 9; i++) {
-	      var action_spot = document.getElementById("action" + i.toString())
-	      if (action_spot.textContent == "fold" && !clear_fold) {
-		  continue;
+	  for (var mapped_index in playerStates) {
+	      var latest = playerStates[mapped_index]
+	      if (latest.action != 'fold' || clear_fold) {
+		  latest.action = ''
 	      }
-	      action_spot.textContent = ''
-	  } 	  
+	  }	  
       }
       
       function connect() {
@@ -368,9 +310,8 @@
 		  // Note: we need to add 9 in the equation because javascript does
 		  // modulo wrong for negative numbers lol
 		  var mapped_index = ((msg.index - yourIdx) + 9) % 9
-		  log("mapped index = " + mapped_index, 'message')
-
 		  playerStates[mapped_index] = msg
+		  /*
 		  var name_spot = document.getElementById("idx" + msg.index.toString())
 		  var name_string = msg.player_name
 		  if (buttonIdx == msg.index) {
@@ -379,7 +320,6 @@
 		  name_spot.textContent = name_string 
 		  var money_spot = document.getElementById("money" + msg.index.toString())
 		  money_spot.textContent = msg.money
-		  
 		  if (msg.action != null) {
 		      var action_spot = document.getElementById("action" + msg.index.toString())
 		      if (msg.amount != null) {
@@ -389,18 +329,18 @@
 		      }
 		      log(ev.data, 'message')		      
 		  }
+		  */
 		  if (msg.pots != null) {
-		      var pots_spot = document.getElementById("pots")
-		      pots_spot.textContent = msg.pots
+		      pots = msg.pots
 		  }		  
 	      }
 	      else {
 		  if (ev.data.startsWith("Playing hand")) {
 		      // reset the values for the next hand
-		      $hole.textContent = ""
-		      $flop.textContent = ""
-		      $turn.textContent = ""
-		      $river.textContent = ""
+		      hole = ""
+		      flop = ""
+		      turn = ""
+		      river = ""
 		      clearActions(true)
 		      // e.g. button_idx = 3
 		      buttonIdx = parseInt(ev.data.slice(-1))
@@ -408,39 +348,42 @@
 		  }	      
 		  if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
-		      $hole.textContent = val
+		      hole = val
 		      // player
 		      var chars = val.split('')
 		      drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
-
+		      log(ev.data, 'message')		  	      		  
 		  }
-		  //else if (ev.data.startsWith("Money:")) {
-		  //    const [_, val] = ev.data.split(": ")
-		  //    $money.textContent = val
-		  //}
+		  else if (ev.data.endsWidth("act!")) {
+		      const [_, val] = ev.data.split(": ")
+		      $money.textContent = val
+		  }
 		  else if (ev.data.startsWith("Joining game")) {
 		      // when we join the game, we get the index
 		      // this dictates where the players are positioned
 		      // around the board
 		      const [_, val] = ev.data.split(": ")
 		      yourIdx = val
+		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")
-		      $flop.textContent = val
-		      clearActions(false)		      
+		      flop = val
+		      clearActions(false)
+		  log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("Turn:")) {
 		      const [_, val] = ev.data.split(": ")
-		      $turn.textContent = val
-		      clearActions(false)		      
+		      turn = val
+		      clearActions(false)
+		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("River:")) {
 		      const [_, val] = ev.data.split(": ")
-		      $river.textContent = val
-		      clearActions(false)		      
+		      river = val
+		      clearActions(false)
+		      log(ev.data, 'message')		  	      		  		      
 		  }
-		  log(ev.data, 'message')		  	      		  
 	      }
 	      drawEverything()	      
           }
