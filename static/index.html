@@ -80,6 +80,11 @@
 
     <hr />
 
+    <div>
+      <canvas id="pokerTable" width="1200" height="720" style="border:1px solid #000000;">
+      </canvas>
+    </div>
+    
     <table style="border-spacing: 1.0em">      
       <tr>
 	<td id="idx0" ></td>
@@ -176,87 +181,16 @@
       </table>
     </section>
 
-    <div>
-      <canvas id="pokerTable" width="1200" height="720" style="border:1px solid #000000;">
-      </canvas>
-    </div>
        
     <script>
       // Get canvas and context      
       var canvas = document.getElementById("pokerTable");
-      var context = canvas.getContext("2d");
+      var context = canvas.getContext("2d");	      
+      //context.font = "20px Georgia";
+      
       var width = canvas.width;
       var height = canvas.height;
 
-      // this gives us the position of UI for a given MAPPED index 
-      // (e.g. the main player always maps to index 0)
-      mappedIndexToCardPosition = {
-	  0: [width/2, height - 100],
-	  1: [240, height - 120],
-	  2: [80, height - 330],
-	  3: [100, 140],
-	  4: [width/3 + 20, 20],
-	  5: [2*width/3, 20],
-	  6: [width - 100, 140],
-	  7: [width - 80, height - 330],
-	  8: [width - 240, height - 120]
-      }
-      mappedIndexToNamePosition = {
-	  0: [width/2 + 80, height - 80],
-	  1: [240 + 80, height - 100],
-	  2: [20, height - 220],
-	  3: [40, 250],
-	  4: [width/3 + 90, 40],
-	  5: [2*width/3 + 70, 40],
-	  6: [width - 155, 250],
-	  7: [width - 140, height - 220],
-	  8: [width - 160, height - 100]
-      }
-            
-      function drawFrontPairAtIndex(ctx, index, value1, suit1, value2, suit2, size=55) {
-	  // TODO i want this to be in the other file, but it cant find the new function?
-	  // maybe a cache issue or something?
-	  const [x, y] = mappedIndexToCardPosition[index];
-	  drawFrontCard(ctx, x-60, y, value1, suit1, size)
-	  drawFrontCard(ctx, x+5, y, value2, suit2, size)    
-      }
-      
-      function drawBackPairAtIndex(ctx, index, size=55) {
-	  // TODO i want this to be in the other file, but it cant find the new function?
-	  // maybe a cache issue or something?
-	  const [x, y] = mappedIndexToCardPosition[index];
-	  drawBackCard(ctx, x-60, y, size)
-	  drawBackCard(ctx, x+5, y, size)    
-      }
-
-      function drawNameAndMoneyAtIndex(ctx, index) {
-	  const [x, y] = mappedIndexToNamePosition[index];
-	  context.strokeText("Player" + index, x, y);
-	  context.strokeText("960", x, y + 20);      
-	  
-      }
-      
-      // Draws the background and the table
-      drawTable(context, width, height)
-
-      // player
-      drawFrontPairAtIndex(context, 0, 'J', 'c', '2', 's');
-      drawNameAndMoneyAtIndex(context, 0);
-      
-      // left side
-      //drawFront(context, 240, height - 120, 'Q', 's', 'J', 'h');
-      for (var i = 1; i < 9; i++) {
-	  drawBackPairAtIndex(context, i)
-	  drawNameAndMoneyAtIndex(context, i)
-      }
-
-      // table cards
-      drawFrontCard(context, width/3 +50, height/2  -50, '4', 's')
-      drawFrontCard(context, width/3 +110, height/2 -50, '5', 'h')
-      drawFrontCard(context, width/3 +170, height/2 -50, '9', 'h')
-      drawFrontCard(context, width/3 +230, height/2 -50, 'K', 'd')
-      drawFrontCard(context, width/3 +290, height/2 -50, '9', 'c')            
-      
       const $status = document.querySelector('#status')
       const $connectButton = document.querySelector('#connect')
       const $log = document.querySelector('#log')
@@ -270,6 +204,119 @@
 
       var buttonIdx = 0 // this will move around
       var yourIdx // the position of players on the UI depends on your index
+
+      
+      // this gives us the position of UI for a given MAPPED index 
+      // (e.g. the main player always maps to index 0)
+      const mappedIndexToCardPosition = {
+	  0: [width/2, height - 100],
+	  1: [240, height - 120],
+	  2: [80, height - 330],
+	  3: [100, 140],
+	  4: [width/3 + 20, 20],
+	  5: [2*width/3, 20],
+	  6: [width - 100, 140],
+	  7: [width - 80, height - 330],
+	  8: [width - 240, height - 120]
+      }
+      const mappedIndexToNamePosition = {
+	  0: [width/2 + 80, height - 80],
+	  1: [240 + 80, height - 100],
+	  2: [20, height - 220],
+	  3: [40, 250],
+	  4: [width/3 + 90, 40],
+	  5: [2*width/3 + 70, 40],
+	  6: [width - 155, 250],
+	  7: [width - 140, height - 220],
+	  8: [width - 160, height - 100]
+      }
+
+      var playerStates = {
+	  // from mappedIndex to the latest action info for that player
+      }
+      function drawFrontPairAtMappedIndex(ctx, mapped_index, value1, suit1, value2, suit2, size=55) {
+	  // TODO i want this to be in the other file, but it cant find the new function?
+	  // maybe a cache issue or something?
+	  const [x, y] = mappedIndexToCardPosition[mapped_index];
+	  drawFrontCard(ctx, x-60, y, value1, suit1, size)
+	  drawFrontCard(ctx, x+5, y, value2, suit2, size)    
+      }
+      
+      function drawBackPairAtMappedIndex(ctx, mapped_index, size=55) {
+	  // TODO i want this to be in the other file, but it cant find the new function?
+	  // maybe a cache issue or something?
+	  const [x, y] = mappedIndexToCardPosition[mapped_index];
+	  drawBackCard(ctx, x-60, y, size)
+	  drawBackCard(ctx, x+5, y, size)    
+      }
+
+      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action) {
+	  const [x, y] = mappedIndexToNamePosition[mapped_index];
+	  context.fillStyle = 'white'
+	  context.fillText(name, x, y);
+	  context.fillText(money, x, y + 20);
+	  context.fillText(action, x, y + 40);      	  
+      }
+
+      function drawPots(ctx) {
+	  // eventually we might want to draw something visual here?
+	  var pots_spot = document.getElementById("pots")
+	  if (pots_spot.textContent != '') {
+	      context.fillStyle = 'white'
+	      context.fillText('Pot(s): ' + pots_spot.textContent, width/2 -20, height/2 + 70)
+	  }
+      }
+      
+      function drawEverything() {
+	  // this is called after very change of state to re-render the entire UI.
+	  drawTable(context, width, height) 	  // Draws the background and the table
+	  for (var mapped_index in playerStates) {
+	      var latest = playerStates[mapped_index]
+	      var name_string = latest.player_name
+	      if (buttonIdx == latest.index) {
+		  name_string += "(*)"
+	      }
+	      var action_string = ''
+	      if (latest.action != null) {
+		  action_string = latest.action
+		  if (latest.amount != null) {
+		      action_string += ":" + latest.amount
+		  }
+	      }
+	      drawNameAndMoneyAtMappedIndex(context, mapped_index,
+					    name=name_string, money=latest.money, action_string)
+	      if (mapped_index == 0 ) {
+		  // we draw our cards
+		  const chars = $hole.textContent.split('')
+		  drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3])
+		  
+	      } else {
+		  drawBackPairAtMappedIndex(context, mapped_index)
+	      }
+	  }
+
+	  // table cards
+	  if ($flop.textContent != "") {
+	      const chars = $flop.textContent.split('')	      
+	      drawFrontCard(context, width/3 +50, height/2  -50, chars[0], chars[1])
+	      drawFrontCard(context, width/3 +110, height/2 -50, chars[2], chars[3])
+	      drawFrontCard(context, width/3 +170, height/2 -50, chars[4], chars[5])
+	  }
+	  if ($turn.textContent != "") {
+	      const chars = $turn.textContent.split('')
+	      drawFrontCard(context, width/3 +230, height/2 -50, chars[0], chars[1])	      
+	  }
+	  if ($river.textContent != "") {
+	      const chars = $river.textContent.split('')
+	      drawFrontCard(context, width/3 +290, height/2 -50, chars[0], chars[1])	      
+	  }
+
+	  drawPots()
+      }
+      
+
+      drawEverything()
+      
       
       /** @type {WebSocket | null} */
       var socket = null
@@ -314,30 +361,25 @@
 	      } catch {}
 	      if (msg != null) {
 		  // handle json messages
-		  if (msg.index != null) {
-		      // the mapped_index is where we draw that player on the UI
-		      // Our index is always mapped to index 0 (bottom middle)
-		      // e.g. If we are index 4, and another player is index 2,
-		      // then they map to 7 (i.e. two to our right)
-		      // Note: we need to add 9 in the equation because javascript does
-		      // modulo wrong for negative numbers lol
-		      var mapped_index = ((msg.index - yourIdx) + 9) % 9
-		      log("mapped index = " + mapped_index, 'message')
-		      
+		  // the mapped_index is where we draw that player on the UI
+		  // Our index is always mapped to index 0 (bottom middle)
+		  // e.g. If we are index 4, and another player is index 2,
+		  // then they map to 7 (i.e. two to our right)
+		  // Note: we need to add 9 in the equation because javascript does
+		  // modulo wrong for negative numbers lol
+		  var mapped_index = ((msg.index - yourIdx) + 9) % 9
+		  log("mapped index = " + mapped_index, 'message')
 
-
-		      
-		      var name_spot = document.getElementById("idx" + msg.index.toString())
-		      var name_string = msg.player_name
-		      if (buttonIdx == msg.index) {
-			  name_string += "(*)"
-		      }
-		      name_spot.textContent = name_string 
+		  playerStates[mapped_index] = msg
+		  var name_spot = document.getElementById("idx" + msg.index.toString())
+		  var name_string = msg.player_name
+		  if (buttonIdx == msg.index) {
+		      name_string += "(*)"
 		  }
-		  if (msg.money != null) {		  
-		      var money_spot = document.getElementById("money" + msg.index.toString())
-		      money_spot.textContent = msg.money
-		  }
+		  name_spot.textContent = name_string 
+		  var money_spot = document.getElementById("money" + msg.index.toString())
+		  money_spot.textContent = msg.money
+		  
 		  if (msg.action != null) {
 		      var action_spot = document.getElementById("action" + msg.index.toString())
 		      if (msg.amount != null) {
@@ -367,11 +409,15 @@
 		  if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
 		      $hole.textContent = val
+		      // player
+		      var chars = val.split('')
+		      drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
+
 		  }
-		  else if (ev.data.startsWith("Money:")) {
-		      const [_, val] = ev.data.split(": ")
-		      $money.textContent = val
-		  }
+		  //else if (ev.data.startsWith("Money:")) {
+		  //    const [_, val] = ev.data.split(": ")
+		  //    $money.textContent = val
+		  //}
 		  else if (ev.data.startsWith("Joining game")) {
 		      // when we join the game, we get the index
 		      // this dictates where the players are positioned
@@ -396,7 +442,7 @@
 		  }
 		  log(ev.data, 'message')		  	      		  
 	      }
-
+	      drawEverything()	      
           }
 	  
           socket.onclose = () => {

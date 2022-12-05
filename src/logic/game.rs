@@ -201,7 +201,7 @@ impl GameHand {
                     self.flop
                 );
                 PlayerConfig::send_group_message(
-                    &format!("Flop: {}-{}-{}",
+                    &format!("Flop: {}{}{}",
 			     self.flop.as_ref().unwrap()[0],
 			     self.flop.as_ref().unwrap()[1],
 			     self.flop.as_ref().unwrap()[2]),
@@ -258,7 +258,7 @@ impl GameHand {
                     }		    
                 }
 		PlayerConfig::send_specific_message(
-		    &format!("Hole Cards: {}-{}", player.hole_cards[0], player.hole_cards[1]),
+		    &format!("Hole Cards: {}{}", player.hole_cards[0], player.hole_cards[1]),
 		    player.id,
 		    player_ids_to_configs
 		);
@@ -1096,19 +1096,17 @@ impl Game {
 	    
 	    for (i, player_spot) in self.players.iter().enumerate() {
 		// display the play positions for the front end to consume
-		let mut message = object!{
-		    index: i
-		};
 		if let Some(player) = player_spot {
+		    let mut message = object!{
+			index: i
+		    };
 		    let config = self.player_ids_to_configs.get(&player.id).unwrap();
 		    let name = config.name.as_ref().unwrap().clone();
 		    message["player_name"] = name.into();
 		    message["money"] = player.money.into();
-		} else {
-		    message["player_name"] = json::Null;
-		}
-		PlayerConfig::send_group_message(&message.dump(),
-						 &self.player_ids_to_configs);			
+		    PlayerConfig::send_group_message(&message.dump(),
+						     &self.player_ids_to_configs);			
+		} 
 	    }	    	    
 	    
             self.play_one_hand(incoming_actions, incoming_meta_actions);
