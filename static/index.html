@@ -17,8 +17,8 @@
       }
 
       #log {
-        width: 50em;
-        height: 20em;
+        width: 60em;
+        height: 16em;
         overflow: auto;
         margin: 0.5em 0;
 
@@ -149,6 +149,7 @@
       var buttonIdx = 0 // this will move around
       var yourIdx // the position of players on the UI depends on your index
       var toActIdx // whose turn is it to act?
+      var playerToAct = ''
       
       // this gives us the position of UI for a given MAPPED index 
       // (e.g. the main player always maps to index 0)
@@ -194,9 +195,9 @@
 	  drawBackCard(ctx, x+5, y, size)    
       }
 
-      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action) {
+      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action, color='white') {
 	  const [x, y] = mappedIndexToNamePosition[mapped_index];
-	  context.fillStyle = 'white'
+	  context.fillStyle = color
 	  context.fillText(name, x, y);
 	  context.fillText(money, x, y + 20);
 	  context.fillText(action, x, y + 40);      	  
@@ -207,6 +208,12 @@
 	  if (pots != '') {
 	      context.fillStyle = 'white'
 	      context.fillText('Pot(s): ' + pots, width/2 -40, height/2 + 80)
+	  }
+      }
+      function drawToAct(ctx) {
+	  if (playerToAct != '') {	  
+	      context.fillStyle = 'red'
+	      context.fillText(playerToAct + "'s turn to act!", width/2 -40, height/2 + 110)
 	  }
       }
       
@@ -226,8 +233,13 @@
 		      action_string += ":" + latest.amount
 		  }
 	      }
+	      var color = 'white'
+	      if (toActIdx == latest.index) {
+		  color = 'red'
+	      }
 	      drawNameAndMoneyAtMappedIndex(context, mapped_index,
-					    name=name_string, money=latest.money, action_string)
+					    name=name_string, money=latest.money,
+					    action_string, color=color)
 	      if (mapped_index == 0 && hole != '' ) {
 		  // we draw our cards
 		  const chars = hole.split('')
@@ -255,6 +267,7 @@
 	  }
 
 	  drawPots()
+	  drawToAct()
       }
       
 
@@ -311,25 +324,6 @@
 		  // modulo wrong for negative numbers lol
 		  var mapped_index = ((msg.index - yourIdx) + 9) % 9
 		  playerStates[mapped_index] = msg
-		  /*
-		  var name_spot = document.getElementById("idx" + msg.index.toString())
-		  var name_string = msg.player_name
-		  if (buttonIdx == msg.index) {
-		      name_string += "(*)"
-		  }
-		  name_spot.textContent = name_string 
-		  var money_spot = document.getElementById("money" + msg.index.toString())
-		  money_spot.textContent = msg.money
-		  if (msg.action != null) {
-		      var action_spot = document.getElementById("action" + msg.index.toString())
-		      if (msg.amount != null) {
-			  action_spot.textContent = msg.action + ":" + msg.amount
-		      } else {
-			  action_spot.textContent = msg.action
-		      }
-		      log(ev.data, 'message')		      
-		  }
-		  */
 		  if (msg.pots != null) {
 		      pots = msg.pots
 		  }		  
@@ -345,32 +339,35 @@
 		      // e.g. button_idx = 3
 		      buttonIdx = parseInt(ev.data.slice(-1))
 		      log("\n\n", 'message')
-		  }	      
-		  if (ev.data.startsWith("Hole Cards:")) {
+		  }
+		  else if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
 		      hole = val
 		      // player
 		      var chars = val.split('')
 		      drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
-		      log(ev.data, 'message')		  	      		  
+		      //log(ev.data, 'message')		  	      		  
 		  }
-		  else if (ev.data.endsWidth("act!")) {
-		      const [_, val] = ev.data.split(": ")
-		      $money.textContent = val
+		  else if (ev.data.includes("to act!")) {
+		      // e.g. "cool guy's turn to act! index=4"
+		      toActIdx = parseInt(ev.data.slice(-1))
+		      const [val, _] = ev.data.split(" turn to act")
+		      playerToAct = val
+		      //log(realMessage, 'message')
 		  }
 		  else if (ev.data.startsWith("Joining game")) {
 		      // when we join the game, we get the index
 		      // this dictates where the players are positioned
 		      // around the board
-		      const [_, val] = ev.data.split(": ")
-		      yourIdx = val
+                      const [_, val] = ev.data.split(": ")
+                      yourIdx = val
 		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")
 		      flop = val
 		      clearActions(false)
-		  log(ev.data, 'message')		  	      		  		      
+		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("Turn:")) {
 		      const [_, val] = ev.data.split(": ")
@@ -383,6 +380,8 @@
 		      river = val
 		      clearActions(false)
 		      log(ev.data, 'message')		  	      		  		      
+		  } else {
+		      log('other: ' + ev.data, 'message')
 		  }
 	      }
 	      drawEverything()	      

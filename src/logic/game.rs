@@ -262,11 +262,13 @@ impl GameHand {
 		    player.id,
 		    player_ids_to_configs
 		);
+		/*
 		PlayerConfig::send_specific_message(
 		    &format!("Money: {}", player.money),
 		    player.id,
 		    player_ids_to_configs
 		);		
+		 */
             }
         }
     }
@@ -636,8 +638,8 @@ impl GameHand {
 	    };
 	    
 	    PlayerConfig::send_group_message(&format!(
-                "{}'s turn to act!",
-                name
+                "{} turn to act! index={}",
+                name, i
 	    ), player_ids_to_configs);
 	    
 	    let action = self.get_and_validate_action(
@@ -751,11 +753,13 @@ impl GameHand {
 		&message.dump(),
 		player_ids_to_configs
 	    );
+	    /*
 	    PlayerConfig::send_specific_message(
 		&format!("Money: {}", player.money),
 		player.id,
 		player_ids_to_configs
 	    );		
+	     */
 	}
 	true // we can't actually get to this line
     }
