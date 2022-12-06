@@ -365,7 +365,7 @@
 		      clearActions(true)
 		      // e.g. button_idx = 3
 		      buttonIdx = parseInt(ev.data.slice(-1))
-		      log("\n\n", 'message')
+		      log("\n\n" + ev.data, 'message')
 		  }
 		  else if (ev.data.startsWith("Hole Cards:")) {
 		      const [_, val] = ev.data.split(": ")
