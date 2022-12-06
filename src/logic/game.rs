@@ -192,6 +192,8 @@ impl GameHand {
     }
 
     fn transition(&mut self, deck: &mut Box<dyn Deck>,  player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+        let pause_duration = time::Duration::from_secs(2); 	
+        thread::sleep(pause_duration);	
         match self.street {
             Street::Preflop => {
                 self.street = Street::Flop;
@@ -262,13 +264,6 @@ impl GameHand {
 		    player.id,
 		    player_ids_to_configs
 		);
-		/*
-		PlayerConfig::send_specific_message(
-		    &format!("Money: {}", player.money),
-		    player.id,
-		    player_ids_to_configs
-		);		
-		 */
             }
         }
     }
@@ -495,6 +490,23 @@ impl GameHand {
 		player.is_active = true;
 	    }
 	}
+	for (i, player_spot) in players.iter().enumerate() {
+	    // display the play positions for the front end to consume
+	    if let Some(player) = player_spot {
+		let mut message = object!{
+		    index: i
+		};
+		let config = player_ids_to_configs.get(&player.id).unwrap();
+		let name = config.name.as_ref().unwrap().clone();
+		message["player_name"] = name.into();
+		message["money"] = player.money.into();
+		message["is_active"] = player.is_active.into();		    
+		PlayerConfig::send_group_message(&message.dump(),
+						 &player_ids_to_configs);			
+	    } 
+	}	    	    
+
+	
         deck.shuffle();
         self.deal_hands(deck, players, player_ids_to_configs);
 
@@ -579,7 +591,7 @@ impl GameHand {
 	//					  self.pot_manager.pots.last()), player_ids_to_configs);
 
         println!("num active players = {}", num_active);
-        PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
+        //PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
 	
         println!("player at index {} starts the betting", starting_idx);
@@ -713,13 +725,15 @@ impl GameHand {
 			println!("you have to put in the rest of your chips");
 			self.pot_manager.contribute(player.id, player.money, true);
 			cumulative_bets[i] += player.money;
-			self.total_contributions[i] += player.money;				
+			self.total_contributions[i] += player.money;
+			message["amount"] = player.money.into();		
 			player.money = 0;
 			num_all_in += 1;
 		    } else {
 			self.pot_manager.contribute(player.id, difference, false);
 			cumulative_bets[i] += difference;
 			self.total_contributions[i] += difference;
+			message["amount"] = difference.into();					
 			player.money -= difference;
 			num_settled += 1;				
 		    }			    
@@ -748,18 +762,15 @@ impl GameHand {
 	    }
 	    message["money"] = player.money.into();
 	    message["pots"] = self.pot_manager.simple_repr().into();
+	    message["is_active"] = player.is_active.into();
+	    message["street_contributions"] = cumulative_bets[i].into();
+	    message["current_bet"] = current_bet.into();		    		    
+	    
 	    println!("{}", message.dump());
 	    PlayerConfig::send_group_message(
 		&message.dump(),
 		player_ids_to_configs
 	    );
-	    /*
-	    PlayerConfig::send_specific_message(
-		&format!("Money: {}", player.money),
-		player.id,
-		player_ids_to_configs
-	    );		
-	     */
 	}
 	true // we can't actually get to this line
     }
@@ -1051,14 +1062,24 @@ impl Game {
 		break;
 	    }
 	}
+	for (i, player_spot) in players.iter().enumerate() {
+	    // display the play positions for the front end to consume
+	    if let Some(player) = player_spot {
+		let mut message = object!{
+		    index: i
+		};
+		let config = player_ids_to_configs.get(&player.id).unwrap();
+		let name = config.name.as_ref().unwrap().clone();
+		message["player_name"] = name.into();
+		message["money"] = player.money.into();
+		message["is_active"] = player.is_active.into();
+		PlayerConfig::send_group_message(&message.dump(),
+						 &player_ids_to_configs);			
+	    } 
+	}
 	index
     }
-            
-    /// send a given message to all the players at the tabel
-    pub fn send_message(&self, message: &str) {
-        PlayerConfig::send_group_message(message, &self.player_ids_to_configs);
-    }
-    
+                
     pub fn play_one_hand(
 	&mut self,
 	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
@@ -1097,22 +1118,7 @@ impl Game {
 	    PlayerConfig::send_group_message(
 		&format!("Playing hand {}, button_idx = {}", hand_count, self.button_idx),
 		&self.player_ids_to_configs);			
-	    
-	    for (i, player_spot) in self.players.iter().enumerate() {
-		// display the play positions for the front end to consume
-		if let Some(player) = player_spot {
-		    let mut message = object!{
-			index: i
-		    };
-		    let config = self.player_ids_to_configs.get(&player.id).unwrap();
-		    let name = config.name.as_ref().unwrap().clone();
-		    message["player_name"] = name.into();
-		    message["money"] = player.money.into();
-		    PlayerConfig::send_group_message(&message.dump(),
-						     &self.player_ids_to_configs);			
-		} 
-	    }	    	    
-	    
+	    	    
             self.play_one_hand(incoming_actions, incoming_meta_actions);
 
 	    // check if any player is now missing from the config mapping,

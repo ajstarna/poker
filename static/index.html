@@ -144,7 +144,8 @@
       var flop = ''
       var turn = ''
       var river = ''
-      var pots = ''
+      var pots = null
+      var currentBet = null
       
       var buttonIdx = 0 // this will move around
       var yourIdx // the position of players on the UI depends on your index
@@ -195,25 +196,31 @@
 	  drawBackCard(ctx, x+5, y, size)    
       }
 
-      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action, color='white') {
+      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action, contributions, color='white') {
 	  const [x, y] = mappedIndexToNamePosition[mapped_index];
 	  context.fillStyle = color
 	  context.fillText(name, x, y);
 	  context.fillText(money, x, y + 20);
-	  context.fillText(action, x, y + 40);      	  
+	  context.fillText(action, x, y + 40);
+	  // todo: the contributions should be on the table I think
+	  context.fillText('this street: ' + contributions , x, y + 60);      	  	  
       }
 
       function drawPots(ctx) {
 	  // eventually we might want to draw something visual here?
-	  if (pots != '') {
+	  if (pots != null) {
 	      context.fillStyle = 'white'
 	      context.fillText('Pot(s): ' + pots, width/2 -40, height/2 + 80)
+	  }
+	  if (currentBet != null) {
+	      context.fillStyle = 'white'
+	      context.fillText('Current bet: ' + currentBet, width/2 -40, height/2 + 110)
 	  }
       }
       function drawToAct(ctx) {
 	  if (playerToAct != '') {	  
-	      context.fillStyle = 'red'
-	      context.fillText(playerToAct + "'s turn to act!", width/2 -40, height/2 + 110)
+	      context.fillStyle = 'white'
+	      context.fillText(playerToAct + "'s turn to act!", width/2 -40, height/2 + 140)
 	  }
       }
       
@@ -222,30 +229,43 @@
 	  drawTable(context, width, height) 	  // Draws the background and the table
 	  for (var mapped_index in playerStates) {
 	      var latest = playerStates[mapped_index]
+	      console.log('latest = ' + JSON.stringify(latest));
 	      var name_string = latest.player_name
 	      if (buttonIdx == latest.index) {
-		  name_string += "(*)"
+		  name_string += "(BTN)"
 	      }
 	      var action_string = ''
+	      //var doDrawCards = true
 	      if (latest.action != null) {
+		  /*
+		  if (latest.action == 'fold' || latest.) {
+		      // we don't draw the enemy cards if they have folded
+		      doDrawCards = true
+		  }*/
 		  action_string = latest.action
 		  if (latest.amount != null) {
 		      action_string += ":" + latest.amount
 		  }
 	      }
+
+	      var contributions_string = ''
+	      if (latest.street_contributions != null) {
+		  contributions_string = latest.street_contributions
+	      }
+
 	      var color = 'white'
 	      if (toActIdx == latest.index) {
-		  color = 'red'
+		  color = 'orange'
 	      }
 	      drawNameAndMoneyAtMappedIndex(context, mapped_index,
 					    name=name_string, money=latest.money,
-					    action_string, color=color)
+					    action_string, contributions_string, color=color)
 	      if (mapped_index == 0 && hole != '' ) {
 		  // we draw our cards
 		  const chars = hole.split('')
 		  drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3])
 		  
-	      } else {
+	      } else if (latest.is_active) {
 		  drawBackPairAtMappedIndex(context, mapped_index)
 	      }
 	  }
@@ -267,7 +287,7 @@
 	  }
 
 	  drawPots()
-	  drawToAct()
+	  // drawToAct() // this needed?
       }
       
 
@@ -288,7 +308,7 @@
 	  for (var mapped_index in playerStates) {
 	      var latest = playerStates[mapped_index]
 	      if (latest.action != 'fold' || clear_fold) {
-		  latest.action = ''
+		  latest.action = null
 	      }
 	  }	  
       }
@@ -323,10 +343,17 @@
 		  // Note: we need to add 9 in the equation because javascript does
 		  // modulo wrong for negative numbers lol
 		  var mapped_index = ((msg.index - yourIdx) + 9) % 9
+		  console.log("hello: " + JSON.stringify(msg))
 		  playerStates[mapped_index] = msg
 		  if (msg.pots != null) {
 		      pots = msg.pots
-		  }		  
+		  }
+		  if (msg.current_bet != null) {
+		      currentBet = msg.current_bet
+		      console.log('setting current bet to now: ' + currentBet)		      
+		  } else {
+		      console.log('didnt set current bet: ' + currentBet)
+		  }
 	      }
 	      else {
 		  if (ev.data.startsWith("Playing hand")) {
@@ -346,7 +373,7 @@
 		      // player
 		      var chars = val.split('')
 		      drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
-		      //log(ev.data, 'message')		  	      		  
+		      log(ev.data, 'message')		  	      		  
 		  }
 		  else if (ev.data.includes("to act!")) {
 		      // e.g. "cool guy's turn to act! index=4"
@@ -381,7 +408,7 @@
 		      clearActions(false)
 		      log(ev.data, 'message')		  	      		  		      
 		  } else {
-		      log('other: ' + ev.data, 'message')
+		      log(ev.data, 'message')
 		  }
 	      }
 	      drawEverything()	      
