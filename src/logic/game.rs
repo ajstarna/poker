@@ -393,7 +393,13 @@ impl GameHand {
 	println!("best_indices = {:?}", best_ids);
 	for player in players.iter_mut().flatten() {
 	    if best_ids.contains(&player.id) {
-		let name = &player_ids_to_configs.get(&player.id).unwrap().name; // get the name for message
+		// get the name for messages		    
+		let name: String = if let Some(config) = &player_ids_to_configs.get(&player.id) {
+		    config.name.as_ref().unwrap().clone()
+		} else {
+		    // it is a bit weird if we made it all the way to the pay stage for a left player		    
+		    "Player who left".to_string()
+		};		
 		let ranking_string = if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
 		    hand_result.to_string()
 		} else {
@@ -410,7 +416,7 @@ impl GameHand {
 		};
 		PlayerConfig::send_group_message(
 		    &format!("paying out {:?} to {:?}, with hole cards = {:?}",
-			     payout, name.as_ref().unwrap(), hole_string),
+			     payout, name, hole_string),
 		    &player_ids_to_configs);			
 		PlayerConfig::send_group_message(
 		    &format!("hand result = {:?}",

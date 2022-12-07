@@ -75,7 +75,8 @@
       <input type="submit" id="check" onclick=pressButton('check') value="Check" />
       <input type="submit" id="call" onclick=pressButton('call') value="Call" />      
       <input type="submit" id="bet" onclick=pressButton('bet') value="Bet" />
-      <input type="submit" id="fold" onclick=pressButton('fold') value="Fold" />                  
+      <input type="submit" id="fold" onclick=pressButton('fold') value="Fold" />
+      <input type="submit" id="leave" onclick=pressButton('leave') value="Leave Table" />                        
     </form>
 
     <hr />
@@ -413,8 +414,12 @@
 		      const [_, val] = ev.data.split(": ")
 		      river = val
 		      clearStreet(false)
-		      log(ev.data, 'message')		  	      		  		      
-		  } else {
+		      log(ev.data, 'message')
+		  } else if (ev.data.startsWith("You have left the game")) {
+		      // want to clear the screen			  
+		      drawTable(context, width, height)
+		  }
+		  else {
 		      log(ev.data, 'message')
 		  }
 	      }
@@ -480,6 +485,9 @@
 	      break
 	  case 'bet':
 	      text = '/bet ' + $input.value	      
+	      break
+	  case 'leave':
+	      text = '/leave'
 	      break
 	  }
 
