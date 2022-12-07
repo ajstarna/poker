@@ -200,10 +200,13 @@
 	  const [x, y] = mappedIndexToNamePosition[mapped_index];
 	  context.fillStyle = color
 	  context.fillText(name, x, y);
+	  
 	  context.fillText(money, x, y + 20);
-	  context.fillText(action, x, y + 40);
-	  // todo: the contributions should be on the table I think
-	  context.fillText('this street: ' + contributions , x, y + 60);      	  	  
+	  
+	  // todo: the contributions should be on the table I think	  
+	  context.fillText('this street: ' + contributions , x, y + 40);      	  	  	  
+	  
+	  context.fillText(action, x, y + 60);
       }
 
       function drawPots(ctx) {
@@ -302,7 +305,9 @@
         $log.scrollTop += 1000
       }
 
-      function clearActions(clear_fold) {
+      function clearStreet(clear_fold) {
+	  // clear everything visually for this street
+	  // there should not be an action, contribution, or current bet
 	  // go through each player state and set their action to be blank
 	  // if clear_fold is true, we also clear "fold", if not, we leave it
 	  for (var mapped_index in playerStates) {
@@ -310,6 +315,8 @@
 	      if (latest.action != 'fold' || clear_fold) {
 		  latest.action = null
 	      }
+	      currentBet = null
+	      latest.street_contributions = null
 	  }	  
       }
       
@@ -362,7 +369,7 @@
 		      flop = ""
 		      turn = ""
 		      river = ""
-		      clearActions(true)
+		      clearStreet(true)
 		      // e.g. button_idx = 3
 		      buttonIdx = parseInt(ev.data.slice(-1))
 		      log("\n\n" + ev.data, 'message')
@@ -393,19 +400,19 @@
 		  else if (ev.data.startsWith("Flop:")) {
 		      const [_, val] = ev.data.split(": ")
 		      flop = val
-		      clearActions(false)
+		      clearStreet(false)
 		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("Turn:")) {
 		      const [_, val] = ev.data.split(": ")
 		      turn = val
-		      clearActions(false)
+		      clearStreet(false)
 		      log(ev.data, 'message')		  	      		  		      
 		  }
 		  else if (ev.data.startsWith("River:")) {
 		      const [_, val] = ev.data.split(": ")
 		      river = val
-		      clearActions(false)
+		      clearStreet(false)
 		      log(ev.data, 'message')		  	      		  		      
 		  } else {
 		      log(ev.data, 'message')
