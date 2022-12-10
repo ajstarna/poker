@@ -10,7 +10,8 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{WsMessage, MetaAction, Chat, Connect, Disconnect, Join, Leave, Removed, ListTables, PlayerName};
+use crate::messages::{WsMessage, MetaAction, Chat, Connect, Create, Disconnect,
+		      Join, Leave, Removed, ListTables, PlayerName};
 use crate::{
     logic::{Game, PlayerConfig, PlayerAction},
     messages::PlayerActionMessage,
@@ -189,7 +190,7 @@ impl Handler<PlayerName> for GameHub {
 impl Handler<Join> for GameHub {
     type Result = ();
 
-    fn handle(&mut self, msg: Join, ctx: &mut Context<Self>) {
+    fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
         let Join { id, table_name } = msg;
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
@@ -219,36 +220,13 @@ impl Handler<Join> for GameHub {
 	    // so we can simply join it
 	    println!("joining existing game!");
 	    meta_actions.lock().unwrap().push_back(MetaAction::Join(player_config));
-	    println!("meta actions = {:?}", meta_actions);
         } else {
-	    // we need to create the game for the first time
-            let mut game = Game::new(Some(ctx.address()), None);
-	    
-            let num_bots = 2;
-            for i in 0..num_bots {
-		let name = format!("Mr {}", i);
-		game.add_bot(name);
-            }
-
-            if game.add_user(player_config).is_none() {
-		panic!("how were we unable to join a fresh game?");
-	    } else {
-		println!("in the hub. we just joined fine?");
-	    }
-	    
-	    let actions = Arc::new(Mutex::new(HashMap::new()));	
-	    let cloned_actions = actions.clone();
-	    
-	    let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-	    let cloned_meta_actions = meta_actions.clone();
-	    //let b: bool = cloned_queue;
-	    thread::spawn(move || {
-		// start a game with no hand limit
-		game.play(&cloned_actions, &cloned_meta_actions, None);
-	    });
-	    
-            self.tables_to_actions.insert(table_name.clone(), actions);
-            self.tables_to_meta_actions.insert(table_name, meta_actions);	
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("No table with that name exists to join!"))
+		);
+	    // put them back in the lobby
+	    self.main_lobby_connections.insert(player_config.id, player_config);
 	}
     }    
 }
@@ -289,6 +267,75 @@ impl Handler<Removed> for GameHub {
         }
 	
 	self.main_lobby_connections.insert(msg.config.id, msg.config);
+    }
+}
+
+
+/// create table, cannot already be at a table
+impl Handler<Create> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) {
+        let Create { id, table_name } = msg;
+	
+        let player_config_option = self.main_lobby_connections.remove(&id);
+	if player_config_option.is_none() {
+	    // the player is not in the main lobby, so we must be waiting for the game to remove the player still
+	    println!("player config not in the main lobby, so they must already be at a game");
+	    return;
+	} 
+	let player_config = player_config_option.unwrap();		
+
+        if self.tables_to_meta_actions.contains_key(&table_name) {
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("A table with that name already exists!"))
+		);
+	    // put them back in the lobby
+	    self.main_lobby_connections.insert(player_config.id, player_config);
+	    return;
+	} else 	if player_config.name.is_none() {
+	    // they are not allowed to join a game without a Name set
+            player_config.player_addr.as_ref().unwrap()
+		.do_send(
+		    WsMessage(format!("You cannt join a game until you set your name!"))
+		);
+	    // put them back in the lobby
+	    self.main_lobby_connections.insert(player_config.id, player_config);
+	    return
+	}
+		
+        // update the mapping to find the player at a table	
+        self.players_to_table.insert(id, table_name.clone());
+	
+	// we need to create the game 
+        let mut game = Game::new(Some(ctx.address()), None);
+	
+        let num_bots = 2;
+        for i in 0..num_bots {
+	    let name = format!("Mr {}", i);
+	    game.add_bot(name);
+        }
+	
+        if game.add_user(player_config).is_none() {
+	    panic!("how were we unable to join a fresh game?");
+	} else {
+	    println!("in the hub. we just joined fine?");
+	}
+	
+	let actions = Arc::new(Mutex::new(HashMap::new()));	
+	let cloned_actions = actions.clone();
+	
+	let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+	let cloned_meta_actions = meta_actions.clone();
+	//let b: bool = cloned_queue;
+	thread::spawn(move || {
+	    // start a game with no hand limit
+	    game.play(&cloned_actions, &cloned_meta_actions, None);
+	});
+	
+        self.tables_to_actions.insert(table_name.clone(), actions);
+        self.tables_to_meta_actions.insert(table_name, meta_actions);	
     }
 }
 

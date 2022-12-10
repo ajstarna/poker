@@ -10,6 +10,7 @@ use uuid::Uuid;
 pub enum MetaAction {
     Join(PlayerConfig),
     Leave(Uuid),  // disconnect can also just use leave
+    SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String), 
 }
@@ -96,6 +97,18 @@ pub struct Removed {
 pub struct PlayerName {
     pub id: Uuid,
     pub name: String,
+}
+
+/// Session wants to create a game
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Create {
+    /// Client ID
+    pub id: Uuid,
+
+    /// Table name
+    pub table_name: String,
+    
 }
 
 #[derive(Message)]

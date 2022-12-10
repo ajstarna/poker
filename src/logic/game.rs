@@ -246,7 +246,7 @@ impl GameHand {
 
     fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
 		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-        for (i, player_spot) in players.iter_mut().enumerate() {
+        for player_spot in players.iter_mut() {
 	    if player_spot.is_none() {
 		continue;
 	    }
@@ -2065,8 +2065,6 @@ mod tests {
 	assert_eq!(game.players[2].as_ref().unwrap().money, 1004);
     }
 
-
-
     /// the small blind calls, the big blind checks to the flop
     /// the small blind bets on the flop, and the big blind folds
     /// a player joins during the hand, and it works fine
@@ -2134,11 +2132,88 @@ mod tests {
 	assert_eq!(game.players[0].as_ref().unwrap().money, 992);
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
 	assert_eq!(game.players[2].as_ref().unwrap().money, 1000);
+	assert!(!game.players[2].as_ref().unwrap().is_active);			
+	
+    }
+
+    /// player1 has the best hand, but chooses to sit out mid hand,
+    /// This leads to a fold and player2 winning the pot
+    /// It doesn't actually matter what the hands are, since it doesn't go to showdown
+    #[test]
+    fn sit_out() {
+	let mut deck = RiggedDeck::new();
+
+	// we want the button to have the best hand
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Diamond});	
+
+	// the small blind player2 wins regardless
+	deck.push(Card{rank: Rank::Six, suit: Suit::Club});
+	deck.push(Card{rank: Rank::Five, suit: Suit::Heart});
+
+        let mut game = Game::new(None, None);
+	
+	// player1 will start as the button
+	let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1);
+
+	// player2 will start as the small blind
+	let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2);
+	
+	// flatten to get all the Some() players
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	let handler = thread::spawn( move || {
+	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game // return the game back
+	});
+	
+	// set the action that player2 calls
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Call);
+	// player1 checks
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Check);
+	
+	// wait for the flop
+        let wait_duration = time::Duration::from_secs(8);
+	std::thread::sleep(wait_duration);
+
+	// player2 bets on the flop
+	println!("now sending the flop actions");	
+	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(10));
+	// player1 folds
+	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
+
+	incoming_meta_actions.lock().unwrap().push_back(MetaAction::SitOut);
+	
+	// get the game back from the thread
+	let game = handler.join().unwrap();
+
+	// there is another player now
+	let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+	
+	// check that the money changed hands
+	assert_eq!(game.players[0].as_ref().unwrap().money, 992);
+	assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
+	assert_eq!(game.players[2].as_ref().unwrap().money, 1000);
 	assert!(!game.players[2].as_ref().unwrap().is_active);		
 	
 	
     }
-
+    
 }
 
 
