@@ -10,12 +10,9 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{WsMessage, MetaAction, Chat, Connect, Create, Disconnect,
-		      Join, Leave, Removed, ListTables, PlayerName};
-use crate::{
-    logic::{Game, PlayerConfig, PlayerAction},
-    messages::PlayerActionMessage,
-};
+use crate::messages::{WsMessage, MetaAction, MetaActionMessage, Connect, Create, 
+		      Join, Removed, ListTables, PlayerName, PlayerActionMessage};
+use crate::logic::{Game, PlayerConfig, PlayerAction};
 use actix::AsyncContext;
 use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
@@ -79,6 +76,7 @@ impl Handler<Connect> for GameHub {
     }
 }
 
+/*
 /// Handler for Disconnect message.
 impl Handler<Disconnect> for GameHub {
     type Result = ();
@@ -97,8 +95,9 @@ impl Handler<Disconnect> for GameHub {
 	   }
 	}
     }
-}
+}*/
 
+/*
 /// Handler for Chat message.
 impl Handler<Chat> for GameHub {
     type Result = ();
@@ -116,28 +115,7 @@ impl Handler<Chat> for GameHub {
             }
         }
     }
-}
-
-
-/*
-/// Handler for StartGame message.
-impl Handler<StartGame> for GameHub {
-    type Result = ();
-
-    fn handle(&mut self, msg: StartGame, _: &mut Context<Self>) {
-        if let Some(table_name) = self.players_to_table.get(&msg.id) {
-            // the player was at a table, so tell the Game to relay the message
-            if let Some(game) = self.tables_to_game.get_mut(table_name) {
-		//TODO this call to play locks execution until it returns. So we can't get user input,
-		//or anything hmm
-            } else {
-                // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_game
-            }
-        }
-    }
-}
- */
+}*/
 
 /// Handler for `ListTables` message.
 impl Handler<ListTables> for GameHub {
@@ -154,7 +132,7 @@ impl Handler<ListTables> for GameHub {
     }
 }
 
-/// Handler for Message message.
+/// Handler for PlayerName message.
 impl Handler<PlayerName> for GameHub {
     type Result = ();
 
@@ -231,6 +209,7 @@ impl Handler<Join> for GameHub {
     }    
 }
 
+/*
 /// Handler for leaving a table (if we are even at one)
 impl Handler<Leave> for GameHub {
     type Result = ();
@@ -248,7 +227,26 @@ impl Handler<Leave> for GameHub {
 	   }
 	}
     }
+}*/
+
+/*
+/// Handler for telling a table we want to sit out for now (if we are even at one)
+impl Handler<SitOut> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: SitOut, _: &mut Context<Self>) {
+        if let Some(table_name) = self.players_to_table.get(&msg.id) {
+	    // tell the table that we want to leave
+            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+	       println!("passing sitout the game!");
+	       meta_actions.lock().unwrap().push_back(MetaAction::SitOut(msg.id));
+           } else {
+ 		// this should not happen since the meta actions vec should be created at the same time as the game
+	   }
+	}
+    }
 }
+ */
 
 /// Handler for a player that has been removed from a game officially
 /// This message comes FROM a game and provides the config, which we can put back in the lobby`
@@ -359,6 +357,26 @@ impl Handler<PlayerActionMessage> for GameHub {
             }
 
         }
-    }
-	
+    }	
 }
+
+/// Handler for MetaAction messages.
+/// The types of meta actions inside a MetaAction message should simply be
+/// passed on to the game (if one exists)
+impl Handler<MetaActionMessage> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: MetaActionMessage, _: &mut Context<Self>) {
+	let MetaActionMessage { id, meta_action } = msg;
+	println!("handling MetaActionMessage in the hub! {:?}", meta_action);	
+        if let Some(table_name) = self.players_to_table.get(&id) {
+	    // tell the table that a player is gone
+           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+	       meta_actions.lock().unwrap().push_back(meta_action);
+           } else {
+ 	       // this should not happen since the meta actions vec should be created at the same time as the game
+	   }
+	}
+    }
+}
+

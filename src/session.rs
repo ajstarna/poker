@@ -58,9 +58,12 @@ impl WsGameSession {
                 // heartbeat timed out
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
-                // notify game server
-                act.hub_addr.do_send(messages::Disconnect { id: act.id });
-
+		// notify game server. A Leave is the same thing for the game
+		act.hub_addr.do_send(messages::MetaActionMessage {
+		    id: act.id,
+		    meta_action: messages::MetaAction::Leave(act.id),
+		});
+		
                 // stop actor
                 ctx.stop();
 
@@ -105,8 +108,11 @@ impl Actor for WsGameSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        // notify game server
-        self.hub_addr.do_send(messages::Disconnect { id: self.id });
+        // notify game server. A Leave is the same thing for the game
+        self.hub_addr.do_send(messages::MetaActionMessage {
+            id: self.id,
+            meta_action: messages::MetaAction::Leave(self.id),
+        });
         Running::Stop
     }
 }
@@ -148,19 +154,14 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                     // handle the game specific/user commands
                     self.handle_game_specific_command(m, ctx);
                 } else {
-                    // note: this logic of appending the name to the message
-                    // needs to happen inside the game now i guess?
-                    //let msg = if let Some(ref name) = self.name {
-                    //    format!("{name}: {m}")
-                    //} else {
                     let msg = m.to_owned();
-                    //};
                     // send message to game server
-                    // note: we used to check if we were at a table here
-                    self.hub_addr
-                        .do_send(messages::Chat { id: self.id, msg })
-                }
-            }
+                    self.hub_addr.do_send(messages::MetaActionMessage {
+			id: self.id,
+			meta_action: messages::MetaAction::Chat(self.id, msg),
+                    });
+		}
+	    }
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {
                 ctx.close(reason);
@@ -221,8 +222,21 @@ impl WsGameSession {
                 }
             }
             "/leave" => {
-                self.hub_addr.do_send(messages::Leave {
+                self.hub_addr.do_send(messages::MetaActionMessage {
                     id: self.id,
+                    meta_action: messages::MetaAction::Leave(self.id),
+                });
+	    }	    
+            "/sitout" => {
+                self.hub_addr.do_send(messages::MetaActionMessage {
+                    id: self.id,
+                    meta_action: messages::MetaAction::SitOut(self.id),
+                });
+	    }	    
+            "/resume" => {
+                self.hub_addr.do_send(messages::MetaActionMessage {
+                    id: self.id,
+                    meta_action: messages::MetaAction::Resume(self.id),
                 });
 	    }	    
             "/name" => {

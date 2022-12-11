@@ -9,7 +9,8 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub enum MetaAction {
     Join(PlayerConfig),
-    Leave(Uuid),  // disconnect can also just use leave
+    Leave(Uuid),
+    Resume(Uuid),    
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String), 
@@ -35,14 +36,6 @@ pub struct Disconnect {
 
 
 /*
-/// Game should start
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct StartGame {
-    pub id: Uuid, // player session id
-}
-*/
-
 /// Send message to specific table
 #[derive(Message)]
 #[rtype(result = "()")]
@@ -51,9 +44,7 @@ pub struct Chat {
     pub id: Uuid,
     /// Peer message
     pub msg: String,
-    // Table name
-    //pub table: String,
-}
+}*/
 
 /// List of available tables
 pub struct ListTables;
@@ -73,15 +64,6 @@ pub struct Join {
     pub table_name: String,
 }
 
-/// If you are at a table, leave it.
-/// Any money that you ahve already committed to the pot is lost, and you will fold out
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Leave {
-    /// Client ID
-    pub id: Uuid,
-}
-
 /// the game sends this message to confirm that a player has been removed
 /// It provides the playerconfig so it can be added back to the lobby by the hub
 #[derive(Message)]
@@ -89,7 +71,6 @@ pub struct Leave {
 pub struct Removed {
     pub config: PlayerConfig,
 }
-
 
 /// Session wants to the set the player's name
 #[derive(Message)]
@@ -118,4 +99,11 @@ pub struct PlayerActionMessage {
     pub id: Uuid,
 
     pub player_action: PlayerAction,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct MetaActionMessage {
+    pub id: Uuid,
+    pub meta_action: MetaAction,
 }
