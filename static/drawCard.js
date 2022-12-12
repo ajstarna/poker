@@ -1,6 +1,4 @@
 function drawCardBase(ctx, x, y, width, height, color) {
-    ctx.beginPath();
-
     var grd = ctx.createRadialGradient(x + width/2, y + height/2, 5, x + width, y + width, 2*width);
     grd.addColorStop(0, color);
     grd.addColorStop(1, "rgb(0, 0, 0)");
@@ -8,11 +6,7 @@ function drawCardBase(ctx, x, y, width, height, color) {
 
     // Draw using 5px for border radius on all sides
     // stroke it but no fill
-    ctx.strokeStyle = "rgb(0, 0, 0)";
-    ctx.fillStyle = grd;
-    ctx.rect(x, y, width, height); //, 5);
-    ctx.stroke();
-    ctx.fill();
+    roundRect(ctx, x, y, width, height, 5, grd);
 }
 
 function drawClub(ctx, x, y, width, height, color) {
