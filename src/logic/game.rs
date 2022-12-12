@@ -1154,7 +1154,11 @@ impl Game {
 		    println!(
                         "Player at index {} is sitting out so cannot be the button", i
 		    );
-                } else {
+                } else if button_player.money == 0 {
+		    println!(
+                        "Player at index {} has no money so cannot be the button", i
+		    );
+		} else {
 		    // We found a player who is not sitting out, so it is a valid
 		    // button position
 		    println!("found the button!");

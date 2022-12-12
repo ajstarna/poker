@@ -221,6 +221,20 @@ impl WsGameSession {
                     ctx.text("!!! table name is required");
                 }
             }
+            "/create" => {
+                if v.len() == 2 {
+                    let table_name = v[1].to_owned();
+                    self.hub_addr.do_send(messages::Create {
+                        id: self.id,
+                        table_name,
+                    });
+                    //self.table = Some(table_name);
+                    ctx.text(format!("attempting to create table: {:?}. Ensure you are not already at a table.",
+				     v[1]));
+                } else {
+                    ctx.text("!!! table name is required");
+                }
+            }
             "/leave" => {
                 self.hub_addr.do_send(messages::MetaActionMessage {
                     id: self.id,
