@@ -10,7 +10,7 @@ use uuid::Uuid;
 pub enum MetaAction {
     Join(PlayerConfig),
     Leave(Uuid),
-    Resume(Uuid),    
+    ImBack(Uuid),    
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String), 
@@ -33,18 +33,6 @@ pub struct Connect {
 pub struct Disconnect {
     pub id: Uuid,
 }
-
-
-/*
-/// Send message to specific table
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Chat {
-    /// Id of the client session
-    pub id: Uuid,
-    /// Peer message
-    pub msg: String,
-}*/
 
 /// List of available tables
 pub struct ListTables;

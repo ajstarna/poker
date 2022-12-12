@@ -246,17 +246,19 @@ impl GameHand {
 
     fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
 		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-        for player_spot in players.iter_mut() {
+        for player in players.iter_mut().flatten() {
+	    /*
 	    if player_spot.is_none() {
 		continue;
 	    }
 	    let player = player_spot.as_mut().unwrap();
+	     */
             if player.is_active {
                 for _ in 0..2 {
                     if let Some(card) = deck.draw_card() {
                         player.hole_cards.push(card)
                     } else {
-                        panic!();
+                        panic!("The deck is out of cards somehow?");
                     }		    
                 }
 		PlayerConfig::send_specific_message(
@@ -369,15 +371,6 @@ impl GameHand {
         for player in players.iter_mut().flatten() {
             // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
-            if !player.is_sitting_out {
-                if player.money == 0 {
-                    println!(
-                        "Player {:?} is out of money so is no longer playing in the game!",
-                        player.id
-                    );
-                    player.is_sitting_out = true;
-                }
-            }
         }
     }
 
@@ -490,7 +483,6 @@ impl GameHand {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
 	for player in players.iter_mut().flatten() {
 	    if player.is_sitting_out || player.money == 0 {
-		// if a player has no money they should be sitting out, but to be safe check both
 		player.is_active = false;		
 	    } else {
 		player.is_active = true;
@@ -1221,6 +1213,24 @@ impl Game {
 		MetaAction::PlayerName(id, new_name) => {
 		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
 		},
+		MetaAction::SitOut(id) => {
+		    for player in players.iter_mut().flatten() {
+			if player.id == id {
+			    println!("player {} being set to is_sitting_out = true", id);			    
+			    player.is_sitting_out = true;
+			}
+		    }
+		},
+		MetaAction::ImBack(id) => {
+		    for player in players.iter_mut().flatten() {
+			if player.id == id {
+			    println!("player {} being set to is_sitting_out = false", id);
+			    player.is_sitting_out = false;
+			}
+		    }
+		    
+		},
+		
 	    }
 	
 	}
@@ -2169,6 +2179,11 @@ mod tests {
 	let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
+
+	// both players not sitting out to start
+	let not_sitting_out = game.players.iter().flatten().filter(|x| !x.is_sitting_out).count();
+	assert_eq!(not_sitting_out, 2);
+
 	
 	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
 	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
@@ -2193,23 +2208,22 @@ mod tests {
 	// player2 bets on the flop
 	println!("now sending the flop actions");	
 	incoming_actions.lock().unwrap().insert(id2, PlayerAction::Bet(10));
-	// player1 folds
-	incoming_actions.lock().unwrap().insert(id1, PlayerAction::Fold);
 
-	incoming_meta_actions.lock().unwrap().push_back(MetaAction::SitOut);
+
+	// player1 sits out, which folds and moves on
+	incoming_meta_actions.lock().unwrap().push_back(MetaAction::SitOut(id1));
 	
 	// get the game back from the thread
 	let game = handler.join().unwrap();
 
-	// there is another player now
-	let some_players = game.players.iter().flatten().count();
-        assert_eq!(some_players, 3);
-	
+	// one player sitting out
+	let not_sitting_out = game.players.iter().flatten().filter(|x| !x.is_sitting_out).count();
+	assert_eq!(not_sitting_out, 1);
+	    
 	// check that the money changed hands
 	assert_eq!(game.players[0].as_ref().unwrap().money, 992);
 	assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
-	assert_eq!(game.players[2].as_ref().unwrap().money, 1000);
-	assert!(!game.players[2].as_ref().unwrap().is_active);		
+	assert!(!game.players[0].as_ref().unwrap().is_active);		
 	
 	
     }

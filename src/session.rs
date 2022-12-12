@@ -233,10 +233,10 @@ impl WsGameSession {
                     meta_action: messages::MetaAction::SitOut(self.id),
                 });
 	    }	    
-            "/resume" => {
+            "/imback" => {
                 self.hub_addr.do_send(messages::MetaActionMessage {
                     id: self.id,
-                    meta_action: messages::MetaAction::Resume(self.id),
+                    meta_action: messages::MetaAction::ImBack(self.id),
                 });
 	    }	    
             "/name" => {
