@@ -1,513 +1,664 @@
 <!DOCTYPE html>
 
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Poker</title>
 
-    <style>
-      :root {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-          Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        font-size: 18px;
-      }
+<head>
+	<meta charset="utf-8" />
+	<title>Poker</title>
 
-      input[type='text'] {
-        font-size: inherit;
-      }
+	<style>
+		:root {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+				Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+			font-size: 18px;
+			color: #eeeeee;
+			background: rgb(50, 50, 50);
+		}
 
-      #log {
-        width: 60em;
-        height: 16em;
-        overflow: auto;
-        margin: 0.5em 0;
+		.main {
+			background: rgb(50, 50, 50);
+			width: 100%;
+			height: 100%;
+		}
 
-        border: 1px solid black;
-      }
+		#info {
+			width: 100%;
+			position: absolute;
+			top: 0;
+			left: 0;
+		}
 
-      #status {
-        padding: 0 0.2em;
-      }
+		.table {
+			margin-left: 250px;
+		}
 
-      #text {
-        width: 17em;
-        padding: 0.5em;
-      }
+		#pokerTable {}
 
-      .msg {
-        margin: 0;
-        padding: 0.25em 0.5em;
-      }
+		.button {
+			background-color: #222222;
+			border: 1px solid #111111;
+			color: white;
+			padding: 15px 32px;
+			text-align: center;
+			text-decoration: none;
+			display: inline-block;
+			font-size: 16px;
+			cursor: pointer;
+		}
 
-      .msg--status {
-        /* a light yellow */
-        background-color: #ffffc9;
-      }
+		.button:hover {
+			background-color: #404040;
+			color: #eeeeee;
+		}
 
-      .msg--message {
-        /* a light blue */
-        background-color: #d2f4ff;
-      }
+		input[type='text'] {
+			font-size: inherit;
+			padding: 0.5em;
+			color: #101010;
+			background: rgb(240, 240, 240);
+			border: 1px solid rgb(20, 20, 20);
+		}
 
-      .msg--error {
-        background-color: pink;
-      }
-    </style>
-  </head>
+		#log {
+			height: 8em;
+			overflow: auto;
+			margin-bottom: 0.2em;
 
-  <body>
-    <script src="static/drawCard.js"></script>
-    <script src="static/drawTable.js"></script>
-    
-    <h1>Poker!</h1>
+			color: #101010;
+			background: rgb(240, 240, 240);
+			border: 1px solid rgb(20, 20, 20);
+		}
 
-    <div>
-      <button id="connect">Connect</button>
-      <span>Status:</span>
-      <span id="status">disconnected</span>
-    </div>
+		#status {
+			padding: 0 0.2em;
+		}
 
-    <div id="log"></div>
+		#text {
+			flex-grow: 2;
+		}
 
-    <form id="chatform">
-      <input type="text" id="text" />
-      <input type="submit" id="send" onclick=pressButton('send') value="Send Message" />
-      <input type="submit" id="check" onclick=pressButton('check') value="Check" />
-      <input type="submit" id="call" onclick=pressButton('call') value="Call" />      
-      <input type="submit" id="bet" onclick=pressButton('bet') value="Bet" />
-      <input type="submit" id="fold" onclick=pressButton('fold') value="Fold" />
-      <input type="submit" id="leave" onclick=pressButton('leave') value="Leave Table" />                        
-    </form>
+		.msg {
+			margin: 0;
+			padding: 0.25em 0.5em;
+		}
 
-    <hr />
+		.msg--status {
+			/* a light yellow */
+			background-color: #ffffc9;
+		}
 
-    <div>
-      <canvas id="pokerTable" width="1200" height="720" style="border:1px solid #000000;">
-      </canvas>
-    </div>
-    
-    <hr />
-    
-    <section>
-      <h2>Commands</h2>
-      <table style="border-spacing: 0.5em">
-        <tr>
-          <td>
-            <code>/list</code>
-          </td>
-          <td>list all available rooms</td>
-        </tr>
-        <tr>
-          <td>
-            <code>/join {table_name}</code>
-          </td>
-          <td>join room, if room does not exist, create new one. You must leave a game before joining a new one.</td>
-        </tr>
-        <tr>
-          <td>
-            <code>/name {my_name}</code>
-          </td>
-          <td>set user name</td>
-        </tr>
-        <tr>
-          <td>
-            <code>/leave</code>
-          </td>
-          <td>leave current table and return to main lobby</td>
-        </tr>	
-        <tr>
-          <td>
-            <code>some message</code>
-          </td>
-          <td>just string, send message to all peers in same room</td>
-        </tr>
-	
-      </table>
-    </section>
+		.msg--message {
+			/* a light blue */
+			background-color: #d2f4ff;
+		}
 
-       
-    <script>
-      // Get canvas and context      
-      var canvas = document.getElementById("pokerTable");
-      var context = canvas.getContext("2d");	      
-      //context.font = "20px Georgia";
-      
-      var width = canvas.width;
-      var height = canvas.height;
+		.msg--error {
+			background-color: pink;
+		}
 
-      const $status = document.querySelector('#status')
-      const $connectButton = document.querySelector('#connect')
-      const $log = document.querySelector('#log')
-      const $form = document.querySelector('#chatform')
-      const $input = document.querySelector('#text')
-      
-      var hole = ''
-      var flop = ''
-      var turn = ''
-      var river = ''
-      var pots = null
-      var currentBet = null
-      
-      var buttonIdx = 0 // this will move around
-      var yourIdx // the position of players on the UI depends on your index
-      var toActIdx // whose turn is it to act?
-      var playerToAct = ''
-      
-      // this gives us the position of UI for a given MAPPED index 
-      // (e.g. the main player always maps to index 0)
-      const mappedIndexToCardPosition = {
-	  0: [width/2, height - 100],
-	  1: [240, height - 120],
-	  2: [80, height - 330],
-	  3: [100, 140],
-	  4: [width/3 + 20, 20],
-	  5: [2*width/3, 20],
-	  6: [width - 100, 140],
-	  7: [width - 80, height - 330],
-	  8: [width - 240, height - 120]
-      }
-      const mappedIndexToNamePosition = {
-	  0: [width/2 + 80, height - 80],
-	  1: [240 + 80, height - 100],
-	  2: [20, height - 220],
-	  3: [40, 250],
-	  4: [width/3 + 90, 40],
-	  5: [2*width/3 + 70, 40],
-	  6: [width - 155, 250],
-	  7: [width - 140, height - 220],
-	  8: [width - 160, height - 100]
-      }
+		.column {
+			float: left;
+			width: 50%;
+		}
 
-      var playerStates = {
-	  // from mappedIndex to the latest action info for that player
-      }
-      function drawFrontPairAtMappedIndex(ctx, mapped_index, value1, suit1, value2, suit2, size=55) {
-	  // TODO i want this to be in the other file, but it cant find the new function?
-	  // maybe a cache issue or something?
-	  const [x, y] = mappedIndexToCardPosition[mapped_index];
-	  drawFrontCard(ctx, x-60, y, value1, suit1, size)
-	  drawFrontCard(ctx, x+5, y, value2, suit2, size)    
-      }
-      
-      function drawBackPairAtMappedIndex(ctx, mapped_index, size=55) {
-	  // TODO i want this to be in the other file, but it cant find the new function?
-	  // maybe a cache issue or something?
-	  const [x, y] = mappedIndexToCardPosition[mapped_index];
-	  drawBackCard(ctx, x-60, y, size)
-	  drawBackCard(ctx, x+5, y, size)    
-      }
+		/* Clear floats after the columns */
+		.row:after {
+			content: "";
+			display: table;
+			clear: both;
+		}
 
-      function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action, contributions, color='white') {
-	  const [x, y] = mappedIndexToNamePosition[mapped_index];
-	  context.fillStyle = color
-	  context.fillText(name, x, y);
-	  
-	  context.fillText(money, x, y + 20);
-	  
-	  // todo: the contributions should be on the table I think	  
-	  context.fillText('this street: ' + contributions , x, y + 40);      	  	  	  
-	  
-	  context.fillText(action, x, y + 60);
-      }
+		.slidecontainer {
+			width: 100%;
+			/* Width of the outside container */
+		}
 
-      function drawPots(ctx) {
-	  // eventually we might want to draw something visual here?
-	  if (pots != null) {
-	      context.fillStyle = 'white'
-	      context.fillText('Pot(s): ' + pots, width/2 -40, height/2 + 80)
-	  }
-	  if (currentBet != null) {
-	      context.fillStyle = 'white'
-	      context.fillText('Current bet: ' + currentBet, width/2 -40, height/2 + 110)
-	  }
-      }
-      function drawToAct(ctx) {
-	  if (playerToAct != '') {	  
-	      context.fillStyle = 'white'
-	      context.fillText(playerToAct + "'s turn to act!", width/2 -40, height/2 + 140)
-	  }
-      }
-      
-      function drawEverything() {
-	  // this is called after very change of state to re-render the entire UI.
-	  drawTable(context, width, height) 	  // Draws the background and the table
-	  for (var mapped_index in playerStates) {
-	      var latest = playerStates[mapped_index]
-	      console.log('latest = ' + JSON.stringify(latest));
-	      var name_string = latest.player_name
-	      if (buttonIdx == latest.index) {
-		  name_string += "(BTN)"
-	      }
-	      var action_string = ''
-	      //var doDrawCards = true
-	      if (latest.action != null) {
-		  /*
-		  if (latest.action == 'fold' || latest.) {
-		      // we don't draw the enemy cards if they have folded
-		      doDrawCards = true
-		  }*/
-		  action_string = latest.action
-		  if (latest.amount != null) {
-		      action_string += ":" + latest.amount
-		  }
-	      }
+		.slider {
+			-webkit-appearance: none;
+			width: 100%;
+			height: 15px;
+			border-radius: 5px;
+			background: #d3d3d3;
+			outline: none;
+			opacity: 0.7;
+			-webkit-transition: .2s;
+			transition: opacity .2s;
+		}
 
-	      var contributions_string = ''
-	      if (latest.street_contributions != null) {
-		  contributions_string = latest.street_contributions
-	      }
+		.slider::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 25px;
+			height: 25px;
+			border-radius: 50%;
+			background: #181818;
+			border: 2px solid #868686;
+			box-shadow: inset 0 0 4px #868686;
+			cursor: pointer;
+		}
 
-	      var color = 'white'
-	      if (toActIdx == latest.index) {
-		  color = 'orange'
-	      }
-	      drawNameAndMoneyAtMappedIndex(context, mapped_index,
-					    name=name_string, money=latest.money,
-					    action_string, contributions_string, color=color)
-	      if (mapped_index == 0 && hole != '' ) {
-		  // we draw our cards
-		  const chars = hole.split('')
-		  drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3])
-		  
-	      } else if (latest.is_active) {
-		  drawBackPairAtMappedIndex(context, mapped_index)
-	      }
-	  }
+		.slider::-moz-range-thumb {
+			width: 25px;
+			height: 25px;
+			border-radius: 50%;
+			background: #181818;
+			border: 2px solid #868686;
+			box-shadow: inset 0 0 4px #868686;
+			cursor: pointer;
 
-	  // table cards
-	  if (flop != "") {
-	      const chars = flop.split('')	      
-	      drawFrontCard(context, width/3 +50, height/2  -50, chars[0], chars[1])
-	      drawFrontCard(context, width/3 +110, height/2 -50, chars[2], chars[3])
-	      drawFrontCard(context, width/3 +170, height/2 -50, chars[4], chars[5])
-	  }
-	  if (turn != "") {
-	      const chars = turn.split('')
-	      drawFrontCard(context, width/3 +230, height/2 -50, chars[0], chars[1])	      
-	  }
-	  if (river != "") {
-	      const chars = river.split('')
-	      drawFrontCard(context, width/3 +290, height/2 -50, chars[0], chars[1])	      
-	  }
+		}
+	</style>
+</head>
 
-	  drawPots()
-	  // drawToAct() // this needed?
-      }
-      
+<body>
+	<script src="static/drawFunctions.js"></script>
+	<script src="static/drawCard.js"></script>
+	<script src="static/drawTable.js"></script>
 
-      drawEverything()
-      
-      
-      /** @type {WebSocket | null} */
-      var socket = null
 
-      function log(msg, type = 'status') {
-        $log.innerHTML += `<p class="msg msg--${type}">${msg}</p>`
-        $log.scrollTop += 1000
-      }
+	<div id="info">
+		<div style="padding: 10px;">
+			<button id="connect" class="button" style="width: 250px;">Connect</button>
+		</div>
+		<div style="padding: 10px;">
+			<span>Status:</span>
+			<span id="status">disconnected</span>
+		</div>
+	</div>
 
-      function clearStreet(clear_fold) {
-	  // clear everything visually for this street
-	  // there should not be an action, contribution, or current bet
-	  // go through each player state and set their action to be blank
-	  // if clear_fold is true, we also clear "fold", if not, we leave it
-	  for (var mapped_index in playerStates) {
-	      var latest = playerStates[mapped_index]
-	      if (latest.action != 'fold' || clear_fold) {
-		  latest.action = null
-	      }
-	      currentBet = null
-	      latest.street_contributions = null
-	  }	  
-      }
-      
-      function connect() {
-          disconnect()
+	<div class="main">
+		<div class="table">
+			<canvas id="pokerTable" width="1200" height="720">
+			</canvas>
+		</div>
+		<div class="row" style="margin: 10px;">
+			<div class="column">
+				<div id="log"></div>
 
-          const { location } = window
-	  
-          const proto = location.protocol.startsWith('https') ? 'wss' : 'ws'
-          const wsUri = `${proto}://${location.host}/ws`
-	  
-          log('Connecting...')
-          socket = new WebSocket(wsUri)
+				<form id="chatform">
+					<div style="display: flex; flex-direction: row;">
+						<input type="text" id="text" />
+						<input type="submit" class="button" style="margin-left: 50px; float: right; width: 250px;"
+							id="send" onclick="pressButton('send')" value="Send Message" />
+					</div>
+				</form>
 
-          socket.onopen = () => {
-              log('Connected')
-              updateConnectionStatus()
-          }
-	  
-          socket.onmessage = (ev) => {
-	      var msg
-	      try {
-		  msg = JSON.parse(ev.data)
-	      } catch {}
-	      if (msg != null) {
-		  // handle json messages
-		  // the mapped_index is where we draw that player on the UI
-		  // Our index is always mapped to index 0 (bottom middle)
-		  // e.g. If we are index 4, and another player is index 2,
-		  // then they map to 7 (i.e. two to our right)
-		  // Note: we need to add 9 in the equation because javascript does
-		  // modulo wrong for negative numbers lol
-		  var mapped_index = ((msg.index - yourIdx) + 9) % 9
-		  console.log("hello: " + JSON.stringify(msg))
-		  playerStates[mapped_index] = msg
-		  if (msg.pots != null) {
-		      pots = msg.pots
-		  }
-		  if (msg.current_bet != null) {
-		      currentBet = msg.current_bet
-		      console.log('setting current bet to now: ' + currentBet)		      
-		  } else {
-		      console.log('didnt set current bet: ' + currentBet)
-		  }
-	      }
-	      else {
-		  if (ev.data.startsWith("Playing hand")) {
-		      // reset the values for the next hand
-		      hole = ""
-		      flop = ""
-		      turn = ""
-		      river = ""
-		      clearStreet(true)
-		      // e.g. button_idx = 3
-		      buttonIdx = parseInt(ev.data.slice(-1))
-		      log("\n\n" + ev.data, 'message')
-		  }
-		  else if (ev.data.startsWith("Hole Cards:")) {
-		      const [_, val] = ev.data.split(": ")
-		      hole = val
-		      // player
-		      var chars = val.split('')
-		      drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
-		      log(ev.data, 'message')		  	      		  
-		  }
-		  else if (ev.data.includes("to act!")) {
-		      // e.g. "cool guy's turn to act! index=4"
-		      toActIdx = parseInt(ev.data.slice(-1))
-		      const [val, _] = ev.data.split(" turn to act")
-		      playerToAct = val
-		      //log(realMessage, 'message')
-		  }
-		  else if (ev.data.startsWith("Joining game")) {
-		      // when we join the game, we get the index
-		      // this dictates where the players are positioned
-		      // around the board
-                      const [_, val] = ev.data.split(": ")
-                      yourIdx = val
-		      log(ev.data, 'message')		  	      		  		      
-		  }
-		  else if (ev.data.startsWith("Flop:")) {
-		      const [_, val] = ev.data.split(": ")
-		      flop = val
-		      clearStreet(false)
-		      log(ev.data, 'message')		  	      		  		      
-		  }
-		  else if (ev.data.startsWith("Turn:")) {
-		      const [_, val] = ev.data.split(": ")
-		      turn = val
-		      clearStreet(false)
-		      log(ev.data, 'message')		  	      		  		      
-		  }
-		  else if (ev.data.startsWith("River:")) {
-		      const [_, val] = ev.data.split(": ")
-		      river = val
-		      clearStreet(false)
-		      log(ev.data, 'message')
-		  } else if (ev.data.startsWith("You have left the game")) {
-		      // want to clear the screen			  
-		      drawTable(context, width, height)
-		  }
-		  else {
-		      log(ev.data, 'message')
-		  }
-	      }
-	      drawEverything()	      
-          }
-	  
-          socket.onclose = () => {
-              log('Disconnected')
-              socket = null
-              updateConnectionStatus()
-          }
-      }
+			</div>
+			<div class="column">
+				<div style="margin-left: 10px; display: flex; flex-direction: row; width: 100%;">
+					<div style="width: 100px;">
+						Bet Size:
+					</div>
+					<div class=" slidecontainer">
+						<input type="range" min="1" max="100" value="1" class="slider" id="betSizeSlider">
+					</div>
+					<div style="margin-left: 10px; margin-bottom: 20px;">
+						<input type="text" style="width: 50px;" id="betSize" />
+					</div>
+				</div>
+				<div style="margin-left: 10px; display: flex; flex-direction: row; width: 100%;">
+					<button class="button" style="flex: 0 50%;" onclick="pressButton('fold')">Fold</button>
+					<button class="button" style="flex: 0 50%;" onclick="pressButton('check')">Check</button>
+					<button class="button" style="flex: 0 50%;" onclick="pressButton('call')">Call</button>
+					<button class="button" style="flex: 0 50%;" onclick="pressButton('bet')">Bet</button>
+				</div>
+			</div>
+		</div>
+	</div>
 
-      function disconnect() {
-        if (socket) {
-          log('Disconnecting...')
-          socket.close()
-          socket = null
+	<hr />
 
-          updateConnectionStatus()
-        }
-      }
+	<section>
+		<h2>Commands</h2>
+		<table style="border-spacing: 0.5em">
+			<tr>
+				<td>
+					<code>/list</code>
+				</td>
+				<td>list all available rooms</td>
+			</tr>
+			<tr>
+				<td>
+					<code>/join {table_name}</code>
+				</td>
+				<td>join room, if room does not exist, create new one. You must leave a game before joining a new one.
+				</td>
+			</tr>
+			<tr>
+				<td>
+					<code>/name {my_name}</code>
+				</td>
+				<td>set user name</td>
+			</tr>
+			<tr>
+				<td>
+					<code>/leave</code>
+				</td>
+				<td>leave current table and return to main lobby</td>
+			</tr>
+			<tr>
+				<td>
+					<code>some message</code>
+				</td>
+				<td>just string, send message to all peers in same room</td>
+			</tr>
 
-      function updateConnectionStatus() {
-        if (socket) {
-          $status.style.backgroundColor = 'transparent'
-          $status.style.color = 'green'
-          $status.textContent = `connected`
-          $connectButton.innerHTML = 'Disconnect'
-          $input.focus()
-        } else {
-          $status.style.backgroundColor = 'red'
-          $status.style.color = 'white'
-          $status.textContent = 'disconnected'
-          $connectButton.textContent = 'Connect'
-        }
-      }
+		</table>
+	</section>
 
-      $connectButton.addEventListener('click', () => {
-        if (socket) {
-          disconnect()
-        } else {
-          connect()
-        }
 
-        updateConnectionStatus()
-      })
+	<script>
+		// Get canvas and context      
+		var canvas = document.getElementById("pokerTable");
+		var context = canvas.getContext("2d");
+		//context.font = "20px Georgia";
 
-      function pressButton (button) {
-	  var text
-	  switch(button) {
-	  case 'send':
-	      text = $input.value
-	      break
-	  case 'check':
-	      text = '/check'
-	      break
-	  case 'call':
-	      text = '/call'
-	      break
-	  case 'fold':
-	      text = '/fold'
-	      break
-	  case 'bet':
-	      text = '/bet ' + $input.value	      
-	      break
-	  case 'leave':
-	      text = '/leave'
-	      break
-	  }
+		var width = canvas.width;
+		var height = canvas.height;
 
-          log('Sending: ' + text)	      	  
-          socket.send(text)
-	  
-          $input.value = ''
-          $input.focus()
-	  
-      }
+		const $status = document.querySelector('#status');
+		const $connectButton = document.querySelector('#connect');
+		const $log = document.querySelector('#log');
+		const $form = document.querySelector('#chatform');
+		const $input = document.querySelector('#text');
+		const $betSlider = document.getElementById("betSizeSlider");
+		const $betSize = document.getElementById("betSize");
 
-      
-      $form.addEventListener('submit', (ev) => {
-	  // this remnant from the template is needed for the app not to crash
-	  // I guess it prevents the form from doing something?
-          ev.preventDefault()	  
-      })
+		$betSize.value = $betSlider.value;
 
-      updateConnectionStatus()
+		var hole = '';
+		var flop = '';
+		var turn = '';
+		var river = '';
+		var pots = null;
+		var currentBet = null;
+		var bigBlind = null;
 
-    </script>
-  </body>
+		var buttonIdx = 0; // this will move around
+		var yourIdx; // the position of players on the UI depends on your index
+		var toActIdx; // whose turn is it to act?
+		var playerToAct = '';
+
+		// this gives us the position of UI for a given MAPPED index 
+		// (e.g. the main player always maps to index 0)
+		const mappedIndexToCardPosition = {
+			0: [width / 2, height - 100],
+			1: [240, height - 120],
+			2: [80, height - 330],
+			3: [100, 140],
+			4: [width / 3 + 20, 20],
+			5: [2 * width / 3, 20],
+			6: [width - 100, 140],
+			7: [width - 80, height - 330],
+			8: [width - 240, height - 120]
+		};
+
+		const mappedIndexToNamePosition = {
+			0: [width / 2 + 80, height - 80],
+			1: [240 + 80, height - 100],
+			2: [20, height - 220],
+			3: [40, 250],
+			4: [width / 3 + 90, 40],
+			5: [2 * width / 3 + 70, 40],
+			6: [width - 155, 250],
+			7: [width - 140, height - 220],
+			8: [width - 160, height - 100]
+		};
+
+		var playerStates = {
+			// from mappedIndex to the latest action info for that player
+		};
+
+		function drawFrontPairAtMappedIndex(ctx, mapped_index, value1, suit1, value2, suit2, size = 55) {
+			// TODO i want this to be in the other file, but it cant find the new function?
+			// maybe a cache issue or something?
+			const [x, y] = mappedIndexToCardPosition[mapped_index];
+			drawFrontCard(ctx, x - 60, y, value1, suit1, size);
+			drawFrontCard(ctx, x + 5, y, value2, suit2, size);
+		}
+
+		function drawBackPairAtMappedIndex(ctx, mapped_index, size = 55) {
+			// TODO i want this to be in the other file, but it cant find the new function?
+			// maybe a cache issue or something?
+			const [x, y] = mappedIndexToCardPosition[mapped_index];
+			drawBackCard(ctx, x - 60, y, size);
+			drawBackCard(ctx, x + 5, y, size);
+		}
+
+		function drawNameAndMoneyAtMappedIndex(ctx, mapped_index, name, money, action, contributions, color = 'white') {
+			const [x, y] = mappedIndexToNamePosition[mapped_index];
+			context.fillStyle = color;
+			context.fillText(name, x, y);
+
+			context.fillText(money, x, y + 20);
+
+			// todo: the contributions should be on the table I think	  
+			context.fillText('this street: ' + contributions, x, y + 40);
+
+			context.fillText(action, x, y + 60);
+		}
+
+		function drawPots(ctx) {
+			// eventually we might want to draw something visual here?
+			if (pots != null) {
+				context.fillStyle = 'white';
+				context.fillText('Pot(s): ' + pots, width / 2 - 40, height / 2 + 80);
+			}
+			if (currentBet != null) {
+				context.fillStyle = 'white';
+				context.fillText('Current bet: ' + currentBet, width / 2 - 40, height / 2 + 110);
+			}
+		}
+		function drawToAct(ctx) {
+			if (playerToAct != '') {
+				context.fillStyle = 'white';
+				context.fillText(playerToAct + "'s turn to act!", width / 2 - 40, height / 2 + 140);
+			}
+		}
+
+		function drawEverything() {
+			// this is called after very change of state to re-render the entire UI.
+			drawTable(context, width, height); 	  // Draws the background and the table
+			for (var mapped_index in playerStates) {
+				var latest = playerStates[mapped_index];
+				console.log('latest = ' + JSON.stringify(latest));
+				var name_string = latest.player_name;
+				if (buttonIdx == latest.index) {
+					name_string += "(BTN)";
+				}
+				var action_string = '';
+				//var doDrawCards = true
+				if (latest.action != null) {
+					/*
+					if (latest.action == 'fold' || latest.) {
+						// we don't draw the enemy cards if they have folded
+						doDrawCards = true
+					}*/
+					action_string = latest.action;
+					if (latest.amount != null) {
+						action_string += ":" + latest.amount;
+					}
+				}
+
+				var contributions_string = '';
+				if (latest.street_contributions != null) {
+					contributions_string = latest.street_contributions;
+				}
+
+				var color = 'white';
+				if (toActIdx == latest.index) {
+					color = 'orange';
+				}
+				drawNameAndMoneyAtMappedIndex(context, mapped_index,
+					name = name_string, money = latest.money,
+					action_string, contributions_string, color = color);
+				if (mapped_index == 0 && hole != '') {
+					// we draw our cards
+					const chars = hole.split('');
+					drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
+
+				} else if (latest.is_active) {
+					drawBackPairAtMappedIndex(context, mapped_index);
+				}
+			}
+
+			// table cards
+			if (flop != "") {
+				const chars = flop.split('');
+				drawFrontCard(context, width / 3 + 50, height / 2 - 50, chars[0], chars[1]);
+				drawFrontCard(context, width / 3 + 110, height / 2 - 50, chars[2], chars[3]);
+				drawFrontCard(context, width / 3 + 170, height / 2 - 50, chars[4], chars[5]);
+			}
+			if (turn != "") {
+				const chars = turn.split('');
+				drawFrontCard(context, width / 3 + 230, height / 2 - 50, chars[0], chars[1]);
+			}
+			if (river != "") {
+				const chars = river.split('')
+				drawFrontCard(context, width / 3 + 290, height / 2 - 50, chars[0], chars[1]);
+			}
+
+			drawPots();
+			// drawToAct() // this needed?
+		}
+
+
+		drawEverything();
+
+
+		/** @type {WebSocket | null} */
+		var socket = null;
+
+		function log(msg, type = 'status') {
+			$log.innerHTML += `<p class="msg msg--${type}">${msg}</p>`;
+			$log.scrollTop += 1000;
+		}
+
+		function clearStreet(clear_fold) {
+			// clear everything visually for this street
+			// there should not be an action, contribution, or current bet
+			// go through each player state and set their action to be blank
+			// if clear_fold is true, we also clear "fold", if not, we leave it
+			for (var mapped_index in playerStates) {
+				var latest = playerStates[mapped_index];
+				if (latest.action != 'fold' || clear_fold) {
+					latest.action = null;
+				}
+				currentBet = null;
+				latest.street_contributions = null;
+			}
+		}
+
+		function connect() {
+			disconnect();
+
+			const { location } = window;
+
+			const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
+			const wsUri = `${proto}://${location.host}/ws`;
+
+			log('Connecting...');
+			socket = new WebSocket(wsUri);
+
+			socket.onopen = () => {
+				log('Connected');
+				updateConnectionStatus();
+			}
+
+			socket.onmessage = (ev) => {
+				var msg;
+				try {
+					msg = JSON.parse(ev.data);
+				} catch { }
+				if (msg != null) {
+					// handle json messages
+					// the mapped_index is where we draw that player on the UI
+					// Our index is always mapped to index 0 (bottom middle)
+					// e.g. If we are index 4, and another player is index 2,
+					// then they map to 7 (i.e. two to our right)
+					// Note: we need to add 9 in the equation because javascript does
+					// modulo wrong for negative numbers lol
+					var mapped_index = ((msg.index - yourIdx) + 9) % 9;
+					console.log("hello: " + JSON.stringify(msg));
+					playerStates[mapped_index] = msg;
+					if (mapped_index == 0) {
+						$betSlider.max = msg.money;
+					}
+					if (msg.pots != null) {
+						pots = msg.pots;
+					}
+					if (msg.action === "big blind") {
+						bigBlind = msg.amount;
+						$betSlider.min = 2 * bigBlind;
+					}
+					if (msg.current_bet != null) {
+						currentBet = msg.current_bet;
+
+						var minBet = currentBet;
+						if (minBet < 2 * bigBlind && flop == "") {
+							minBet = 2 * bigBlind;
+						} else if (minBet < bigBlind) {
+							minBet = bigBlind;
+						}
+
+						$betSlider.min = minBet;
+						$betSlider.value = minBet;
+						$betSize.value = minBet;
+
+						console.log('setting current bet to now: ' + currentBet);
+					} else {
+						console.log('didnt set current bet: ' + currentBet);
+					}
+				}
+				else {
+					if (ev.data.startsWith("Playing hand")) {
+						// reset the values for the next hand
+						hole = "";
+						flop = "";
+						turn = "";
+						river = "";
+						clearStreet(true);
+						// e.g. button_idx = 3
+						buttonIdx = parseInt(ev.data.slice(-1));
+						log("\n\n" + ev.data, 'message');
+					}
+					else if (ev.data.startsWith("Hole Cards:")) {
+						const [_, val] = ev.data.split(": ");
+						hole = val;
+						// player
+						var chars = val.split('');
+						drawFrontPairAtMappedIndex(context, 0, chars[0], chars[1], chars[2], chars[3]);
+						log(ev.data, 'message');
+					}
+					else if (ev.data.includes("to act!")) {
+						// e.g. "cool guy's turn to act! index=4"
+						toActIdx = parseInt(ev.data.slice(-1));
+						const [val, _] = ev.data.split(" turn to act");
+						playerToAct = val;
+						//log(realMessage, 'message')
+					}
+					else if (ev.data.startsWith("Joining game")) {
+						// when we join the game, we get the index
+						// this dictates where the players are positioned
+						// around the board
+						const [_, val] = ev.data.split(": ");
+						yourIdx = val;
+						log(ev.data, 'message');
+					}
+					else if (ev.data.startsWith("Flop:")) {
+						const [_, val] = ev.data.split(": ");
+						flop = val;
+						clearStreet(false);
+						log(ev.data, 'message');
+					}
+					else if (ev.data.startsWith("Turn:")) {
+						const [_, val] = ev.data.split(": ");
+						turn = val;
+						clearStreet(false);
+						log(ev.data, 'message');
+					}
+					else if (ev.data.startsWith("River:")) {
+						const [_, val] = ev.data.split(": ");
+						river = val;
+						clearStreet(false);
+						log(ev.data, 'message');
+					} else if (ev.data.startsWith("You have left the game")) {
+						// want to clear the screen			  
+						drawTable(context, width, height);
+					}
+					else {
+						log(ev.data, 'message');
+					}
+				}
+				drawEverything();
+			}
+
+			socket.onclose = () => {
+				log('Disconnected');
+				socket = null;
+				updateConnectionStatus();
+			}
+		}
+
+		function disconnect() {
+			if (socket) {
+				log('Disconnecting...');
+				socket.close();
+				socket = null;
+
+				updateConnectionStatus();
+			}
+		}
+
+		function updateConnectionStatus() {
+			if (socket) {
+				$status.style.backgroundColor = 'transparent';
+				$status.style.color = '#55ff55';
+				$status.textContent = `connected`;
+				$connectButton.innerHTML = 'Disconnect';
+				$input.focus()
+			} else {
+				$status.style.backgroundColor = 'transparent';
+				$status.style.color = '#ff5555';
+				$status.textContent = 'disconnected';
+				$connectButton.textContent = 'Connect';
+			}
+		}
+
+		$connectButton.addEventListener('click', () => {
+			if (socket) {
+				disconnect();
+			} else {
+				connect();
+			}
+
+			updateConnectionStatus();
+		})
+
+		function pressButton(button) {
+			var text;
+			switch (button) {
+				case 'send':
+					text = $input.value;
+					break;
+				case 'check':
+					text = '/check';
+					break;
+				case 'call':
+					text = '/call';
+					break;
+				case 'fold':
+					text = '/fold';
+					break;
+				case 'bet':
+					text = '/bet ' + $betSize.value;
+					break;
+				case 'leave':
+					text = '/leave';
+					break;
+			}
+
+			log('Sending: ' + text);
+			socket.send(text);
+
+			$input.value = '';
+			$input.focus();
+
+		}
+
+		$form.addEventListener('submit', (ev) => {
+			// this remnant from the template is needed for the app not to crash
+			// I guess it prevents the form from doing something?
+			ev.preventDefault();
+		})
+
+		$betSlider.oninput = function () {
+			$betSize.value = this.value;
+		}
+
+		updateConnectionStatus();
+
+	</script>
+</body>
+
 </html>
