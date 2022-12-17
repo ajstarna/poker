@@ -19,7 +19,11 @@
 	<div id="info">
 		<div style="padding: 10px;">
 			<span>Status:</span>
-			<span id="status">disconnected</span>
+			<span id="status">Disconnected</span>
+		</div>
+		<div style="padding: 10px;">
+			<span><input type="checkbox" id="sitoutbtn" name="sitoutbtn" value="sitout"></span>
+			<span>Sit Out</span>
 		</div>
 	</div>
 
@@ -85,6 +89,7 @@
 		var height = canvas.height;
 
 		const $status = document.querySelector('#status');
+		const $sitoutbtn = document.getElementById("sitoutbtn");
 		const $log = document.querySelector('#log');
 		const $form = document.querySelector('#chatform');
 		const $input = document.querySelector('#text');
@@ -439,12 +444,12 @@
 			if (socket) {
 				$status.style.backgroundColor = 'transparent';
 				$status.style.color = '#55ff55';
-				$status.textContent = `connected`;
+				$status.textContent = `Connected`;
 				$input.focus()
 			} else {
 				$status.style.backgroundColor = 'transparent';
 				$status.style.color = '#ff5555';
-				$status.textContent = 'disconnected';
+				$status.textContent = 'Disconnected';
 			}
 		}
 
@@ -508,6 +513,14 @@
 
 		$betSlider.oninput = function () {
 			$betSize.value = this.value;
+		}
+
+		$sitoutbtn.oninput = function () {
+			if (this.checked) {
+				socket.send('/sitout');
+			} else {
+				socket.send('/imback');
+			}
 		}
 
 		connect();

@@ -85,7 +85,7 @@ class Player {
         if (this.is_players_turn_to_act) {
             // Draw green boarder if it is the players turn
             ctx.fillStyle = "#3AC547";
-            roundRect(ctx, x-84, y+info_offset+7, 168, 68, 5);
+            roundRect(ctx, x-84, y+info_offset-4, 168, 68, 5);
             ctx.fill();
         }
         ctx.fillStyle = "#202020";
