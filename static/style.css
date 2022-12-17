@@ -20,10 +20,12 @@
 }
 
 .table {
-    margin-left: 250px;
+    margin-left: 150px;
 }
 
-#pokerTable {}
+#pokerTable {
+    width: 100%;
+}
 
 .button {
     background-color: #222222;
