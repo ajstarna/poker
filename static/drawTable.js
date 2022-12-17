@@ -19,16 +19,15 @@ function drawTable(ctx, width, height) {
 
     // Draw table
     // Draw border
-    ctx.beginPath();
     ctx.strokeStyle = "rgb(0, 0, 0)";
-    var color = "rgb(50, 50, 50)";
-    roundRect(ctx, 150, 125, width-300, height-250, 240, color);
+    ctx.fillStyle = "rgb(50, 50, 50)";
+    roundRect(ctx, 150, 125, width-300, height-250, 240);
     ctx.stroke();
     ctx.fill();
+
     // Draw cloth
-    ctx.beginPath();
-    var color2 = "rgb(0, 100, 0)";
-    roundRect(ctx, 170, 145, width-340, height-290, 225, color2);
+    ctx.fillStyle = "rgb(0, 100, 0)";
+    roundRect(ctx, 170, 145, width-340, height-290, 225);
     ctx.stroke();
     ctx.fill();
 }
