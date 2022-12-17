@@ -96,7 +96,7 @@ class Player {
 
         // Draw name
         if (this.is_active && this.action != "fold") {
-            if (this.is_players_turn) {
+            if (this.is_players_turn_to_act) {
                 ctx.fillStyle = "#F19B0E";
             } else {
                 ctx.fillStyle = "white";
