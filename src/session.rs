@@ -224,42 +224,33 @@ impl WsGameSession {
                 }
             }
             "/create" => {
-                if v.len() == 2 {
-                    let table_name = v[1].to_owned();
-
-
-                    self.hub_addr
-			.send(messages::Create {
-                            id: self.id,
-                            table_name
-			})
-			.into_actor(self)
-			.then(|res, _, ctx| {
-                            match res {
-				Ok(create_game_result) => {
-				    match create_game_result {
-					Ok(room_name) => {
-					    println!("created game = {}", room_name);
-					    ctx.text(format!("created game = {}", room_name));
-					},
-					Err(e) => {
-					    println!("{}", e);
-					    ctx.text(format!("{}", e));
-					},
-				    }
+		self.hub_addr
+		    .send(messages::Create {
+			id: self.id,
+		    })
+		    .into_actor(self)
+		    .then(|res, _, ctx| {
+			match res {
+			    Ok(create_game_result) => {
+				match create_game_result {
+				    Ok(room_name) => {
+					println!("created game = {}", room_name);
+					ctx.text(format!("created game = {}", room_name));
+				    },
+				    Err(e) => {
+					println!("{}", e);
+					ctx.text(format!("{}", e));
+				    },
 				}
-				_ => println!("MailBox error"),
-                            }
-                            fut::ready(())
-			})
-			.wait(ctx)
-                    // .wait(ctx) pauses all events in context,
-                    // so actor wont receive any new messages until it get list
-                    // of tables back
-					    
-                } else {
-                    ctx.text("!!! table name is required");
-                }
+			    }
+			    _ => println!("MailBox error"),
+			}
+			fut::ready(())
+		    })
+		    .wait(ctx)
+		// .wait(ctx) pauses all events in context,
+		// so actor wont receive any new messages until it get list
+		// of tables back					    
             }
             "/leave" => {
                 self.hub_addr.do_send(messages::MetaActionMessage {

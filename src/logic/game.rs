@@ -76,7 +76,8 @@ impl PotManager {
 	    if let Some(cap) = pot.cap {
 		println!("cap of {}", cap);		
 		if *so_far > cap {
-		    panic!("dont get in this situation");
+		    panic!("somehow player {} put in more than the cap for \
+				    the the pot at index {}", player_id, i);
 		} else if *so_far == cap {
 		    println!("we have already filled up this pot");
 		    continue
@@ -276,7 +277,7 @@ impl GameHand {
             if let Some(card) = deck.draw_card() {
                 flop.push(card)
             } else {
-                panic!();
+                panic!("we exhausted the deck somehow");
             }
         }
         self.flop = Some(flop);
@@ -492,6 +493,7 @@ impl GameHand {
 	    // display the play positions for the front end to consume
 	    if let Some(player) = player_spot {
 		let mut message = object!{
+		    msg_type: "player_info".to_owned(),
 		    index: i
 		};
 		let config = player_ids_to_configs.get(&player.id).unwrap();
@@ -664,6 +666,7 @@ impl GameHand {
 	    );
 
 	    let mut message = object!{
+		msg_type: "player_action".to_owned(),				
 		index: i,
 		player_name: name
 	    };
@@ -996,19 +999,56 @@ impl GameHand {
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
+    name: String, 
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
+    max_players: u8, // how many will we let in the game    
     button_idx: usize, // index of the player with the button
     small_blind: u32,
     big_blind: u32,
+    buy_in: u32,
+    is_private: bool, // will it show up in the list of games
+    password: Option<String>,
+}
+
+/// useful for unit tests, for example
+impl Default for Game {
+    fn default() -> Self {
+        Self {
+	    hub_addr: None,
+	    name: "Game".to_owned(),
+            deck: Box::new(StandardDeck::new()),
+            players: Default::default(),
+	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),	    
+	    max_players: 9,
+	    button_idx: 0,
+	    small_blind: 4,
+	    big_blind: 8,
+	    buy_in: 1000,
+	    is_private: true,
+	    password: None,
+        }
+	
+    }
 }
 
 impl Game {
 
     /// the address of the GameHub is optional so that unit tests need not worry about it
     /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
-    pub fn new(hub_addr: Option<Addr<GameHub>>, deck_opt: Option<Box<dyn Deck>>) -> Self {
+    pub fn new(
+	hub_addr: Option<Addr<GameHub>>,
+	name: String,
+	deck_opt: Option<Box<dyn Deck>>,
+	max_players: u8, // how many will we let in the game    
+	button_idx: usize, // index of the player with the button
+	small_blind: u32,
+	big_blind: u32,
+	buy_in: u32,
+	is_private: bool, // will it show up in the list of games
+	password: Option<String>,
+    ) -> Self {
 	let deck = if deck_opt.is_some() {
 	    deck_opt.unwrap()
 	} else {
@@ -1016,12 +1056,17 @@ impl Game {
 	};
         Game {
 	    hub_addr,
+	    name,
             deck,
-            players: Default::default(), 
-	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
-            small_blind: 4,
-            big_blind: 8,
-            button_idx: 0,
+            players: Default::default(),
+	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),	    
+	    max_players,
+	    button_idx,
+	    small_blind,
+	    big_blind,
+	    buy_in,
+	    is_private,
+	    password,
         }
     }
 
@@ -1064,7 +1109,8 @@ impl Game {
 	    // display the play positions for the front end to consume
 	    if let Some(player) = player_spot {
 		let mut message = object!{
-		    index: i
+		    msg_type: "player_info".to_owned(),
+		    index: i,
 		};
 		let config = player_ids_to_configs.get(&player.id).unwrap();
 		let name = config.name.as_ref().unwrap().clone();
@@ -1183,8 +1229,14 @@ impl Game {
 		    // send the message to all players,
 		    // appended by the player name
 		    println!("chat message inside the game hand wow!");
+		    
 		    let name = &player_ids_to_configs.get(&id).unwrap().name;
-		    PlayerConfig::send_group_message(&format!("{:?}: {:?}", name, text ),
+		    let message = object!{
+			msg_type: "chat".to_owned(),
+			player_name: name.clone(),
+		    };
+
+		    PlayerConfig::send_group_message(&message.dump(),
 						     &player_ids_to_configs);			
 		},
 		MetaAction::Join(player_config) => {
@@ -1220,7 +1272,7 @@ impl Game {
 		MetaAction::SitOut(id) => {
 		    for player in players.iter_mut().flatten() {
 			if player.id == id {
-			    println!("player {} being set to is_sitting_out = true", id);			    
+			    println!("player {} being set to is_sitting_out = true", id);	    
 			    player.is_sitting_out = true;
 			}
 		    }
@@ -1249,7 +1301,7 @@ mod tests {
     
     #[test]
     fn add_bot() {
-        let mut game = Game::new(None, None);
+        let mut game = Game::default();
         let name = "Mr Bot".to_string();
         game.add_bot(name);
         assert_eq!(game.players.len(), 9);
@@ -1261,7 +1313,7 @@ mod tests {
     
     #[test]
     fn add_user_no_connection() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
         let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
         let settings = PlayerConfig::new(id, Some(name), None);
@@ -1277,7 +1329,7 @@ mod tests {
     /// the small blind folds, so the big blind should win and get paid
     #[test]
     fn instant_fold() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1323,7 +1375,7 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     #[test]
     fn call_check_bet_fold() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1379,7 +1431,7 @@ mod tests {
     /// the small blind bets, the big blind folds
     #[test]
     fn pre_flop_bet_fold() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1425,7 +1477,7 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     #[test]
     fn bet_call_bet_fold() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1496,8 +1548,8 @@ mod tests {
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
-	
-        let mut game = Game::new(None, Some(Box::new(deck)));	
+
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1559,8 +1611,8 @@ mod tests {
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
-	
-        let mut game = Game::new(None, Some(Box::new(deck)));	
+
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1626,8 +1678,8 @@ mod tests {
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
-	
-        let mut game = Game::new(None, Some(Box::new(deck)));	
+
+        let mut game = Game::default();
 
 	// player1 will start as the button/big
 	let id1 = uuid::Uuid::new_v4();
@@ -1699,8 +1751,9 @@ mod tests {
 	deck.push(Card{rank: Rank::Nine, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
-	
-        let mut game = Game::new(None, Some(Box::new(deck)));		
+
+        let mut game = Game::default();
+	game.deck = Box::new(deck);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1786,7 +1839,8 @@ mod tests {
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
 	
-        let mut game = Game::new(None, Some(Box::new(deck)));		
+        let mut game = Game::default();
+	game.deck = Box::new(deck);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1876,8 +1930,9 @@ mod tests {
 	deck.push(Card{rank: Rank::Nine, suit: Suit::Club});
 	deck.push(Card{rank: Rank::King, suit: Suit::Heart});	
 	deck.push(Card{rank: Rank::King, suit: Suit::Club});
-	
-        let mut game = Game::new(None, Some(Box::new(deck)));		
+
+        let mut game = Game::default();
+	game.deck = Box::new(deck);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1953,7 +2008,7 @@ mod tests {
     /// can we pass a hand limit of 2 and the game comes to an end
     #[test]
     fn hand_limit() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -2003,7 +2058,7 @@ mod tests {
     /// durations
     #[test]
     fn button_movement() {
-        let mut game = Game::new(None, None);
+        let mut game = Game::default();	
 	
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
@@ -2084,7 +2139,7 @@ mod tests {
     /// a player joins during the hand, and it works fine
     #[test]
     fn mid_hand_join() {
-        let mut game = Game::new(None, None);	
+        let mut game = Game::default();		
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -2165,7 +2220,13 @@ mod tests {
 	deck.push(Card{rank: Rank::Six, suit: Suit::Club});
 	deck.push(Card{rank: Rank::Five, suit: Suit::Heart});
 
-        let mut game = Game::new(None, None);
+	// the flop
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Heart});
+	deck.push(Card{rank: Rank::Ace, suit: Suit::Spade});
+	deck.push(Card{rank: Rank::King, suit: Suit::Heart});
+	
+        let mut game = Game::default();
+	game.deck = Box::new(deck);			
 	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();

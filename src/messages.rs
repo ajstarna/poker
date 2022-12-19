@@ -82,11 +82,7 @@ impl fmt::Display for CreateGameError {
 #[rtype(result = "Result<String, CreateGameError>")]
 pub struct Create {
     /// Client ID
-    pub id: Uuid,
-
-    /// Table name
-    pub table_name: String,
-    
+    pub id: Uuid,    
 }
 
 #[derive(Message)]

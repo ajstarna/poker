@@ -5,7 +5,6 @@
 //! This file is adapted from the actix-web chat websocket example
  
 use std::{
-    fmt,
     thread,
     collections::{HashMap, VecDeque},
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -17,6 +16,12 @@ use crate::logic::{Game, PlayerConfig, PlayerAction};
 use actix::AsyncContext;
 use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
+use rand::Rng;
+use json::object;
+
+// for generator random game names
+const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const GAME_NAME_LEN: usize = 4;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
@@ -195,9 +200,11 @@ impl Handler<Removed> for GameHub {
 /// create table, cannot already be at a table
 impl Handler<Create> for GameHub {
     type Result = Result<String, CreateGameError>;
-    
+
+    /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
+    /// if the player is not in the lobby or does not have their name set
     fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
-        let Create { id, table_name } = msg;
+        let Create { id } = msg;
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
@@ -208,15 +215,7 @@ impl Handler<Create> for GameHub {
 	} 
 	let player_config = player_config_option.unwrap();		
 
-        if self.tables_to_meta_actions.contains_key(&table_name) {
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("A table with that name already exists!"))
-		);
-	    // put them back in the lobby
-	    self.main_lobby_connections.insert(player_config.id, player_config);
-	    return Err(CreateGameError);	    
-	} else 	if player_config.name.is_none() {
+	if player_config.name.is_none() {
 	    // they are not allowed to join a game without a Name set
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
@@ -226,13 +225,41 @@ impl Handler<Create> for GameHub {
 	    self.main_lobby_connections.insert(player_config.id, player_config);
 	    return Err(CreateGameError);	    	    
 	}
-		
+
+	let mut rng = rand::thread_rng();	
+	let table_name = loop {
+	    // create a new 4-char unique name for the table
+	    let genned_name: String = (0..GAME_NAME_LEN)
+		.map(|_| {
+		    let idx = rng.gen_range(0..CHAR_SET.len());
+		    CHAR_SET[idx] as char
+		})
+		.collect();
+            if self.tables_to_actions.contains_key(&genned_name) {
+		// unlikely, but we already have a table with this exact name
+		continue;
+	    }
+	    // we genned a name that is new
+	    break genned_name
+	};
+	
         // update the mapping to find the player at a table	
         self.players_to_table.insert(id, table_name.clone());
 	
-	// we need to create the game 
-        let mut game = Game::new(Some(ctx.address()), None);
-	
+	// TODO get all this info in the Create message to pass in
+        let mut game = Game::new(
+	    Some(ctx.address()),
+	    table_name.clone(),
+	    None,
+	    9,
+	    0,
+	    4,
+	    8,
+	    1000,
+	    false,
+	    None,
+	);
+
         let num_bots = 2;
         for i in 0..num_bots {
 	    let name = format!("Mr {}", i);
@@ -257,9 +284,8 @@ impl Handler<Create> for GameHub {
 	});
 	
         self.tables_to_actions.insert(table_name.clone(), actions);
-        self.tables_to_meta_actions.insert(table_name, meta_actions);
-        return Ok("Good job".to_owned());
-	
+        self.tables_to_meta_actions.insert(table_name.clone(), meta_actions);
+        Ok(table_name)
     }
 }
 
