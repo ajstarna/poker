@@ -150,7 +150,7 @@ impl Handler<Join> for GameHub {
 	    // they are not allowed to join a game without a Name set
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
-		    WsMessage(format!("You cannt join a game until you set your name!"))
+		    WsMessage(format!("You cannot join a game until you set your name!"))
 		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);

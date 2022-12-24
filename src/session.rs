@@ -353,7 +353,7 @@ impl WsGameSession {
     }
 
     fn handle_chat(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(chat_message) = object.get("chat_message") {
+	if let Some(chat_message) = object.get("chat_msg") {
 	    let chat_message = chat_message.to_string();
 	    self.hub_addr.do_send(
 		messages::MetaActionMessage {
