@@ -999,7 +999,7 @@ impl GameHand {
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    name: String, 
+    pub name: String, 
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,

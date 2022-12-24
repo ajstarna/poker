@@ -205,26 +205,7 @@ impl Handler<Create> for GameHub {
     /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
     /// if the player is not in the lobby or does not have their name set
     fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
-        let Create { id, create_msg } = msg;
-
-	if let (Some(max_players),
-		Some(small_blind),
-		Some(big_blind),
-		Some(buy_in),
-		Some(is_private),
-		Some(password)) = (create_msg.get("max_players"),
-				   create_msg.get("small_blind"),
-				   create_msg.get("big_blind"),
-				   create_msg.get("buy_in"),
-				   create_msg.get("is_private"),
-				   create_msg.get("password")) 	{
-	    let max_players = max_players.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-		
-	} else {
-	    println!("create message missing one or more required fields!");
-	    return Err(CreateGameError);
-	}
-	    
+        let Create { id, create_msg } = msg;	    
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
@@ -246,39 +227,63 @@ impl Handler<Create> for GameHub {
 	    return Err(CreateGameError);	    	    
 	}
 
-	let mut rng = rand::thread_rng();	
-	let table_name = loop {
-	    // create a new 4-char unique name for the table
-	    let genned_name: String = (0..GAME_NAME_LEN)
-		.map(|_| {
-		    let idx = rng.gen_range(0..CHAR_SET.len());
-		    CHAR_SET[idx] as char
-		})
-		.collect();
-            if self.tables_to_actions.contains_key(&genned_name) {
-		// unlikely, but we already have a table with this exact name
-		continue;
-	    }
-	    // we genned a name that is new
-	    break genned_name
-	};
-	
-        // update the mapping to find the player at a table	
-        self.players_to_table.insert(id, table_name.clone());
-	
-	// TODO get all this info in the Create message to pass in
-        let mut game = Game::new(
-	    Some(ctx.address()),
-	    table_name.clone(),
-	    None,
-	    9,
-	    4,
-	    8,
-	    1000,
-	    false,
-	    None,
-	);
 
+	let (mut game, table_name) = if let (Some(max_players),
+					 Some(small_blind),
+					 Some(big_blind),
+					 Some(buy_in),
+					 Some(is_private),
+					 Some(password)) = (create_msg.get("max_players"),
+							    create_msg.get("small_blind"),
+							    create_msg.get("big_blind"),
+							    create_msg.get("buy_in"),
+							    create_msg.get("is_private"),
+							    create_msg.get("password")) 	{
+	    let max_players = max_players.to_string().parse::<u8>().map_err(|_| CreateGameError)?;
+	    let small_blind = small_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
+	    let big_blind = big_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
+	    let buy_in = buy_in.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
+	    let is_private = is_private.to_string().parse::<bool>().map_err(|_| CreateGameError)?;	    	    
+	    let password = password.to_string();
+
+	    let mut rng = rand::thread_rng();	
+	    let table_name = loop {
+		// create a new 4-char unique name for the table
+		let genned_name: String = (0..GAME_NAME_LEN)
+		    .map(|_| {
+			let idx = rng.gen_range(0..CHAR_SET.len());
+			CHAR_SET[idx] as char
+		    })
+		    .collect();
+		if self.tables_to_actions.contains_key(&genned_name) {
+		    // unlikely, but we already have a table with this exact name
+		    continue;
+		}
+		// we genned a name that is new
+		break genned_name
+	    };
+	    
+            let game = Game::new(
+		Some(ctx.address()),
+		table_name.clone(),
+		None, // no deck needed to pass in
+		max_players,
+		small_blind,
+		big_blind,
+		buy_in,
+		is_private,
+		Some(password),
+	    );
+            // update the mapping to find the player at a table	
+            self.players_to_table.insert(id, table_name.clone());
+	    (game, table_name)
+	    
+	} else {
+	    println!("create message missing one or more required fields!");
+	    return Err(CreateGameError);
+	};
+		
+	
         let num_bots = 2;
         for i in 0..num_bots {
 	    let name = format!("Mr {}", i);
