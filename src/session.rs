@@ -300,36 +300,46 @@ impl WsGameSession {
     }
 
     fn handle_player_action(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-		    "/check" => {
+	if let Some(player_action) = object.get("action") {
+	    let player_action = player_action.to_string();
+	    match player_action.as_str() {
+		"check" => {
+		    self.hub_addr.do_send(messages::PlayerActionMessage {
+			id: self.id,
+			player_action: PlayerAction::Check,
+		    });
+		}
+		"fold" => {
+		    self.hub_addr.do_send(messages::PlayerActionMessage {
+			id: self.id,
+			player_action: PlayerAction::Fold,
+		    });
+		}
+		"call" => {
+		    self.hub_addr.do_send(messages::PlayerActionMessage {
+			id: self.id,
+			player_action: PlayerAction::Call,
+		    });
+		}
+		"bet" => {
+		    if let Some(amount) = object.get("amount") {
+			let amount = amount.to_string();
 			self.hub_addr.do_send(messages::PlayerActionMessage {
 			    id: self.id,
-			    player_action: PlayerAction::Check,
+			    player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
 			});
+			//ctx.text(format!("placing bet of: {:?}", v[1]));
+		    } else {
+			ctx.text("!!!You much specify how much to bet!");		    
 		    }
-		    "/fold" => {
-			self.hub_addr.do_send(messages::PlayerActionMessage {
-			    id: self.id,
-			    player_action: PlayerAction::Fold,
-			});
-		    }
-		    "/call" => {
-			self.hub_addr.do_send(messages::PlayerActionMessage {
-			    id: self.id,
-			    player_action: PlayerAction::Call,
-			});
-		    }
-		    "/bet" => {
-			if v.len() == 2 {
-			    let amount = v[1].to_owned();
-			    self.hub_addr.do_send(messages::PlayerActionMessage {
-				id: self.id,
-				player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
-			    });
-			    ctx.text(format!("placing bet of: {:?}", v[1]));
-			} else {
-			    ctx.text("!!!You much specify how much to bet!");
-			}		
-		    }	
+		}
+		other => {
+		    ctx.text(format!("invalid action set for type:player_action: {:?}", other));
+		}
+	    }
+	} else {
+	    ctx.text("!!! action is required");
+	}	    
     }
 
     fn handle_player_name(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {

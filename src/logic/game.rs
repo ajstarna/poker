@@ -1680,7 +1680,8 @@ mod tests {
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
 
         let mut game = Game::default();
-
+	game.deck = Box::new(deck);
+	
 	// player1 will start as the button/big
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Big".to_string();
