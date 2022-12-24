@@ -10,12 +10,18 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
-use crate::messages::{WsMessage, MetaAction, MetaActionMessage, Connect, Create, 
+use crate::messages::{WsMessage, MetaAction, MetaActionMessage, Connect, Create, CreateGameError,
 		      Join, Removed, ListTables, PlayerName, PlayerActionMessage};
 use crate::logic::{Game, PlayerConfig, PlayerAction};
 use actix::AsyncContext;
 use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
+use rand::Rng;
+use json::object;
+
+// for generator random game names
+const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const GAME_NAME_LEN: usize = 4;
 
 /// `Gamelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
@@ -68,54 +74,14 @@ impl Handler<Connect> for GameHub {
         let id = uuid::Uuid::new_v4();
         // create a config with name==None to start
         let player_config = PlayerConfig::new(id, None, Some(msg.addr));
-
-        self.main_lobby_connections.insert(id, player_config); // put them in the main lobby to wait to join a table
+	
+	// put them in the main lobby to wait to join a table
+        self.main_lobby_connections.insert(id, player_config); 
 
         // send id back
         MessageResult(id)
     }
 }
-
-/*
-/// Handler for Disconnect message.
-impl Handler<Disconnect> for GameHub {
-    type Result = ();
-
-    fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-	println!("handling Disconnect in the hub!");	
-        self.main_lobby_connections.remove(&msg.id); // attempt to remove from the main lobby
-        if let Some(table_name) = self.players_to_table.get(&msg.id) {
-	    // tell the table that a player is gone
-           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-	       println!("passing leave (due to disconnect) to the game!");
-	       meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
-	       println!("meta actions = {:?}", meta_actions);	       
-           } else {
- 	       // this should not happen since the meta actions vec should be created at the same time as the game
-	   }
-	}
-    }
-}*/
-
-/*
-/// Handler for Chat message.
-impl Handler<Chat> for GameHub {
-    type Result = ();
-
-    fn handle(&mut self, msg: Chat, _: &mut Context<Self>) {
-        if let Some(table_name) = self.players_to_table.get(&msg.id) {
-            // the player was at a table, so tell the Game to relay the message
-           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-	       println!("handling chat message in the hub!");
-	       println!("meta actions = {:?}", meta_actions);
-	       meta_actions.lock().unwrap().push_back(MetaAction::Chat(msg.id, msg.msg));
-            } else {
-                // TODO: this should never happen. the player is allegedly at a table, but we
-                // have no record of it in tables_to_meta_actions
-            }
-        }
-    }
-}*/
 
 /// Handler for `ListTables` message.
 impl Handler<ListTables> for GameHub {
@@ -173,7 +139,8 @@ impl Handler<Join> for GameHub {
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
-	    // the player is not in the main lobby, so we must be waiting for the game to remove the player still
+	    // the player is not in the main lobby,
+	    // so we must be waiting for the game to remove the player still
 	    println!("player config not in the main lobby, so they must already be at a game");
 	    return;
 	} 
@@ -183,7 +150,7 @@ impl Handler<Join> for GameHub {
 	    // they are not allowed to join a game without a Name set
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
-		    WsMessage(format!("You cannt join a game until you set your name!"))
+		    WsMessage(format!("You cannot join a game until you set your name!"))
 		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);
@@ -209,45 +176,6 @@ impl Handler<Join> for GameHub {
     }    
 }
 
-/*
-/// Handler for leaving a table (if we are even at one)
-impl Handler<Leave> for GameHub {
-    type Result = ();
-
-    fn handle(&mut self, msg: Leave, _: &mut Context<Self>) {
-	println!("handling leave message in the hub!");	
-        if let Some(table_name) = self.players_to_table.get(&msg.id) {
-	    // tell the table that we want to leave
-           if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-	       println!("passing leave to the game!");
-	       meta_actions.lock().unwrap().push_back(MetaAction::Leave(msg.id));
-	       println!("meta actions = {:?}", meta_actions);	       
-           } else {
- 	       // this should not happen since the meta actions vec should be created at the same time as the game
-	   }
-	}
-    }
-}*/
-
-/*
-/// Handler for telling a table we want to sit out for now (if we are even at one)
-impl Handler<SitOut> for GameHub {
-    type Result = ();
-
-    fn handle(&mut self, msg: SitOut, _: &mut Context<Self>) {
-        if let Some(table_name) = self.players_to_table.get(&msg.id) {
-	    // tell the table that we want to leave
-            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
-	       println!("passing sitout the game!");
-	       meta_actions.lock().unwrap().push_back(MetaAction::SitOut(msg.id));
-           } else {
- 		// this should not happen since the meta actions vec should be created at the same time as the game
-	   }
-	}
-    }
-}
- */
-
 /// Handler for a player that has been removed from a game officially
 /// This message comes FROM a game and provides the config, which we can put back in the lobby`
 impl Handler<Removed> for GameHub {
@@ -271,28 +199,23 @@ impl Handler<Removed> for GameHub {
 
 /// create table, cannot already be at a table
 impl Handler<Create> for GameHub {
-    type Result = ();
+    type Result = Result<String, CreateGameError>;
 
-    fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) {
-        let Create { id, table_name } = msg;
+    /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
+    /// if the player is not in the lobby or does not have their name set
+    fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
+        let Create { id } = msg;
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
-	    // the player is not in the main lobby, so we must be waiting for the game to remove the player still
+	    // the player is not in the main lobby,
+	    // so we must be waiting for the game to remove the player still
 	    println!("player config not in the main lobby, so they must already be at a game");
-	    return;
+	    return Err(CreateGameError);
 	} 
 	let player_config = player_config_option.unwrap();		
 
-        if self.tables_to_meta_actions.contains_key(&table_name) {
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("A table with that name already exists!"))
-		);
-	    // put them back in the lobby
-	    self.main_lobby_connections.insert(player_config.id, player_config);
-	    return;
-	} else 	if player_config.name.is_none() {
+	if player_config.name.is_none() {
 	    // they are not allowed to join a game without a Name set
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
@@ -300,15 +223,43 @@ impl Handler<Create> for GameHub {
 		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);
-	    return
+	    return Err(CreateGameError);	    	    
 	}
-		
+
+	let mut rng = rand::thread_rng();	
+	let table_name = loop {
+	    // create a new 4-char unique name for the table
+	    let genned_name: String = (0..GAME_NAME_LEN)
+		.map(|_| {
+		    let idx = rng.gen_range(0..CHAR_SET.len());
+		    CHAR_SET[idx] as char
+		})
+		.collect();
+            if self.tables_to_actions.contains_key(&genned_name) {
+		// unlikely, but we already have a table with this exact name
+		continue;
+	    }
+	    // we genned a name that is new
+	    break genned_name
+	};
+	
         // update the mapping to find the player at a table	
         self.players_to_table.insert(id, table_name.clone());
 	
-	// we need to create the game 
-        let mut game = Game::new(Some(ctx.address()), None);
-	
+	// TODO get all this info in the Create message to pass in
+        let mut game = Game::new(
+	    Some(ctx.address()),
+	    table_name.clone(),
+	    None,
+	    9,
+	    0,
+	    4,
+	    8,
+	    1000,
+	    false,
+	    None,
+	);
+
         let num_bots = 2;
         for i in 0..num_bots {
 	    let name = format!("Mr {}", i);
@@ -333,7 +284,8 @@ impl Handler<Create> for GameHub {
 	});
 	
         self.tables_to_actions.insert(table_name.clone(), actions);
-        self.tables_to_meta_actions.insert(table_name, meta_actions);	
+        self.tables_to_meta_actions.insert(table_name.clone(), meta_actions);
+        Ok(table_name)
     }
 }
 

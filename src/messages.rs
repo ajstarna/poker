@@ -1,6 +1,7 @@
 use crate::logic::{player::PlayerAction, PlayerConfig};
 use actix::prelude::{Message, Recipient};
 use uuid::Uuid;
+use std::fmt;
 
 /// Game server sends this messages to session
 
@@ -68,16 +69,20 @@ pub struct PlayerName {
     pub name: String,
 }
 
+
+pub struct CreateGameError;
+impl fmt::Display for CreateGameError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	write!(f, "Unable to create a game!")
+    }
+}
+
 /// Session wants to create a game
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<String, CreateGameError>")]
 pub struct Create {
     /// Client ID
-    pub id: Uuid,
-
-    /// Table name
-    pub table_name: String,
-    
+    pub id: Uuid,    
 }
 
 #[derive(Message)]
