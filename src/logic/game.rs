@@ -1042,7 +1042,6 @@ impl Game {
 	name: String,
 	deck_opt: Option<Box<dyn Deck>>,
 	max_players: u8, // how many will we let in the game    
-	button_idx: usize, // index of the player with the button
 	small_blind: u32,
 	big_blind: u32,
 	buy_in: u32,
@@ -1061,7 +1060,7 @@ impl Game {
             players: Default::default(),
 	    player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),	    
 	    max_players,
-	    button_idx,
+	    button_idx: 0,
 	    small_blind,
 	    big_blind,
 	    buy_in,
@@ -1550,7 +1549,8 @@ mod tests {
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
 
         let mut game = Game::default();
-
+	game.deck = Box::new(deck);
+	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
@@ -1613,7 +1613,8 @@ mod tests {
 	deck.push(Card{rank: Rank::Queen, suit: Suit::Club});
 
         let mut game = Game::default();
-
+	game.deck = Box::new(deck);
+	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();

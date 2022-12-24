@@ -2,6 +2,7 @@ use crate::logic::{player::PlayerAction, PlayerConfig};
 use actix::prelude::{Message, Recipient};
 use uuid::Uuid;
 use std::fmt;
+use serde_json::Value;
 
 /// Game server sends this messages to session
 
@@ -77,12 +78,14 @@ impl fmt::Display for CreateGameError {
     }
 }
 
+
 /// Session wants to create a game
 #[derive(Message)]
 #[rtype(result = "Result<String, CreateGameError>")]
 pub struct Create {
     /// Client ID
-    pub id: Uuid,    
+    pub id: Uuid,
+    pub create_msg: Value,
 }
 
 #[derive(Message)]

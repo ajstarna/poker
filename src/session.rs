@@ -239,6 +239,7 @@ impl WsGameSession {
 	self.hub_addr
 	    .send(messages::Create {
 		id: self.id,
+		create_msg: object
 	    })
 	    .into_actor(self)
 	    .then(|res, _, ctx| {

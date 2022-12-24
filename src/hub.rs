@@ -18,6 +18,7 @@ use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
 use rand::Rng;
 use json::object;
+use serde_json::Value;
 
 // for generator random game names
 const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -204,7 +205,26 @@ impl Handler<Create> for GameHub {
     /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
     /// if the player is not in the lobby or does not have their name set
     fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
-        let Create { id } = msg;
+        let Create { id, create_msg } = msg;
+
+	if let (Some(max_players),
+		Some(small_blind),
+		Some(big_blind),
+		Some(buy_in),
+		Some(is_private),
+		Some(password)) = (create_msg.get("max_players"),
+				   create_msg.get("small_blind"),
+				   create_msg.get("big_blind"),
+				   create_msg.get("buy_in"),
+				   create_msg.get("is_private"),
+				   create_msg.get("password")) 	{
+	    let max_players = max_players.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
+		
+	} else {
+	    println!("create message missing one or more required fields!");
+	    return Err(CreateGameError);
+	}
+	    
 	
         let player_config_option = self.main_lobby_connections.remove(&id);
 	if player_config_option.is_none() {
@@ -252,7 +272,6 @@ impl Handler<Create> for GameHub {
 	    table_name.clone(),
 	    None,
 	    9,
-	    0,
 	    4,
 	    8,
 	    1000,
