@@ -150,13 +150,19 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
             }
             ws::Message::Text(text) => {
                 let m = text.trim();
-		if let Ok(object) = serde_json::from_str(m) {
-		    // we were able to parse the given text as a json
-                    self.handle_client_command(object, ctx);		    
-		} else {
-		    println!("message unable to parse as json: {}", m);
-		}		
-	    }
+
+				let object: Value = match serde_json::from_str(m) {
+					Result::Ok(object) => {object},
+					Result::Err(err) => {
+						println!("message unable to parse as json: {}", m);
+						serde_json::Value::Null
+					}
+				};	
+
+				println!("{}", object);
+			
+				self.handle_client_command(object, ctx);
+			}
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {
                 ctx.close(reason);
@@ -286,7 +292,7 @@ impl WsGameSession {
     }
     
     fn handle_join_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(table_name) = object.get("table_name") {
+	if let Some(Value::String(table_name)) = object.get("table_name") {
 	    let table_name = table_name.to_string();
 	    self.hub_addr.do_send(messages::Join {
 		id: self.id,
@@ -300,7 +306,7 @@ impl WsGameSession {
     }
 
     fn handle_player_action(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(player_action) = object.get("action") {
+	if let Some(Value::String(player_action)) = object.get("action") {
 	    let player_action = player_action.to_string();
 	    match player_action.as_str() {
 		"check" => {
@@ -322,7 +328,7 @@ impl WsGameSession {
 		    });
 		}
 		"bet" => {
-		    if let Some(amount) = object.get("amount") {
+		    if let Some(Value::String(amount)) = object.get("amount") {
 			let amount = amount.to_string();
 			self.hub_addr.do_send(messages::PlayerActionMessage {
 			    id: self.id,
@@ -343,17 +349,17 @@ impl WsGameSession {
     }
 
     fn handle_player_name(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(player_name) = object.get("player_name") {
-	    let name = player_name.to_string();
+	if let Some(Value::String(name)) = object.get("player_name") {
+		println!("{}", name);
 	    self.hub_addr
-		.do_send(messages::PlayerName { id: self.id, name });
+		.do_send(messages::PlayerName { id: self.id, name: name.to_string() });
 	} else {
 	    ctx.text("!!! player_name is required");
 	}
     }
 
     fn handle_chat(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(chat_message) = object.get("chat_msg") {
+	if let Some(Value::String(chat_message)) = object.get("chat_msg") {
 	    let chat_message = chat_message.to_string();
 	    self.hub_addr.do_send(
 		messages::MetaActionMessage {
