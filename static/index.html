@@ -1,532 +1,697 @@
 <!DOCTYPE html>
 
 <html>
+	<head>
+		<meta charset="utf-8" />
+		<title>Poker</title>
+		<link rel="stylesheet" href="static/style.css" />
+	</head>
 
-<head>
-	<meta charset="utf-8" />
-	<title>Poker</title>
-	<link rel="stylesheet" href="static/style.css">
-</head>
+	<body>
+		<script src="static/drawFunctions.js"></script>
+		<script src="static/drawCard.js"></script>
+		<script src="static/drawTable.js"></script>
+		<script src="static/playerCard.js"></script>
+		<script src="static/player.js"></script>
 
-<body>
-	<script src="static/drawFunctions.js"></script>
-	<script src="static/drawCard.js"></script>
-	<script src="static/drawTable.js"></script>
-	<script src="static/playerCard.js"></script>
-	<script src="static/player.js"></script>
-
-
-	<div id="info">
-		<div style="padding: 10px;">
-			<span>Status:</span>
-			<span id="status">Disconnected</span>
-		</div>
-		<div style="padding: 10px;">
-			<span><input type="checkbox" id="sitoutbtn" name="sitoutbtn" value="sitout"></span>
-			<span>Sit Out</span>
-		</div>
-	</div>
-
-	<div class="main">
-		<div class="table">
-			<canvas id="pokerTable" width="1200" height="720">
-			</canvas>
-		</div>
-		<div class="row" style="margin: 10px;">
-			<div class="column">
-				<div id="log"></div>
-
-				<form id="chatform">
-					<div style="display: flex; flex-direction: row;">
-						<input type="text" id="text" />
-						<input type="submit" class="button" style="margin-left: 50px; float: right; width: 250px;"
-							id="send" onclick="pressButton('send')" value="Send Message" />
-						<input type="submit" class="button" style="flex: 0 5-%;"
-						       id="send" onclick="pressButton('name')" value="Set Name" />
-						<input type="submit" class="button" style="flex: 0 5-%;"
-							id="send" onclick="pressButton('list')" value="List Tables" />
-						<input type="submit" class="button" style="flex: 0 5-%;"
-							id="send" onclick="pressButton('create')" value="Create Table" />
-						<input type="submit" class="button" style="flex: 0 5-%;"
-							id="send" onclick="pressButton('join')" value="Join Table" />
-						<input type="submit" class="button" style="flex: 0 5-%;"
-							id="send" onclick="pressButton('leave')" value="Leave" />
-					</div>
-				</form>
-
+		<div id="info">
+			<div style="padding: 10px">
+				<span>Status:</span>
+				<span id="status">Disconnected</span>
 			</div>
-			<div class="column">
-				<div style="margin-left: 10px; display: flex; flex-direction: row; width: 100%;">
-					<div style="width: 100px;">
-						Bet Size:
-					</div>
-					<div class=" slidecontainer">
-						<input type="range" min="1" max="100" value="1" class="slider" id="betSizeSlider">
-					</div>
-					<div style="margin-left: 10px; margin-bottom: 20px;">
-						<input type="text" style="width: 50px;" id="betSize" />
-					</div>
+			<!--Game Info-->
+			<div id="game_info" style="display: none; padding: 10px">
+				<div>
+					<span
+						><input
+							type="checkbox"
+							id="sitoutbtn"
+							name="sitoutbtn"
+							value="sitout"
+					/></span>
+					<span>Sit Out</span>
 				</div>
-				<div style="margin-left: 10px; display: flex; flex-direction: row; width: 100%;">
-					<button class="button" style="flex: 0 50%;" onclick="pressButton('fold')">Fold</button>
-					<button class="button" style="flex: 0 50%;" onclick="pressButton('check')">Check</button>
-					<button class="button" style="flex: 0 50%;" onclick="pressButton('call')">Call</button>
-					<button class="button" style="flex: 0 50%;" onclick="pressButton('bet')">Bet</button>
+				<div style="padding-top: 10px">
+					<button class="button" onclick="leaveTable()">Leave Table</button>
+				</div>
+			</div>
+
+			<!--Lobby Menu-->
+			<div
+				id="lobby_menu"
+				style="display: block; padding: 10px; background: rgba(50, 50, 50, 0.7)"
+			>
+				<!--Player Info-->
+				<div>
+					<span><input type="text" id="playerName" /></span>
+					<span>
+						<button class="button" onclick="setPlayerName()">Set Name</button>
+					</span>
+				</div>
+
+				<div class="row">
+					<!--Games List-->
+					<div class="column">
+						<h1>Join Table</h1>
+						<span><input type="text" id="tableId" /></span>
+						<span>
+							<button class="button" onclick="joinTable()">Join Table</button>
+						</span>
+						<h3>Public Tables</h3>
+						<button class="button" onclick="listPublicTable()">
+							Show Public Games
+						</button>
+					</div>
+					<!--Create Game-->
+					<div class="column">
+						<h1>Create Table</h1>
+						<button class="button" onclick="createTable()">Create Table</button>
+					</div>
 				</div>
 			</div>
 		</div>
-	</div>
 
-	<hr />
+		<div class="main">
+			<div class="table">
+				<canvas id="pokerTable" width="1200" height="720"> </canvas>
+			</div>
+			<div class="row" style="margin: 10px">
+				<div class="column">
+					<div id="log"></div>
 
-	<script>
-		// Get canvas and context      
-		var canvas = document.getElementById("pokerTable");
-		var context = canvas.getContext("2d");
-		//context.font = "20px Georgia";
+					<form id="chatform">
+						<div style="display: flex; flex-direction: row">
+							<input type="text" id="text" />
+							<input
+								type="submit"
+								class="button"
+								style="margin-left: 50px; float: right; width: 250px"
+								id="send"
+								onclick="sendMessage()"
+								value="Send Message"
+							/>
+						</div>
+					</form>
+				</div>
+				<div class="column">
+					<div
+						style="
+							margin-left: 10px;
+							display: flex;
+							flex-direction: row;
+							width: 100%;
+						"
+					>
+						<div style="width: 100px">Bet Size:</div>
+						<div class="slidecontainer">
+							<input
+								type="range"
+								min="1"
+								max="100"
+								value="1"
+								class="slider"
+								id="betSizeSlider"
+							/>
+						</div>
+						<div style="margin-left: 10px; margin-bottom: 20px">
+							<input type="text" style="width: 50px" id="betSize" />
+						</div>
+					</div>
+					<div
+						style="
+							margin-left: 10px;
+							display: flex;
+							flex-direction: row;
+							width: 100%;
+						"
+					>
+						<button
+							class="button"
+							style="flex: 0 50%"
+							onclick="playerAction('fold')"
+						>
+							Fold
+						</button>
+						<button
+							class="button"
+							style="flex: 0 50%"
+							onclick="playerAction('check')"
+						>
+							Check
+						</button>
+						<button
+							class="button"
+							style="flex: 0 50%"
+							onclick="playerAction('call')"
+						>
+							Call
+						</button>
+						<button
+							class="button"
+							style="flex: 0 50%"
+							onclick="playerAction('bet')"
+						>
+							Bet
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
 
-		var width = canvas.width;
-		var height = canvas.height;
+		<hr />
 
-		const $status = document.querySelector('#status');
-		const $sitoutbtn = document.getElementById("sitoutbtn");
-		const $log = document.querySelector('#log');
-		const $form = document.querySelector('#chatform');
-		const $input = document.querySelector('#text');
-		const $betSlider = document.getElementById("betSizeSlider");
-		const $betSize = document.getElementById("betSize");
+		<script>
+			// Get canvas and context
+			var canvas = document.getElementById("pokerTable");
+			var context = canvas.getContext("2d");
+			//context.font = "20px Georgia";
 
-		$betSize.value = $betSlider.value;
+			var width = canvas.width;
+			var height = canvas.height;
 
-		var hole = '';
-		var flop = '';
-		var turn = '';
-		var river = '';
-		var pots = null;
-		var currentBet = null;
-		var bigBlind = null;
+			const $status = document.querySelector("#status");
+			const $lobbyMenu = document.getElementById("lobby_menu");
+			const $gameMenu = document.getElementById("game_info");
+			const $sitoutbtn = document.getElementById("sitoutbtn");
+			const $log = document.querySelector("#log");
+			const $form = document.querySelector("#chatform");
+			const $input = document.getElementById("text");
+			const $playerName = document.getElementById("playerName");
+			const $tableId = document.getElementById("tableId");
+			const $betSlider = document.getElementById("betSizeSlider");
+			const $betSize = document.getElementById("betSize");
 
-		var buttonIdx = 0; // this will move around
-		var yourIdx; // the position of players on the UI depends on your index
-		var toActIdx; // whose turn is it to act?
-		var playerToAct = '';
+			$betSize.value = $betSlider.value;
 
-		// this gives us the position of UI for a given MAPPED index 
-		// (e.g. the main player always maps to index 0)
-		const mappedIndexToPlayerPosition = {
-			0: [width / 2, height - 170],
-			1: [280, height - 170],
-			2: [100, height - 330],
-			3: [100, 150],
-			4: [width / 3 + 20, 20],
-			5: [2 * width / 3, 20],
-			6: [width - 100, 150],
-			7: [width - 100, height - 330],
-			8: [width - 280, height - 170]
-		};
+			var hole = "";
+			var flop = "";
+			var turn = "";
+			var river = "";
+			var pots = null;
+			var currentBet = null;
+			var bigBlind = null;
 
-		const mappedIndexToPlayerChipPosition = {
-			0: [width / 2 - 40, height - 220],
-			1: [350, height - 220],
-			2: [220, height - 320],
-			3: [250, 300],
-			4: [width / 3, 200],
-			5: [2 * width / 3 - 30, 200],
-			6: [width - 350, 300],
-			7: [width - 320, height - 320],
-			8: [width - 350, height - 220]
-		};
+			var buttonIdx = 0; // this will move around
+			var yourIdx; // the position of players on the UI depends on your index
+			var toActIdx; // whose turn is it to act?
+			var playerToAct = "";
 
-		const mappedIndexToButtonPosition = {
-			0: [width / 2 + 80, height - 180],
-			1: [360, height - 180],
-			2: [220, height - 270],
-			3: [220, 250],
-			4: [width / 3 - 60, 180],
-			5: [2 * width / 3 - 80, 180],
-			6: [width - 220, 250],
-			7: [width - 220, height - 270],
-			8: [width - 360, height - 180]
-		};
+			// this gives us the position of UI for a given MAPPED index
+			// (e.g. the main player always maps to index 0)
+			const mappedIndexToPlayerPosition = {
+				0: [width / 2, height - 170],
+				1: [280, height - 170],
+				2: [100, height - 330],
+				3: [100, 150],
+				4: [width / 3 + 20, 20],
+				5: [(2 * width) / 3, 20],
+				6: [width - 100, 150],
+				7: [width - 100, height - 330],
+				8: [width - 280, height - 170],
+			};
 
-		// from mappedIndex to the latest action info for that player
-		var playerStates = {};
+			const mappedIndexToPlayerChipPosition = {
+				0: [width / 2 - 40, height - 220],
+				1: [350, height - 220],
+				2: [220, height - 320],
+				3: [250, 300],
+				4: [width / 3, 200],
+				5: [(2 * width) / 3 - 30, 200],
+				6: [width - 350, 300],
+				7: [width - 320, height - 320],
+				8: [width - 350, height - 220],
+			};
 
-		function drawPots(ctx) {
-			// eventually we might want to draw something visual here?
-			if (pots != null) {
-				ctx.font = 'bold 18px arial';
-				ctx.textAlign = "start";
-				ctx.fillStyle = 'white';
-				ctx.fillText('Pot(s): ' + pots, width / 2 - 40, height / 2 + 80);
-			}
-			if (currentBet != null) {
-				ctx.font = 'bold 18px arial';
-				ctx.textAlign = "start";
-				ctx.fillStyle = 'white';
-				ctx.fillText('Current bet: ' + currentBet, width / 2 - 40, height / 2 + 110);
-			}
-		}
+			const mappedIndexToButtonPosition = {
+				0: [width / 2 + 80, height - 180],
+				1: [360, height - 180],
+				2: [220, height - 270],
+				3: [220, 250],
+				4: [width / 3 - 60, 180],
+				5: [(2 * width) / 3 - 80, 180],
+				6: [width - 220, 250],
+				7: [width - 220, height - 270],
+				8: [width - 360, height - 180],
+			};
 
-		function drawToAct(ctx) {
-			if (playerToAct != '') {
-				ctx.font = 'bold 18px arial';
-				ctx.textAlign = "start";
-				ctx.fillStyle = 'white';
-				ctx.fillText(playerToAct + "'s turn to act!", width / 2 - 40, height / 2 + 140);
-			}
-		}
+			// from mappedIndex to the latest action info for that player
+			var playerStates = {};
 
-		function drawEverything() {
-			// this is called after very change of state to re-render the entire UI.
-			drawTable(context, width, height); 	  // Draws the background and the table
-			for (var mapped_index in playerStates) {
-				// Get player object
-				let player = playerStates[mapped_index];
-				// Get player position (x, y)
-				let position = mappedIndexToPlayerPosition[mapped_index];
-				let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
-				console.log("drawing player: " + player.name + " at " + position + " player is active " + player.is_active);
-				// Draw player
-				let is_players_turn_to_act = toActIdx == player.index;
-				player.is_players_turn_to_act = is_players_turn_to_act;
-				player.draw(context, position);
-				// Draw player chips
-				player.drawChips(context, chip_position);
-
-				if (buttonIdx == player.index) {
-					// Draw Button
-					let btn_position = mappedIndexToButtonPosition[mapped_index];
-					context.fillStyle = "white";
-					context.strokeStyle = "black";
-
-					context.beginPath();
-					context.arc(btn_position[0], btn_position[1] + 2, 10, 0, Math.PI * 2, true);
-					context.fill();
-					context.stroke();
-
-					context.beginPath();
-					context.arc(btn_position[0], btn_position[1], 10, 0, Math.PI * 2, true);
-					context.fill();
-					context.stroke();
+			function drawPots(ctx) {
+				// eventually we might want to draw something visual here?
+				if (pots != null) {
+					ctx.font = "bold 18px arial";
+					ctx.textAlign = "start";
+					ctx.fillStyle = "white";
+					ctx.fillText("Pot(s): " + pots, width / 2 - 40, height / 2 + 80);
+				}
+				if (currentBet != null) {
+					ctx.font = "bold 18px arial";
+					ctx.textAlign = "start";
+					ctx.fillStyle = "white";
+					ctx.fillText(
+						"Current bet: " + currentBet,
+						width / 2 - 40,
+						height / 2 + 110
+					);
 				}
 			}
 
-			// table cards
-			if (flop != "") {
-				const chars = flop.split('');
-				drawFrontCard(context, width / 3 + 50, height / 2 - 50, chars[0], chars[1]);
-				drawFrontCard(context, width / 3 + 110, height / 2 - 50, chars[2], chars[3]);
-				drawFrontCard(context, width / 3 + 170, height / 2 - 50, chars[4], chars[5]);
-			}
-			if (turn != "") {
-				const chars = turn.split('');
-				drawFrontCard(context, width / 3 + 230, height / 2 - 50, chars[0], chars[1]);
-			}
-			if (river != "") {
-				const chars = river.split('')
-				drawFrontCard(context, width / 3 + 290, height / 2 - 50, chars[0], chars[1]);
-			}
-
-			drawPots(context);
-			// drawToAct() // this needed?
-
-			console.log(playerStates);
-		}
-
-
-		drawEverything();
-
-
-		/** @type {WebSocket | null} */
-		var socket = null;
-
-		function log(msg, type = 'status') {
-			$log.innerHTML += `<p class="msg msg--${type}">${msg}</p>`;
-			$log.scrollTop += 1000;
-		}
-
-		function clearStreet(clear_fold) {
-			// clear everything visually for this street
-			// there should not be an action, contribution, or current bet
-			// go through each player state and set their action to be blank
-			// if clear_fold is true, we also clear "fold", if not, we leave it
-			for (var mapped_index in playerStates) {
-				var latest = playerStates[mapped_index];
-				if (latest.action != 'fold' || clear_fold) {
-					latest.action = null;
+			function drawToAct(ctx) {
+				if (playerToAct != "") {
+					ctx.font = "bold 18px arial";
+					ctx.textAlign = "start";
+					ctx.fillStyle = "white";
+					ctx.fillText(
+						playerToAct + "'s turn to act!",
+						width / 2 - 40,
+						height / 2 + 140
+					);
 				}
-				currentBet = null;
-				latest.street_contributions = null;
 			}
-		}
 
-		function updatePlayer(mapped_index, msg) {
-			// Create new player
-			if (!(mapped_index in playerStates)) {
-				playerStates[mapped_index] = new Player(
-					{
+			function drawEverything() {
+				// this is called after very change of state to re-render the entire UI.
+				drawTable(context, width, height); // Draws the background and the table
+				for (var mapped_index in playerStates) {
+					// Get player object
+					let player = playerStates[mapped_index];
+					// Get player position (x, y)
+					let position = mappedIndexToPlayerPosition[mapped_index];
+					let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
+					console.log(
+						"drawing player: " +
+							player.name +
+							" at " +
+							position +
+							" player is active " +
+							player.is_active
+					);
+					// Draw player
+					let is_players_turn_to_act = toActIdx == player.index;
+					player.is_players_turn_to_act = is_players_turn_to_act;
+					player.draw(context, position);
+					// Draw player chips
+					player.drawChips(context, chip_position);
+
+					if (buttonIdx == player.index) {
+						// Draw Button
+						let btn_position = mappedIndexToButtonPosition[mapped_index];
+						context.fillStyle = "white";
+						context.strokeStyle = "black";
+
+						context.beginPath();
+						context.arc(
+							btn_position[0],
+							btn_position[1] + 2,
+							10,
+							0,
+							Math.PI * 2,
+							true
+						);
+						context.fill();
+						context.stroke();
+
+						context.beginPath();
+						context.arc(
+							btn_position[0],
+							btn_position[1],
+							10,
+							0,
+							Math.PI * 2,
+							true
+						);
+						context.fill();
+						context.stroke();
+					}
+				}
+
+				// table cards
+				if (flop != "") {
+					const chars = flop.split("");
+					drawFrontCard(
+						context,
+						width / 3 + 50,
+						height / 2 - 50,
+						chars[0],
+						chars[1]
+					);
+					drawFrontCard(
+						context,
+						width / 3 + 110,
+						height / 2 - 50,
+						chars[2],
+						chars[3]
+					);
+					drawFrontCard(
+						context,
+						width / 3 + 170,
+						height / 2 - 50,
+						chars[4],
+						chars[5]
+					);
+				}
+				if (turn != "") {
+					const chars = turn.split("");
+					drawFrontCard(
+						context,
+						width / 3 + 230,
+						height / 2 - 50,
+						chars[0],
+						chars[1]
+					);
+				}
+				if (river != "") {
+					const chars = river.split("");
+					drawFrontCard(
+						context,
+						width / 3 + 290,
+						height / 2 - 50,
+						chars[0],
+						chars[1]
+					);
+				}
+
+				drawPots(context);
+				// drawToAct() // this needed?
+
+				console.log(playerStates);
+			}
+
+			drawEverything();
+
+			/** @type {WebSocket | null} */
+			var socket = null;
+
+			function log(msg, type = "status") {
+				$log.innerHTML += `<p class="msg msg--${type}">${msg}</p>`;
+				$log.scrollTop += 1000;
+			}
+
+			function clearStreet(clear_fold) {
+				// clear everything visually for this street
+				// there should not be an action, contribution, or current bet
+				// go through each player state and set their action to be blank
+				// if clear_fold is true, we also clear "fold", if not, we leave it
+				for (var mapped_index in playerStates) {
+					var latest = playerStates[mapped_index];
+					if (latest.action != "fold" || clear_fold) {
+						latest.action = null;
+					}
+					currentBet = null;
+					latest.street_contributions = null;
+				}
+			}
+
+			function updatePlayer(mapped_index, msg) {
+				// Create new player
+				if (!(mapped_index in playerStates)) {
+					playerStates[mapped_index] = new Player({
 						name: msg.player_name,
 						index: msg.index,
 						money: msg.money,
-					}
-				)
+					});
+				}
+
+				let player = playerStates[mapped_index];
+				player.name = msg.player_name;
+				player.index = msg.index;
+				player.money = msg.money;
+
+				if ("action" in msg) {
+					player.action = msg.action;
+				}
+
+				player.street_contributions = msg.street_contributions;
+				player.is_active = msg.is_active;
 			}
 
-			let player = playerStates[mapped_index];
-			player.name = msg.player_name;
-			player.index = msg.index;
-			player.money = msg.money;
+			function connect() {
+				disconnect();
 
-			if ("action" in msg) {
-				player.action = msg.action;
-			}
+				const { location } = window;
 
-			player.street_contributions = msg.street_contributions;
-			player.is_active = msg.is_active;
-		}
+				const proto = location.protocol.startsWith("https") ? "wss" : "ws";
+				const wsUri = `${proto}://${location.host}/ws`;
 
-		function connect() {
-			disconnect();
+				log("Connecting...");
+				socket = new WebSocket(wsUri);
 
-			const { location } = window;
+				socket.onopen = () => {
+					log("Connected");
+					updateConnectionStatus();
+				};
 
-			const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
-			const wsUri = `${proto}://${location.host}/ws`;
+				socket.onmessage = (ev) => {
+					var msg;
+					try {
+						msg = JSON.parse(ev.data);
+					} catch {}
+					if (msg != null) {
+						// handle json messages
+						// the mapped_index is where we draw that player on the UI
+						// Our index is always mapped to index 0 (bottom middle)
+						// e.g. If we are index 4, and another player is index 2,
+						// then they map to 7 (i.e. two to our right)
+						// Note: we need to add 9 in the equation because javascript does
+						// modulo wrong for negative numbers lol
+						var mapped_index = (msg.index - yourIdx + 9) % 9;
+						console.log("hello: " + JSON.stringify(msg));
 
-			log('Connecting...');
-			socket = new WebSocket(wsUri);
+						updatePlayer(mapped_index, msg);
 
-			socket.onopen = () => {
-				log('Connected');
-				updateConnectionStatus();
-			}
-
-			socket.onmessage = (ev) => {
-				var msg;
-				try {
-					msg = JSON.parse(ev.data);
-				} catch { }
-				if (msg != null) {
-					// handle json messages
-					// the mapped_index is where we draw that player on the UI
-					// Our index is always mapped to index 0 (bottom middle)
-					// e.g. If we are index 4, and another player is index 2,
-					// then they map to 7 (i.e. two to our right)
-					// Note: we need to add 9 in the equation because javascript does
-					// modulo wrong for negative numbers lol
-					var mapped_index = ((msg.index - yourIdx) + 9) % 9;
-					console.log("hello: " + JSON.stringify(msg));
-
-					updatePlayer(mapped_index, msg);
-
-					if (mapped_index == 0) {
-						$betSlider.max = msg.money;
-					}
-					if (msg.pots != null) {
-						pots = msg.pots;
-					}
-					if (msg.action === "big blind") {
-						bigBlind = msg.amount;
-						$betSlider.min = 2 * bigBlind;
-					}
-					if (msg.current_bet != null) {
-						currentBet = msg.current_bet;
-
-						var minBet = currentBet;
-						if (minBet < 2 * bigBlind && flop == "") {
-							minBet = 2 * bigBlind;
-						} else if (minBet < bigBlind) {
-							minBet = bigBlind;
+						if (mapped_index == 0) {
+							$betSlider.max = msg.money;
 						}
+						if (msg.pots != null) {
+							pots = msg.pots;
+						}
+						if (msg.action === "big blind") {
+							bigBlind = msg.amount;
+							$betSlider.min = 2 * bigBlind;
+						}
+						if (msg.current_bet != null) {
+							currentBet = msg.current_bet;
 
-						$betSlider.min = minBet;
-						$betSlider.value = minBet;
-						$betSize.value = minBet;
+							var minBet = currentBet;
+							if (minBet < 2 * bigBlind && flop == "") {
+								minBet = 2 * bigBlind;
+							} else if (minBet < bigBlind) {
+								minBet = bigBlind;
+							}
 
-						console.log('setting current bet to now: ' + currentBet);
+							$betSlider.min = minBet;
+							$betSlider.value = minBet;
+							$betSize.value = minBet;
+
+							console.log("setting current bet to now: " + currentBet);
+						} else {
+							console.log("didnt set current bet: " + currentBet);
+						}
 					} else {
-						console.log('didnt set current bet: ' + currentBet);
-					}
-				}
-				else {
-					if (ev.data.startsWith("Playing hand")) {
-						// reset the values for the next hand
-						for (var mapped_index in playerStates) {
-							// Give every player two cards
-							playerStates[mapped_index].giveCards(
-								new PlayerCard(false),
-								new PlayerCard(false)
+						if (ev.data.startsWith("Playing hand")) {
+							// Show Table
+							$gameMenu.style.display = "block";
+							$lobbyMenu.style.display = "none";
+
+							// reset the values for the next hand
+							for (var mapped_index in playerStates) {
+								// Give every player two cards
+								playerStates[mapped_index].giveCards(
+									new PlayerCard(false),
+									new PlayerCard(false)
+								);
+							}
+							hole = "";
+							flop = "";
+							turn = "";
+							river = "";
+							clearStreet(true);
+							// e.g. button_idx = 3
+							buttonIdx = parseInt(ev.data.slice(-1));
+							log("\n\n" + ev.data, "message");
+						} else if (ev.data.startsWith("Hole Cards:")) {
+							const [_, val] = ev.data.split(": ");
+							hole = val;
+							// player
+							var chars = val.split("");
+							let player = playerStates[0];
+							player.giveCards(
+								new PlayerCard(true, chars[0], chars[1]),
+								new PlayerCard(true, chars[2], chars[3])
 							);
+							log(ev.data, "message");
+						} else if (ev.data.includes("to act!")) {
+							// e.g. "cool guy's turn to act! index=4"
+							toActIdx = parseInt(ev.data.slice(-1));
+							const [val, _] = ev.data.split(" turn to act");
+							playerToAct = val;
+							//log(realMessage, 'message')
+						} else if (ev.data.startsWith("Joining game")) {
+							// when we join the game, we get the index
+							// this dictates where the players are positioned
+							// around the board
+							const [_, val] = ev.data.split(": ");
+							yourIdx = val;
+							log(ev.data, "message");
+
+							$gameMenu.style.display = "block";
+							$lobbyMenu.style.display = "none";
+						} else if (ev.data.startsWith("Flop:")) {
+							const [_, val] = ev.data.split(": ");
+							flop = val;
+							clearStreet(false);
+							log(ev.data, "message");
+						} else if (ev.data.startsWith("Turn:")) {
+							const [_, val] = ev.data.split(": ");
+							turn = val;
+							clearStreet(false);
+							log(ev.data, "message");
+						} else if (ev.data.startsWith("River:")) {
+							const [_, val] = ev.data.split(": ");
+							river = val;
+							clearStreet(false);
+							log(ev.data, "message");
+						} else if (ev.data.startsWith("You have left the game")) {
+							// want to clear the screen
+							drawTable(context, width, height);
+							// Show Lobby
+							$gameMenu.style.display = "none";
+							$lobbyMenu.style.display = "block";
+						} else {
+							log(ev.data, "message");
 						}
-						hole = "";
-						flop = "";
-						turn = "";
-						river = "";
-						clearStreet(true);
-						// e.g. button_idx = 3
-						buttonIdx = parseInt(ev.data.slice(-1));
-						log("\n\n" + ev.data, 'message');
 					}
-					else if (ev.data.startsWith("Hole Cards:")) {
-						const [_, val] = ev.data.split(": ");
-						hole = val;
-						// player
-						var chars = val.split('');
-						let player = playerStates[0];
-						player.giveCards(
-							new PlayerCard(true, chars[0], chars[1]),
-							new PlayerCard(true, chars[2], chars[3])
-						)
-						log(ev.data, 'message');
-					}
-					else if (ev.data.includes("to act!")) {
-						// e.g. "cool guy's turn to act! index=4"
-						toActIdx = parseInt(ev.data.slice(-1));
-						const [val, _] = ev.data.split(" turn to act");
-						playerToAct = val;
-						//log(realMessage, 'message')
-					}
-					else if (ev.data.startsWith("Joining game")) {
-						// when we join the game, we get the index
-						// this dictates where the players are positioned
-						// around the board
-						const [_, val] = ev.data.split(": ");
-						yourIdx = val;
-						log(ev.data, 'message');
-					}
-					else if (ev.data.startsWith("Flop:")) {
-						const [_, val] = ev.data.split(": ");
-						flop = val;
-						clearStreet(false);
-						log(ev.data, 'message');
-					}
-					else if (ev.data.startsWith("Turn:")) {
-						const [_, val] = ev.data.split(": ");
-						turn = val;
-						clearStreet(false);
-						log(ev.data, 'message');
-					}
-					else if (ev.data.startsWith("River:")) {
-						const [_, val] = ev.data.split(": ");
-						river = val;
-						clearStreet(false);
-						log(ev.data, 'message');
-					} else if (ev.data.startsWith("You have left the game")) {
-						// want to clear the screen			  
-						drawTable(context, width, height);
-					}
-					else {
-						log(ev.data, 'message');
-					}
+					drawEverything();
+				};
+
+				socket.onclose = () => {
+					log("Disconnected");
+					socket = null;
+					updateConnectionStatus();
+				};
+			}
+
+			function disconnect() {
+				if (socket) {
+					log("Disconnecting...");
+					socket.close();
+					socket = null;
+
+					updateConnectionStatus();
 				}
-				drawEverything();
 			}
 
-			socket.onclose = () => {
-				log('Disconnected');
-				socket = null;
-				updateConnectionStatus();
+			function updateConnectionStatus() {
+				if (socket) {
+					$status.style.backgroundColor = "transparent";
+					$status.style.color = "#55ff55";
+					$status.textContent = `Connected`;
+					$input.focus();
+				} else {
+					$status.style.backgroundColor = "transparent";
+					$status.style.color = "#ff5555";
+					$status.textContent = "Disconnected";
+				}
 			}
-		}
 
-		function disconnect() {
-			if (socket) {
-				log('Disconnecting...');
-				socket.close();
-				socket = null;
+			function setPlayerName() {
+				var msg = {}; // build the json to send
+				msg["msg_type"] = "name";
+				msg["player_name"] = $playerName.value;
 
-				updateConnectionStatus();
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
 			}
-		}
 
-		function updateConnectionStatus() {
-			if (socket) {
-				$status.style.backgroundColor = 'transparent';
-				$status.style.color = '#55ff55';
-				$status.textContent = `Connected`;
-				$input.focus()
-			} else {
-				$status.style.backgroundColor = 'transparent';
-				$status.style.color = '#ff5555';
-				$status.textContent = 'Disconnected';
+			function joinTable() {
+				var msg = {}; // build the json to send
+				msg["msg_type"] = "join";
+				msg["table_name"] = $tableId.value;
+
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
 			}
-		}
 
-		function pressButton(button) {
-		    var text;
-		    var msg = {}; // build the json to send
-		    switch (button) {
-		    case 'send':
-			msg['msg_type'] = "chat"
-			msg['chat_msg'] = $input.value;
-			break;
-		    case 'name':
-			msg['msg_type'] = "name"
-			msg['player_name'] = $input.value;
-			break;
-		    case 'join':
-			msg['msg_type'] = "join"
-			msg['table_name'] = $input.value;
-			break;
-		    case 'create':
-			msg['msg_type'] = "create"
-			break;
-		    case 'list':
-			msg['msg_type'] = "list"
-			break;
-		    case 'check':
-			msg['msg_type'] = "player_action"			
-			msg['action'] = 'check'
-			break;
-		    case 'call':
-			msg['msg_type'] = "player_action"			
-			msg['action'] = 'call'
-			break;
-		    case 'fold':
-			msg['msg_type'] = "player_action"			
-			msg['action'] = 'fold'
-			break;
-		    case 'bet':
-			msg['msg_type'] = "player_action"			
-			msg['action'] = 'bet'
-			msg['amount'] = $betSize.value;			
-			break;
-		    case 'leave':
-			msg['msg_type'] = "leave"						
-			break;
-		    }
-		    
-		    log('Sending: ' + JSON.stringify(msg));
-		    socket.send(JSON.stringify(msg));
-		    
-		    $input.value = '';
-		    $input.focus();
-		    
-		}
+			function listPublicTable() {
+				var msg = {}; // build the json to send
+				msg["msg_type"] = "list";
 
-		$form.addEventListener('submit', (ev) => {
-			// this remnant from the template is needed for the app not to crash
-			// I guess it prevents the form from doing something?
-			ev.preventDefault();
-		})
-
-		$betSlider.oninput = function () {
-			$betSize.value = this.value;
-		}
-
-		$sitoutbtn.oninput = function () {
-			if (this.checked) {
-				socket.send('/sitout');
-			} else {
-				socket.send('/imback');
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
 			}
-		}
 
-		connect();
-		updateConnectionStatus();
+			function createTable() {
+				var msg = {}; // build the json to send
+				msg["msg_type"] = "create";
 
-	</script>
-</body>
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
+			}
 
+			function playerAction(action) {
+				var msg = {}; // build the json to send
+				msg["msg_type"] = "player_action";
+				msg["action"] = action;
+
+				if (action == "bet") {
+					msg["amount"] = $betSize.value;
+				}
+
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
+			}
+
+			function leaveTable() {
+				var msg = {}; // build the json to send
+
+				msg["msg_type"] = "leave";
+
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
+
+				// Show Lobby
+				$gameMenu.style.display = "none";
+				$lobbyMenu.style.display = "block";
+			}
+
+			function sendMessage() {
+				var msg = {}; // build the json to send
+
+				msg["msg_type"] = "chat";
+				msg["chat_msg"] = $input.value;
+
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
+
+				$input.value = "";
+				$input.focus();
+			}
+
+			$form.addEventListener("submit", (ev) => {
+				// this remnant from the template is needed for the app not to crash
+				// I guess it prevents the form from doing something?
+				ev.preventDefault();
+			});
+
+			$betSlider.oninput = function () {
+				$betSize.value = this.value;
+			};
+
+			$sitoutbtn.oninput = function () {
+				var msg = {}; // build the json to send
+				if (this.checked) {
+					msg["msg_type"] = "sitout";
+				} else {
+					msg["msg_type"] = "imback";
+				}
+
+				log("Sending: " + JSON.stringify(msg));
+				socket.send(JSON.stringify(msg));
+			};
+
+			connect();
+			updateConnectionStatus();
+		</script>
+	</body>
 </html>
