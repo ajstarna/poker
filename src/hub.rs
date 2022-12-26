@@ -212,7 +212,7 @@ impl Handler<Create> for GameHub {
 	    // the player is not in the main lobby,
 	    // so we must be waiting for the game to remove the player still
 	    println!("player config not in the main lobby, so they must already be at a game");
-	    return Err(CreateGameError);
+	    return Err(CreateGameError::AlreadyAtTable("todo".to_owned()));
 	} 
 	let player_config = player_config_option.unwrap();		
 
@@ -224,7 +224,7 @@ impl Handler<Create> for GameHub {
 		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);
-	    return Err(CreateGameError);	    	    
+	    return Err(CreateGameError::NameNotSet);	    	    
 	}
 
 
@@ -239,11 +239,21 @@ impl Handler<Create> for GameHub {
 							    create_msg.get("buy_in"),
 							    create_msg.get("is_private"),
 							    create_msg.get("password")) 	{
-	    let max_players = max_players.to_string().parse::<u8>().map_err(|_| CreateGameError)?;
-	    let small_blind = small_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let big_blind = big_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let buy_in = buy_in.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let is_private = is_private.to_string().parse::<bool>().map_err(|_| CreateGameError)?;	    	    
+	    let max_players = max_players.to_string()
+		.parse::<u8>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("max_players".to_owned()))?;
+	    let small_blind = small_blind.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("small_blind".to_owned()))?;
+	    let big_blind = big_blind.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("big_blind".to_owned()))?;
+	    let buy_in = buy_in.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("buy_in".to_owned()))?;
+	    let is_private = is_private.to_string()
+		.parse::<bool>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("is_private".to_owned()))?;
 	    let password = password.to_string();
 
 	    let mut rng = rand::thread_rng();	
@@ -280,7 +290,7 @@ impl Handler<Create> for GameHub {
 	    
 	} else {
 	    println!("create message missing one or more required fields!");
-	    return Err(CreateGameError);
+	    return Err(CreateGameError::MissingField);
 	};
 		
 	
