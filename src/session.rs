@@ -151,18 +151,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
             ws::Message::Text(text) => {
                 let m = text.trim();
 
-				let object: Value = match serde_json::from_str(m) {
-					Result::Ok(object) => {object},
-					Result::Err(err) => {
-						println!("message unable to parse as json: {}", m);
-						serde_json::Value::Null
-					}
-				};	
-
-				println!("{}", object);
-			
-				self.handle_client_command(object, ctx);
-			}
+		if let Ok(object) = serde_json::from_str(m) {
+		    println!("{}", object);		    
+		    self.handle_client_command(object, ctx);
+		} else {
+		    println!("message unable to parse as json: {}", m);
+		};	
+	    }			
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {
                 ctx.close(reason);

@@ -622,11 +622,16 @@
 			}
 
 			function createTable() {
-				var msg = {}; // build the json to send
-				msg["msg_type"] = "create";
-
-				log("Sending: " + JSON.stringify(msg));
-				socket.send(JSON.stringify(msg));
+			    var msg = {}; // build the json to send
+			    msg["msg_type"] = "create";
+			    msg["max_players"] = 9;
+			    msg["small_blind"] = 4;
+			    msg["big_blind"] = 8;
+			    msg["buy_in"] = 1000;
+			    msg["is_private"] = false;
+			    msg["password"] = null;
+			    log("Sending: " + JSON.stringify(msg));
+			    socket.send(JSON.stringify(msg));
 			}
 
 			function playerAction(action) {

@@ -218,10 +218,6 @@ impl Handler<Create> for GameHub {
 
 	if player_config.name.is_none() {
 	    // they are not allowed to join a game without a Name set
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("You cannt join a game until you set your name!"))
-		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);
 	    return Err(CreateGameError::NameNotSet);	    	    
@@ -254,7 +250,14 @@ impl Handler<Create> for GameHub {
 	    let is_private = is_private.to_string()
 		.parse::<bool>()
 		.map_err(|_| CreateGameError::InvalidFieldValue("is_private".to_owned()))?;
-	    let password = password.to_string();
+
+	    println!("password in create game = {:?}", password);	    
+
+	    let password = if password.is_string() {
+		Some(password.to_string())
+	    } else {
+		None
+	    };
 
 	    let mut rng = rand::thread_rng();	
 	    let table_name = loop {
@@ -282,7 +285,7 @@ impl Handler<Create> for GameHub {
 		big_blind,
 		buy_in,
 		is_private,
-		Some(password),
+		password,
 	    );
             // update the mapping to find the player at a table	
             self.players_to_table.insert(id, table_name.clone());
