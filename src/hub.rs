@@ -6,7 +6,7 @@
  
 use std::{
     thread,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
@@ -37,6 +37,8 @@ pub struct GameHub {
 
     tables_to_meta_actions: HashMap<String, Arc<Mutex<VecDeque<MetaAction>>>>,        
 
+    private_tables: HashSet<String>, // which games do not show up in the loby
+    
     visitor_count: Arc<AtomicUsize>,
 }
 
@@ -48,7 +50,8 @@ impl GameHub {
             main_lobby_connections: HashMap::new(),
             players_to_table: HashMap::new(),
 	    tables_to_actions: HashMap::new(),
-	    tables_to_meta_actions: HashMap::new(),	    
+	    tables_to_meta_actions: HashMap::new(),
+	    private_tables: HashSet::new(),
             visitor_count,
         }
     }
@@ -91,6 +94,10 @@ impl Handler<ListTables> for GameHub {
         let mut tables = Vec::new();
 
         for key in self.tables_to_actions.keys() {
+	    if self.private_tables.contains(key) {
+		// don't return private tables
+		continue;
+	    }
             tables.push(key.to_owned())
         }
 
@@ -295,7 +302,7 @@ impl Handler<Create> for GameHub {
 		small_blind,
 		big_blind,
 		buy_in,
-		is_private,
+		is_private, // TODO does the game even need this field
 		password,
 	    );
 
@@ -303,6 +310,10 @@ impl Handler<Create> for GameHub {
 		let name = format!("Mr {}", i);
 		game.add_bot(name);
             }
+
+	    if is_private {
+		self.private_tables.insert(table_name.clone());
+	    }
 	    
             // update the mapping to find the player at a table	
             self.players_to_table.insert(id, table_name.clone());

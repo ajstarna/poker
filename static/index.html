@@ -566,6 +566,9 @@
 					} else if (msg.msg_type == "chat") {
 					    let output = msg.player_name + ": " + msg.text
 					    log(output, "message");
+					} else if (msg.msg_type == "tables_list") {
+					    // TODO show in a list on front end?
+					    log(ev.data, "message");	
 					} else {
 					    log("We are not handling this message properly!", "message");
 					}
