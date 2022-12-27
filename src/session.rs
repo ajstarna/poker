@@ -241,9 +241,13 @@ impl WsGameSession {
 		match res {
 		    Ok(create_game_result) => {
 			match create_game_result {
-			    Ok(room_name) => {
-				println!("created game = {}", room_name);
-				ctx.text(format!("created game = {}", room_name));
+			    Ok(table_name) => {
+				println!("created game = {}", table_name);				
+				let message = json::object!{
+				    msg_type: "created_game".to_owned(),
+				    table_name: table_name,
+				};	    
+				ctx.text(message.dump());
 			    },
 			    Err(e) => {
 				println!("{}", e);
@@ -355,12 +359,12 @@ impl WsGameSession {
     }
 
     fn handle_chat(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(Value::String(chat_message)) = object.get("chat_msg") {
-	    let chat_message = chat_message.to_string();
+	if let Some(Value::String(text)) = object.get("text") {
+	    let text = text.to_string();
 	    self.hub_addr.do_send(
 		messages::MetaActionMessage {
 		    id: self.id,
-		    meta_action: messages::MetaAction::Chat(self.id, chat_message)
+		    meta_action: messages::MetaAction::Chat(self.id, text)
 		}
 	    )
 	} else {

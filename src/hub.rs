@@ -18,7 +18,6 @@ use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
 use rand::Rng;
 use json::object;
-use serde_json::Value;
 
 // for generator random game names
 const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -107,9 +106,13 @@ impl Handler<PlayerName> for GameHub {
         // if the player is the main lobby, find them and set their name
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
 	    println!("setting player name in the main lobby");
+	    let message = object!{
+		msg_type: "name_changed".to_owned(),
+		new_name: msg.name.clone(),
+	    };	    
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
-		    WsMessage(format!("You are changing your name to {:?}", msg.name))
+		    WsMessage(message.dump())
 		);	    
             player_config.name = Some(msg.name);
         } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
@@ -190,7 +193,10 @@ impl Handler<Removed> for GameHub {
 	}
 	// add the config back into the lobby
         if let Some(addr) = &msg.config.player_addr {
-            addr.do_send(WsMessage("You have left the game and are back in the lobby".to_owned()));
+	    let message = object!{
+		msg_type: "left_game".to_owned(),
+	    };	    
+            addr.do_send(WsMessage(message.dump()));
         }
 	
 	self.main_lobby_connections.insert(msg.config.id, msg.config);

@@ -278,7 +278,8 @@
 					let player = playerStates[mapped_index];
 					// Get player position (x, y)
 					let position = mappedIndexToPlayerPosition[mapped_index];
-					let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
+				    let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
+				    /*
 					console.log(
 						"drawing player: " +
 							player.name +
@@ -287,6 +288,7 @@
 							" player is active " +
 							player.is_active
 					);
+				    */
 					// Draw player
 					let is_players_turn_to_act = toActIdx == player.index;
 					player.is_players_turn_to_act = is_players_turn_to_act;
@@ -447,122 +449,131 @@
 					try {
 						msg = JSON.parse(ev.data);
 					} catch {}
-					if (msg != null) {
-						// handle json messages
-						// the mapped_index is where we draw that player on the UI
-						// Our index is always mapped to index 0 (bottom middle)
-						// e.g. If we are index 4, and another player is index 2,
-						// then they map to 7 (i.e. two to our right)
-						// Note: we need to add 9 in the equation because javascript does
-						// modulo wrong for negative numbers lol
-						var mapped_index = (msg.index - yourIdx + 9) % 9;
-						console.log("hello: " + JSON.stringify(msg));
-
-						updatePlayer(mapped_index, msg);
-
-						if (mapped_index == 0) {
-							$betSlider.max = msg.money;
+				    if (msg != null) {
+					console.log("hello: " + JSON.stringify(msg));
+					if (msg.msg_type == "joined_game") {
+					    yourIdx = msg.index;
+					    log(ev.data, "message");
+					    $gameMenu.style.display = "block";
+					    $lobbyMenu.style.display = "none";
+					} else if (msg.msg_type == "new_hand") {
+					    // Show Table
+					    $gameMenu.style.display = "block";
+					    $lobbyMenu.style.display = "none";
+					    // reset the values for the next hand
+					    for (var mapped_index in playerStates) {
+						// Give every player two cards
+						playerStates[mapped_index].giveCards(
+						    new PlayerCard(false),
+						    new PlayerCard(false)
+						);
+					    }
+					    hole = "";
+					    flop = "";
+					    turn = "";
+					    river = "";
+					    clearStreet(true);
+					    // e.g. button_idx = 3
+					    buttonIdx = msg.button_index;
+					    log("\n\nPlaying hand " + msg.hand_num, "message");
+					} else if (msg.msg_type == "player_action") {
+					    // handle json messages
+					    // the mapped_index is where we draw that player on the UI
+					    // Our index is always mapped to index 0 (bottom middle)
+					    // e.g. If we are index 4, and another player is index 2,
+					    // then they map to 7 (i.e. two to our right)
+					    // Note: we need to add 9 in the equation because javascript does
+					    // modulo wrong for negative numbers lol
+					    var mapped_index = (msg.index - yourIdx + 9) % 9;
+					    updatePlayer(mapped_index, msg);
+					    if (mapped_index == 0) {
+						    $betSlider.max = msg.money;
 						}
-						if (msg.pots != null) {
-							pots = msg.pots;
-						}
-						if (msg.action === "big blind") {
-							bigBlind = msg.amount;
-							$betSlider.min = 2 * bigBlind;
-						}
-						if (msg.current_bet != null) {
-							currentBet = msg.current_bet;
-
-							var minBet = currentBet;
-							if (minBet < 2 * bigBlind && flop == "") {
-								minBet = 2 * bigBlind;
-							} else if (minBet < bigBlind) {
-								minBet = bigBlind;
-							}
-
-							$betSlider.min = minBet;
-							$betSlider.value = minBet;
-							$betSize.value = minBet;
-
-							console.log("setting current bet to now: " + currentBet);
-						} else {
-							console.log("didnt set current bet: " + currentBet);
-						}
+					    pots = msg.pots;
+					    if (msg.action === "big blind") {
+						bigBlind = msg.amount;
+						$betSlider.min = 2 * bigBlind;
+					    }
+					    currentBet = msg.current_bet;
+					    var minBet = currentBet;
+					    if (minBet < 2 * bigBlind && flop == "") {
+						minBet = 2 * bigBlind;
+					    } else if (minBet < bigBlind) {
+						minBet = bigBlind;
+					    }
+					    
+					    $betSlider.min = minBet;
+					    $betSlider.value = minBet;
+					    $betSize.value = minBet;					    
+					    console.log("setting current bet to now: " + currentBet);
+					} else if (msg.msg_type == "player_info") {
+					    var mapped_index = (msg.index - yourIdx + 9) % 9;
+					    updatePlayer(mapped_index, msg);
+					    
+					    if (mapped_index == 0) {
+						$betSlider.max = msg.money;
+					    }
+					} else if (msg.msg_type == "prompt") {
+					    log(msg.prompt, "message");
+					} else if (msg.msg_type == "hole_cards") {
+					    hole = msg.hole_cards;
+					    var chars = hole.split("");
+					    let player = playerStates[0];
+					    player.giveCards(
+						new PlayerCard(true, chars[0], chars[1]),
+						new PlayerCard(true, chars[2], chars[3])
+					    );
+					    log(ev.data, "message"); // TODO remove this log? or good for hand history
+					} else if (msg.msg_type == "flop") {
+					    flop = msg.flop;
+					    clearStreet(false);
+					    log(ev.data, "message");
+					} else if (msg.msg_type == "turn") {
+					    turn = msg.turn;
+					    clearStreet(false);
+					    log(ev.data, "message");
+					} else if (msg.msg_type == "river") {
+					    river = msg.river;
+					    clearStreet(false);
+					    log(ev.data, "message");
+					} else if (msg.msg_type == "player_to_act") {
+					    toActIdx = msg.index; // parseInt(ev.data.slice(-1));
+					    playerToAct = msg.name;
+					} else if (msg.msg_type == "paying_out") {
+					    if (msg.is_showdown) {
+						log("========= SHOWDOWN =========")
+					    } else {
+						log("======== Ending before showdown =======")
+					    }
+					    let output1 = ("paying out " + msg.payout + " to " + 
+					    		   msg.player_name + ", with hole cards = " + msg.hole_cards)
+					    log(output1, "message");
+					    let output2 = "hand result = " + msg.hand_result
+					    log(output2, "message");
+					} else if (msg.msg_type == "left_game") {
+					    // want to clear the screen
+					    drawTable(context, width, height);
+					    // Show Lobby
+					    $gameMenu.style.display = "none";
+					    $lobbyMenu.style.display = "block";
+					} else if (msg.msg_type == "created_game") {
+					    // TODO: anything needed here?
+					    // msg.table_name
+					    log(ev.data, "message");					    
+					} else if (msg.msg_type == "name_changed") {
+					    let output = "You have changed your name to " + msg.new_name
+					    log(output, "message");					    
+					} else if (msg.msg_type == "chat") {
+					    let output = msg.player_name + ": " + msg.text
+					    log(output, "message");
 					} else {
-						if (ev.data.startsWith("Playing hand")) {
-							// Show Table
-							$gameMenu.style.display = "block";
-							$lobbyMenu.style.display = "none";
-
-							// reset the values for the next hand
-							for (var mapped_index in playerStates) {
-								// Give every player two cards
-								playerStates[mapped_index].giveCards(
-									new PlayerCard(false),
-									new PlayerCard(false)
-								);
-							}
-							hole = "";
-							flop = "";
-							turn = "";
-							river = "";
-							clearStreet(true);
-							// e.g. button_idx = 3
-							buttonIdx = parseInt(ev.data.slice(-1));
-							log("\n\n" + ev.data, "message");
-						} else if (ev.data.startsWith("Hole Cards:")) {
-							const [_, val] = ev.data.split(": ");
-							hole = val;
-							// player
-							var chars = val.split("");
-							let player = playerStates[0];
-							player.giveCards(
-								new PlayerCard(true, chars[0], chars[1]),
-								new PlayerCard(true, chars[2], chars[3])
-							);
-							log(ev.data, "message");
-						} else if (ev.data.includes("to act!")) {
-							// e.g. "cool guy's turn to act! index=4"
-							toActIdx = parseInt(ev.data.slice(-1));
-							const [val, _] = ev.data.split(" turn to act");
-							playerToAct = val;
-							//log(realMessage, 'message')
-						} else if (ev.data.startsWith("Joining game")) {
-							// when we join the game, we get the index
-							// this dictates where the players are positioned
-							// around the board
-							const [_, val] = ev.data.split(": ");
-							yourIdx = val;
-							log(ev.data, "message");
-
-							$gameMenu.style.display = "block";
-							$lobbyMenu.style.display = "none";
-						} else if (ev.data.startsWith("Flop:")) {
-							const [_, val] = ev.data.split(": ");
-							flop = val;
-							clearStreet(false);
-							log(ev.data, "message");
-						} else if (ev.data.startsWith("Turn:")) {
-							const [_, val] = ev.data.split(": ");
-							turn = val;
-							clearStreet(false);
-							log(ev.data, "message");
-						} else if (ev.data.startsWith("River:")) {
-							const [_, val] = ev.data.split(": ");
-							river = val;
-							clearStreet(false);
-							log(ev.data, "message");
-						} else if (ev.data.startsWith("You have left the game")) {
-							// want to clear the screen
-							drawTable(context, width, height);
-							// Show Lobby
-							$gameMenu.style.display = "none";
-							$lobbyMenu.style.display = "block";
-						} else {
-							log(ev.data, "message");
-						}
+					    log("We are not handling this message properly!", "message");
 					}
-					drawEverything();
+				    } else {
+					log("SHOULD NOT BE ANY OF THESE", "message")
+					log(ev.data, "message");					
+				    }
+				    drawEverything();
 				};
 
 				socket.onclose = () => {
@@ -625,7 +636,7 @@
 			    var msg = {}; // build the json to send
 			    msg["msg_type"] = "create";
 			    msg["max_players"] = 9;
-			    msg["num_bots"] = 5;			    
+			    msg["num_bots"] = 3;			    
 			    msg["small_blind"] = 4;
 			    msg["big_blind"] = 8;
 			    msg["buy_in"] = 1000;
@@ -665,7 +676,7 @@
 				var msg = {}; // build the json to send
 
 				msg["msg_type"] = "chat";
-				msg["chat_msg"] = $input.value;
+				msg["text"] = $input.value;
 
 				log("Sending: " + JSON.stringify(msg));
 				socket.send(JSON.stringify(msg));
