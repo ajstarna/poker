@@ -990,7 +990,6 @@ pub struct Game<'a> {
     small_blind: u32,
     big_blind: u32,
     buy_in: u32,
-    is_private: bool, // will it show up in the list of games
     password: Option<String>,
 }
 
@@ -1010,7 +1009,6 @@ impl<'a> Default for Game<'a> {
             small_blind: 4,
             big_blind: 8,
             buy_in: 1000,
-            is_private: true,
             password: None,
         }
     }
@@ -1029,7 +1027,6 @@ impl<'a> Game<'a> {
         small_blind: u32,
         big_blind: u32,
         buy_in: u32,
-        is_private: bool, // will it show up in the list of games
         password: Option<String>,
     ) -> Self {
         let deck = if deck_opt.is_some() {
@@ -1050,7 +1047,6 @@ impl<'a> Game<'a> {
             small_blind,
             big_blind,
             buy_in,
-            is_private,
             password,
         }
     }
@@ -1086,6 +1082,7 @@ impl<'a> Game<'a> {
                 let message = object! {
                     msg_type: "joined_game".to_owned(),
                     index: i,
+		    table_name: self.name.clone(),
                 };
                 PlayerConfig::send_specific_message(
                     &message.dump(),

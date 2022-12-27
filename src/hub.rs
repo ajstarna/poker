@@ -247,7 +247,12 @@ impl Handler<Create> for GameHub {
             // the player is not in the main lobby,
             // so we must be waiting for the game to remove the player still
             println!("player config not in the main lobby, so they must already be at a game");
-            return Err(CreateGameError::AlreadyAtTable("todo".to_owned()));
+	    if let Some(table_name) = self.players_to_table.get(&id) {
+		return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
+	    } else {
+		println!("player not at lobby nor at a table");
+		return Err(CreateGameError::AlreadyAtTable("unknown".to_string()));		    
+	    }
         }
         let player_config = player_config_option.unwrap();
 
@@ -339,7 +344,6 @@ impl Handler<Create> for GameHub {
                 small_blind,
                 big_blind,
                 buy_in,
-                is_private, // TODO does the game even need this field
                 password,
             );
 
