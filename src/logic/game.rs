@@ -165,9 +165,10 @@ struct GameHand {
     button_idx: usize, // the button index dictates where the action starts
     small_blind: u32,
     big_blind: u32,
+    buy_in: u32,
     street: Street,
     pot_manager: PotManager,
-    total_contributions: [u32; 9], // keep track of how much a player contributed to the pot during the whole hand
+    total_contributions: [u32; 9], // how much a player contributed to the pot during the whole hand
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -178,11 +179,13 @@ impl GameHand {
         button_idx: usize,
         small_blind: u32,
         big_blind: u32,
+	buy_in: u32, //how much money do new players get
     ) -> Self {
         GameHand {
             button_idx,
             small_blind,
             big_blind,
+	    buy_in, 
             street: Street::Preflop,
             pot_manager: PotManager::new(),
 	    total_contributions: [0; 9],
@@ -868,7 +871,8 @@ impl GameHand {
 	    // the first thing we do on each loop is handle meta action
 	    // this lets us display messages in real-time without having to wait until after the
 	    // current player gives their action
-	    Game::handle_meta_actions(players, player_ids_to_configs, incoming_meta_actions, hub_addr);
+	    Game::handle_meta_actions(players, player_ids_to_configs,
+				      incoming_meta_actions, hub_addr, self.buy_in);
 	    
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -1073,26 +1077,27 @@ impl Game {
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
     pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true)
+	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true, self.buy_in)
     }
 
     pub fn add_bot(&mut self, name: String) -> Option<usize> {
 	let new_bot = Player::new_bot();
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false)
+	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false, self.buy_in)
     }
     
     fn add_player(
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	player_config: PlayerConfig,
-	human_controlled: bool
+	human_controlled: bool,
+	buy_in: u32,
     ) -> Option<usize> {
 	let mut index = None;
 	for (i, player_spot) in players.iter_mut().enumerate() {
 	    if player_spot.is_none() {
 		let id = player_config.id; // copy the id for sending a message after we add the config
-		*player_spot = Some(Player::new(player_config.id, human_controlled));
+		*player_spot = Some(Player::new(player_config.id, human_controlled, buy_in));
 		player_ids_to_configs.insert(player_config.id, player_config);
 		index = Some(i);
 		println!("Joining game at index: {}", i);
@@ -1132,6 +1137,7 @@ impl Game {
             self.button_idx,
             self.small_blind,
             self.big_blind,
+	    self.buy_in,
         );
         game_hand.play(
 	    &mut self.deck,	    
@@ -1180,6 +1186,7 @@ impl Game {
 		&mut self.player_ids_to_configs,
 		incoming_meta_actions,
 		self.hub_addr.as_ref(),
+		self.buy_in,
 	    );
 	    // attempt to set the next button
 	    self.button_idx = self.find_next_button().expect("we could not find a valid button index!");
@@ -1219,6 +1226,7 @@ impl Game {
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
 	hub_addr: Option<&Addr<GameHub>>,
+	buy_in: u32, // if a player is added, how much money do they start with
     ) {
 	let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	//println!("meta_actions = {:?}", meta_actions);
@@ -1245,7 +1253,9 @@ impl Game {
 			players,
 			player_ids_to_configs,
 			player_config,
-			true).is_none()
+			true,
+			buy_in,
+		    ).is_none()
 		    {
 			// we were unable to add the player
 			PlayerConfig::send_specific_message(

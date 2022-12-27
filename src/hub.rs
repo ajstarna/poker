@@ -225,16 +225,18 @@ impl Handler<Create> for GameHub {
 
 
 	let (mut game, table_name) = if let (Some(max_players),
-					 Some(small_blind),
-					 Some(big_blind),
-					 Some(buy_in),
-					 Some(is_private),
-					 Some(password)) = (create_msg.get("max_players"),
-							    create_msg.get("small_blind"),
-							    create_msg.get("big_blind"),
-							    create_msg.get("buy_in"),
-							    create_msg.get("is_private"),
-							    create_msg.get("password")) 	{
+					     Some(small_blind),
+					     Some(big_blind),
+					     Some(buy_in),
+					     Some(num_bots),					     
+					     Some(is_private),
+					     Some(password)) = (create_msg.get("max_players"),
+								create_msg.get("small_blind"),
+								create_msg.get("big_blind"),
+								create_msg.get("buy_in"),
+								create_msg.get("num_bots"),
+								create_msg.get("is_private"),
+								create_msg.get("password")) 	{
 	    let max_players = max_players.to_string()
 		.parse::<u8>()
 		.map_err(|_| CreateGameError::InvalidFieldValue("max_players".to_owned()))?;
@@ -247,6 +249,9 @@ impl Handler<Create> for GameHub {
 	    let buy_in = buy_in.to_string()
 		.parse::<u32>()
 		.map_err(|_| CreateGameError::InvalidFieldValue("buy_in".to_owned()))?;
+	    let num_bots = num_bots.to_string()
+		.parse::<u8>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("num_bots".to_owned()))?;
 	    let is_private = is_private.to_string()
 		.parse::<bool>()
 		.map_err(|_| CreateGameError::InvalidFieldValue("is_private".to_owned()))?;
@@ -276,7 +281,7 @@ impl Handler<Create> for GameHub {
 		break genned_name
 	    };
 	    
-            let game = Game::new(
+            let mut game = Game::new(
 		Some(ctx.address()),
 		table_name.clone(),
 		None, // no deck needed to pass in
@@ -287,6 +292,12 @@ impl Handler<Create> for GameHub {
 		is_private,
 		password,
 	    );
+
+            for i in 0..num_bots {
+		let name = format!("Mr {}", i);
+		game.add_bot(name);
+            }
+	    
             // update the mapping to find the player at a table	
             self.players_to_table.insert(id, table_name.clone());
 	    (game, table_name)
@@ -296,12 +307,6 @@ impl Handler<Create> for GameHub {
 	    return Err(CreateGameError::MissingField);
 	};
 		
-	
-        let num_bots = 2;
-        for i in 0..num_bots {
-	    let name = format!("Mr {}", i);
-	    game.add_bot(name);
-        }
 	
         if game.add_user(player_config).is_none() {
 	    panic!("how were we unable to join a fresh game?");

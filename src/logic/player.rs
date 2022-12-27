@@ -63,30 +63,30 @@ impl PlayerConfig {
 
 #[derive(Debug, Clone)]
 pub struct Player {
-    pub id: Uuid,    
-    pub hole_cards: Vec<Card>,
+    pub id: Uuid,
+    pub human_controlled: bool, // do we need user input or let the computer control it
+    pub money: u32,    
     pub is_active: bool,      // is still playing the current hand
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
-    pub money: u32,
-    pub human_controlled: bool, // do we need user input or let the computer control it
+    pub hole_cards: Vec<Card>,
 }
 
 impl Player {
-    pub fn new(id: Uuid, human_controlled: bool) -> Self {
+    pub fn new(id: Uuid, human_controlled: bool, money: u32) -> Self {
         Player {
             id,
-            hole_cards: Vec::<Card>::with_capacity(2),
+            human_controlled,	    	    
+            money,	    
             is_active: false, // a branch new player is not active in a hand
             is_sitting_out: false,
-            money: 1000, // let them start with 1000 for now,
-            human_controlled,
+            hole_cards: Vec::<Card>::with_capacity(2),	    
         }
     }
 
     /// create a new bot from scratch
     pub fn new_bot() -> Self {
         let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
-        Self::new(bot_id, false)
+        Self::new(bot_id, false, 1000)
     }
 
     pub fn pay(&mut self, payment: u32) {
