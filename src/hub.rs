@@ -237,19 +237,19 @@ impl Handler<Create> for GameHub {
 	}
 
 
-	let (mut game, table_name) = if let (Some(max_players),
-					     Some(small_blind),
-					     Some(big_blind),
-					     Some(buy_in),
-					     Some(num_bots),					     
-					     Some(is_private),
-					     Some(password)) = (create_msg.get("max_players"),
-								create_msg.get("small_blind"),
-								create_msg.get("big_blind"),
-								create_msg.get("buy_in"),
-								create_msg.get("num_bots"),
-								create_msg.get("is_private"),
-								create_msg.get("password")) 	{
+	if let (Some(max_players),
+		Some(small_blind),
+		Some(big_blind),
+		Some(buy_in),
+		Some(num_bots),					     
+		Some(is_private),
+		Some(password)) = (create_msg.get("max_players"),
+				   create_msg.get("small_blind"),
+				   create_msg.get("big_blind"),
+				   create_msg.get("buy_in"),
+				   create_msg.get("num_bots"),
+				   create_msg.get("is_private"),
+				   create_msg.get("password")) 	{
 	    let max_players = max_players.to_string()
 		.parse::<u8>()
 		.map_err(|_| CreateGameError::InvalidFieldValue("max_players".to_owned()))?;
@@ -293,9 +293,18 @@ impl Handler<Create> for GameHub {
 		// we genned a name that is new
 		break genned_name
 	    };
+
+
+	    let actions = Arc::new(Mutex::new(HashMap::new()));	
+	    let cloned_actions = actions.clone();
 	    
+	    let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+	    let cloned_meta_actions = meta_actions.clone();
+
             let mut game = Game::new(
-		Some(ctx.address()),
+		ctx.address(),
+		&cloned_actions,
+		&cloned_meta_actions,		
 		table_name.clone(),
 		None, // no deck needed to pass in
 		max_players,
@@ -317,34 +326,26 @@ impl Handler<Create> for GameHub {
 	    
             // update the mapping to find the player at a table	
             self.players_to_table.insert(id, table_name.clone());
-	    (game, table_name)
+
+            if game.add_user(player_config).is_none() {
+		panic!("how were we unable to join a fresh game?");
+	    } else {
+		println!("in the hub. we just joined fine?");
+	    }
 	    
+	    //let b: bool = cloned_queue;
+	    thread::spawn(move || {
+		// start a game with no hand limit
+		game.play(None);
+	    });
+	    
+            self.tables_to_actions.insert(table_name.clone(), actions);
+            self.tables_to_meta_actions.insert(table_name.clone(), meta_actions);
+            Ok(table_name) // return the table name	    
 	} else {
 	    println!("create message missing one or more required fields!");
 	    return Err(CreateGameError::MissingField);
-	};
-		
-	
-        if game.add_user(player_config).is_none() {
-	    panic!("how were we unable to join a fresh game?");
-	} else {
-	    println!("in the hub. we just joined fine?");
 	}
-	
-	let actions = Arc::new(Mutex::new(HashMap::new()));	
-	let cloned_actions = actions.clone();
-	
-	let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-	let cloned_meta_actions = meta_actions.clone();
-	//let b: bool = cloned_queue;
-	thread::spawn(move || {
-	    // start a game with no hand limit
-	    game.play(&cloned_actions, &cloned_meta_actions, None);
-	});
-	
-        self.tables_to_actions.insert(table_name.clone(), actions);
-        self.tables_to_meta_actions.insert(table_name.clone(), meta_actions);
-        Ok(table_name)
     }
 }
 

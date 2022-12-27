@@ -84,9 +84,9 @@ impl Player {
     }
 
     /// create a new bot from scratch
-    pub fn new_bot() -> Self {
+    pub fn new_bot(money: u32) -> Self {
         let bot_id = Uuid::new_v4(); // can just gen a new arbitrary id for the bot
-        Self::new(bot_id, false, 1000)
+        Self::new(bot_id, false, money)
     }
 
     pub fn pay(&mut self, payment: u32) {

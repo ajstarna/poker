@@ -162,10 +162,6 @@ impl PotManager {
 
 #[derive(Debug)]
 struct GameHand {
-    button_idx: usize, // the button index dictates where the action starts
-    small_blind: u32,
-    big_blind: u32,
-    buy_in: u32,
     street: Street,
     pot_manager: PotManager,
     total_contributions: [u32; 9], // how much a player contributed to the pot during the whole hand
@@ -175,17 +171,8 @@ struct GameHand {
 }
 
 impl GameHand {
-    fn new(
-        button_idx: usize,
-        small_blind: u32,
-        big_blind: u32,
-	buy_in: u32, //how much money do new players get
-    ) -> Self {
+    fn default() -> Self {
         GameHand {
-            button_idx,
-            small_blind,
-            big_blind,
-	    buy_in, 
             street: Street::Preflop,
             pot_manager: PotManager::new(),
 	    total_contributions: [0; 9],
@@ -195,79 +182,77 @@ impl GameHand {
         }
     }
 
-    fn transition(&mut self, deck: &mut Box<dyn Deck>,  player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
+}
+
+impl Game {
+    
+    fn transition(&mut self, mut gamehand: GameHand) {
         let pause_duration = time::Duration::from_secs(2); 	
         thread::sleep(pause_duration);	
-        match self.street {
+        match gamehand.street {
             Street::Preflop => {
-                self.street = Street::Flop;
-                self.deal_flop(deck);
+                gamehand.street = Street::Flop;
+                self.deal_flop(gamehand);
                 println!(
                     "\n===========================\nFlop = {:?}\n===========================",
-                    self.flop
+                    gamehand.flop
                 );
 		let message = object!{
 		    msg_type: "flop".to_owned(),
                     flop: format!("{}{}{}",
-				  self.flop.as_ref().unwrap()[0],
-				  self.flop.as_ref().unwrap()[1],
-				  self.flop.as_ref().unwrap()[2]),
+				  gamehand.flop.as_ref().unwrap()[0],
+				  gamehand.flop.as_ref().unwrap()[1],
+				  gamehand.flop.as_ref().unwrap()[2]),
 		};
                 PlayerConfig::send_group_message(
 		    &message.dump(),
-		    player_ids_to_configs);		
+		    &self.player_ids_to_configs);		
             }
             Street::Flop => {
-                self.street = Street::Turn;
-                self.deal_turn(deck);
+                gamehand.street = Street::Turn;
+                self.deal_turn(gamehand);
                 println!(
                     "\n==========================\nTurn = {:?}\n==========================",
-                    self.turn
+                    gamehand.turn
                 );
 		let message = object!{
 		    msg_type: "turn".to_owned(),
-                    turn: format!("{}", self.turn.unwrap())
+                    turn: format!("{}", gamehand.turn.unwrap())
 		};
                 PlayerConfig::send_group_message(
 		    &message.dump(),
-		    player_ids_to_configs);				
+		    &self.player_ids_to_configs);				
             }
             Street::Turn => {
-                self.street = Street::River;
-                self.deal_river(deck);
+                gamehand.street = Street::River;
+                self.deal_river(gamehand);
                 println!(
                     "\n==========================\nRiver = {:?}\n==========================",
-                    self.river
+                    gamehand.river
                 );
 		let message = object!{
 		    msg_type: "river".to_owned(),
-                    river: format!("{}", self.river.unwrap())
+                    river: format!("{}", gamehand.river.unwrap())
 		};
                 PlayerConfig::send_group_message(
 		    &message.dump(),
-		    player_ids_to_configs);				
+		    &self.player_ids_to_configs);				
 	    }
             Street::River => {
-                self.street = Street::ShowDown;
+                gamehand.street = Street::ShowDown;
                 println!(
                     "\n==========================\nShowDown!\n================================"
                 );
-		/*
-                PlayerConfig::send_group_message(
-                    &format!("\n===========================\nShowDown!\n==========================="),
-		    player_ids_to_configs);						
-		 */
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
     }
 
-    fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
-		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-        for player in players.iter_mut().flatten() {
+    fn deal_hands(&mut self) {
+        for player in self.players.iter_mut().flatten() {
             if player.is_active {
                 for _ in 0..2 {
-                    if let Some(card) = deck.draw_card() {
+                    if let Some(card) = self.deck.draw_card() {
                         player.hole_cards.push(card)
                     } else {
                         panic!("The deck is out of cards somehow?");
@@ -280,54 +265,51 @@ impl GameHand {
 		PlayerConfig::send_specific_message(
 		    &message.dump(),
 		    player.id,
-		    player_ids_to_configs
+		    &self.player_ids_to_configs
 		);
             }
         }
     }
 
-    fn deal_flop(&mut self, deck: &mut Box<dyn Deck>) {
+    fn deal_flop(&mut self, mut gamehand: GameHand) {
         let mut flop = Vec::<Card>::with_capacity(3);
         for _ in 0..3 {
-            if let Some(card) = deck.draw_card() {
+            if let Some(card) = self.deck.draw_card() {
                 flop.push(card)
             } else {
                 panic!("we exhausted the deck somehow");
             }
         }
-        self.flop = Some(flop);
+        gamehand.flop = Some(flop);
     }
 
-    fn deal_turn(&mut self, deck: &mut Box<dyn Deck>) {
-        self.turn = deck.draw_card();
+    fn deal_turn(&mut self, mut gamehand: GameHand) {
+        gamehand.turn = self.deck.draw_card();
     }
 
-    fn deal_river(&mut self, deck: &mut Box<dyn Deck>) {
-        self.river = deck.draw_card();
+    fn deal_river(&mut self, mut gamehand: GameHand) {
+        gamehand.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self, players: &mut [Option<Player>],
-	      player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,
-    ) {
-
+    fn finish(&mut self, mut gamehand: GameHand) {
 	// pause for a second for dramatic effect heh
         let pause_duration = time::Duration::from_secs(2); 	
         thread::sleep(pause_duration);
 	
-        let hand_results: HashMap<Uuid, Option<HandResult>>  = players
+        let hand_results: HashMap<Uuid, Option<HandResult>>  = self.players
             .iter()
             .flatten()
-            .map(|player| {return (player.id, self.determine_best_hand(player))})
+            .map(|player| {return (player.id, self.determine_best_hand(player, gamehand))})
             .collect();
 
-	let is_showdown = self.street == Street::ShowDown;
+	let is_showdown = gamehand.street == Street::ShowDown;
 	println!("hand results = {:?}", hand_results);
-        if let Street::ShowDown = self.street {
+        if let Street::ShowDown = gamehand.street {
             // if we made it to show down, there are multiple players left, so we need to see who
             // has the best hand.
             println!("Multiple active players made it to showdown!");
-	    println!("{:?}", self.pot_manager);
-	    for pot in self.pot_manager.pots.iter() {
+	    println!("{:?}", gamehand.pot_manager);
+	    for pot in gamehand.pot_manager.pots.iter() {
 		// for each pot, we determine who should get paid out
 		// a player can only get paid for a pot that they contributed to
 		// so each pot has its own best_hand calculation
@@ -342,7 +324,7 @@ impl GameHand {
                     if current_opt.is_none() {
 			continue;
                     }
-		    if !player_ids_to_configs.contains_key(id) {
+		    if !self.player_ids_to_configs.contains_key(id) {
 			println!("player id {} no longer exists in the configs, they must have left!", id);
 			continue
 		    }
@@ -364,12 +346,12 @@ impl GameHand {
 		let num_winners = best_ids.len();
 		let payout = (pot.money as f64 / num_winners as f64) as u32;
 		//self.pot_manager.pots.first_mut().unwrap().money = 0;		
-		GameHand::pay_players(players, player_ids_to_configs, best_ids, payout, &hand_results, is_showdown);
+		self.pay_players(best_ids, payout, &hand_results, is_showdown);
 	    }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
             let mut best_ids = HashSet::<Uuid>::new();	    
-            for player in players.iter().flatten() {
+            for player in self.players.iter().flatten() {
                 if player.is_active {
                     //println!("found an active player remaining");
                     best_ids.insert(player.id);
@@ -379,12 +361,13 @@ impl GameHand {
             }
 	    // if we didn't make it to show down, there better be only one player left	    
             assert!(best_ids.len() == 1);
-	    GameHand::pay_players(players, player_ids_to_configs, best_ids,
-			     self.pot_manager.pots.first().unwrap().money, &hand_results, is_showdown);
+	    self.pay_players(best_ids,
+			     gamehand.pot_manager.pots.first().unwrap().money,
+			     &hand_results, is_showdown);
         }
 
         // take the players' cards
-        for player in players.iter_mut().flatten() {
+        for player in self.players.iter_mut().flatten() {
             // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
         }
@@ -392,18 +375,17 @@ impl GameHand {
 
 
     fn pay_players(
-	players: &mut [Option<Player>],
-	player_ids_to_configs: &HashMap<Uuid, PlayerConfig>,		   
+	&mut self,
 	best_ids: HashSet::<Uuid>,
 	payout: u32,
         hand_results: &HashMap<Uuid, Option<HandResult>>,
 	is_showdown: bool
     ) {
 	println!("best_indices = {:?}", best_ids);
-	for player in players.iter_mut().flatten() {
+	for player in self.players.iter_mut().flatten() {
 	    if best_ids.contains(&player.id) {
 		// get the name for messages		    
-		let name: String = if let Some(config) = &player_ids_to_configs.get(&player.id) {
+		let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id) {
 		    config.name.as_ref().unwrap().clone()
 		} else {
 		    // it is a bit weird if we made it all the way to the pay stage for a left player		    
@@ -434,19 +416,8 @@ impl GameHand {
 		};
 		PlayerConfig::send_group_message(
 		    &message.dump(),
-		    &player_ids_to_configs
+		    &self.player_ids_to_configs
 		);			
-
-		/*
-		PlayerConfig::send_group_message(
-		    &format!("paying out {:?} to {:?}, with hole cards = {:?}",
-			     payout, name, hole_string),
-		    &player_ids_to_configs);			
-		PlayerConfig::send_group_message(
-		    &format!("hand result = {:?}",
-			     ranking_string),
-		    &player_ids_to_configs);			
-		*/
 		player.pay(payout);
 		println!("after payment: {:?}", player);
 	    } 
@@ -454,13 +425,13 @@ impl GameHand {
     }
     
     /// Given a player, we need to determine which 5 cards make the best hand for this player
-    fn determine_best_hand(&self, player: &Player) -> Option<HandResult> {	
+    fn determine_best_hand(&self, player: &Player, mut gamehand: GameHand) -> Option<HandResult> {	
         if !player.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
         }
 
-        if let Street::ShowDown = self.street {
+        if let Street::ShowDown = gamehand.street {
             // we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
             let mut best_result: Option<HandResult> = None;
             let mut hand_count = 0;
@@ -473,9 +444,9 @@ impl GameHand {
                     for (idx, card) in player
                         .hole_cards
                         .iter()
-                        .chain(self.flop.as_ref().unwrap().iter())
-                        .chain(iter::once(&self.turn.unwrap()))
-                        .chain(iter::once(&self.river.unwrap()))
+                        .chain(gamehand.flop.as_ref().unwrap().iter())
+                        .chain(iter::once(&gamehand.turn.unwrap()))
+                        .chain(iter::once(&gamehand.river.unwrap()))
                         .enumerate()
                     {
                         if idx != exclude_idx1 && idx != exclude_idx2 {
@@ -502,52 +473,46 @@ impl GameHand {
             None
         }
     }
-
-    fn play(&mut self,
-            deck: &mut Box<dyn Deck>,	    
-	    players: &mut [Option<Player>],
-	    player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
-	    incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	    incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	    hub_addr: Option<&Addr<GameHub>>,	    
-    ) {
+    
+    fn play_one_hand(&mut self) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-	for player in players.iter_mut().flatten() {
+	let mut gamehand = GameHand::default();
+	
+	for player in self.players.iter_mut().flatten() {
 	    if player.is_sitting_out || player.money == 0 {
 		player.is_active = false;		
 	    } else {
 		player.is_active = true;
 	    }
 	}
-	for (i, player_spot) in players.iter().enumerate() {
+	for (i, player_spot) in self.players.iter().enumerate() {
 	    // display the play positions for the front end to consume
 	    if let Some(player) = player_spot {
 		let mut message = object!{
 		    msg_type: "player_info".to_owned(),
 		    index: i
 		};
-		let config = player_ids_to_configs.get(&player.id).unwrap();
+		let config = self.player_ids_to_configs.get(&player.id).unwrap();
 		let name = config.name.as_ref().unwrap().clone();
 		message["player_name"] = name.into();
 		message["money"] = player.money.into();
 		message["is_active"] = player.is_active.into();		    
 		PlayerConfig::send_group_message(&message.dump(),
-						 &player_ids_to_configs);			
+						 &self.player_ids_to_configs);			
 	    } 
 	}	    	    
 
 	
-        deck.shuffle();
-        self.deal_hands(deck, players, player_ids_to_configs);
+        self.deck.shuffle();
+        self.deal_hands();
 
-        println!("players = {:?}", players);
-        //PlayerConfig::send_group_message(&format!("players = {:?}", players), player_ids_to_configs);
-        while self.street != Street::ShowDown {
+        println!("players = {:?}", self.players);
+
+        while gamehand.street != Street::ShowDown {
 	    // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2); 	
             thread::sleep(pause_duration);	    
-            let finished = self.play_street(players, player_ids_to_configs,
-					    incoming_actions, incoming_meta_actions, hub_addr);	    
+            let finished = self.play_street(gamehand);
 	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -556,19 +521,19 @@ impl GameHand {
                 break;
             } else {
                 // otherwise we move to the next street
-                self.transition(deck, player_ids_to_configs);
+                self.transition(gamehand)
             }	    
         }
         // now we finish up and pay the pot to the winner
-        self.finish(players, player_ids_to_configs);
+        self.finish(gamehand);
     }
 
-    fn get_starting_idx(&self, players: &mut [Option<Player>]) -> usize {
+    fn get_starting_idx(&self) -> usize {
         // the starting index is either the person one more from the button on most streets,
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
         let mut starting_idx = self.button_idx + 1;
-        if starting_idx as usize >= players.len() {
+        if starting_idx as usize >= self.players.len() {
             starting_idx = 0;
         }
         starting_idx
@@ -577,26 +542,22 @@ impl GameHand {
     /// this method returns a bool indicating whether the hand is over or not
     fn play_street(
 	&mut self,
-	players: &mut [Option<Player>],
-	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: Option<&Addr<GameHub>>,
+	mut gamehand: GameHand,
     ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
-        let mut cumulative_bets = vec![0; players.len()];
+        let mut cumulative_bets = vec![0; self.players.len()];
 
-        let starting_idx = self.get_starting_idx(players); // which player starts the betting
+        let starting_idx = self.get_starting_idx(); // which player starts the betting
 
         // if a player is still active but has no remaining money (i.e. is all-in),
-        let mut num_all_in = players
+        let mut num_all_in = self.players
             .iter()
             .flatten() // skip over None values
             .filter(|player| player.is_all_in())
             .count();
 
-        let mut num_active = players
+        let mut num_active = self.players
             .iter()
             .flatten() // skip over None values
             .filter(|player| player.is_active)
@@ -617,10 +578,6 @@ impl GameHand {
 	// once every player is either all-in or settled, then we move to the next street	
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
 	
-        println!("Current pot = {:?}", self.pot_manager.pots.last());
-        //PlayerConfig::send_group_message(&format!("Current pot = {:?}",
-	//					  self.pot_manager.pots.last()), player_ids_to_configs);
-
         println!("num active players = {}", num_active);
         //PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
@@ -631,7 +588,7 @@ impl GameHand {
             PlayerConfig::send_group_message(&format!(
                 "num settled (i.e. all in players) = {}",
                 num_settled
-            ), player_ids_to_configs);
+            ), &self.player_ids_to_configs);
         }
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
@@ -654,7 +611,8 @@ impl GameHand {
 		return false;
 	    }
 
-	    if players[i].is_none() {
+	    if self.players[i].is_none() {
+		// no one sitting in this spot
 		continue;
 	    }
 
@@ -663,10 +621,10 @@ impl GameHand {
 	    // if we handle_meta_actions BEFORE accessing the current player, then we will have to wait
 	    // a long time between user messages, which is a worse user experience
 	    // the Player struct is not super heavy to clone.
-	    let player = players[i].clone().unwrap();
+	    let player = self.players[i].clone().unwrap();
 	    let player_cumulative = cumulative_bets[i];
 	    println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
-		     self.pot_manager,
+		     gamehand.pot_manager,
 		     current_bet,
 		     player_cumulative);
 	    println!("Player = {:?}, i = {}", player.id, i);
@@ -674,7 +632,7 @@ impl GameHand {
 		continue;
 	    }
 	    // get the name for messages		    
-	    let name = if let Some(config) = &player_ids_to_configs.get(&player.id) {
+	    let name = if let Some(config) = &self.player_ids_to_configs.get(&player.id) {
 		config.name.as_ref().unwrap().clone()
 	    } else {
 		"Player who left".to_string()
@@ -688,17 +646,13 @@ impl GameHand {
 	    
 	    PlayerConfig::send_group_message(
 		&message.dump(),
-		player_ids_to_configs);
+		&self.player_ids_to_configs);
 	    
 	    let action = self.get_and_validate_action(
 		&player,
 		current_bet,
 		player_cumulative,
-		players,
-		player_ids_to_configs,
-		incoming_actions,
-		incoming_meta_actions,
-		hub_addr,
+		gamehand,
 	    );
 
 	    let mut message = object!{
@@ -710,13 +664,13 @@ impl GameHand {
 	    // now that we have gotten the current player's action and handled
 	    // any meta actions, we are free to respond and mutate the player
 	    // so we re-borrow it as mutable
-	    let player = players[i].as_mut().unwrap();		
+	    let player = self.players[i].as_mut().unwrap();		
 	    match action {			
 		PlayerAction::PostSmallBlind(amount) => {
 		    message["action"] = "small blind".into();
 		    message["amount"] = amount.into();			    
 		    cumulative_bets[i] += amount;
-		    self.total_contributions[i] += amount;
+		    gamehand.total_contributions[i] += amount;
 		    player.money -= amount;
 		    // regardless if the player couldn't afford it, the new street bet is the big blind
 		    current_bet = self.small_blind;
@@ -726,13 +680,13 @@ impl GameHand {
 		    } else {
 			false
 		    };
-		    self.pot_manager.contribute(player.id, amount, all_in);
+		    gamehand.pot_manager.contribute(player.id, amount, all_in);
 		}
 		PlayerAction::PostBigBlind(amount) => {
 		    message["action"] = "big blind".into();
 		    message["amount"] = amount.into();			    			    
 		    cumulative_bets[i] += amount;
-		    self.total_contributions[i] += amount;			    
+		    gamehand.total_contributions[i] += amount;			    
 		    player.money -= amount;
 		    // regardless if the player couldn't afford it, the new street bet is the big blind
 		    current_bet = self.big_blind;
@@ -742,7 +696,7 @@ impl GameHand {
 		    } else {
 			false
 		    };
-		    self.pot_manager.contribute(player.id, amount, all_in);			    
+		    gamehand.pot_manager.contribute(player.id, amount, all_in);			    
 		    // note: we dont count the big blind as a "settled" player,
 		    // since they still get a chance to act after the small blind
 		}
@@ -760,16 +714,16 @@ impl GameHand {
 		    let difference = current_bet - player_cumulative;
 		    if difference >= player.money {
 			println!("you have to put in the rest of your chips");
-			self.pot_manager.contribute(player.id, player.money, true);
+			gamehand.pot_manager.contribute(player.id, player.money, true);
 			cumulative_bets[i] += player.money;
-			self.total_contributions[i] += player.money;
+			gamehand.total_contributions[i] += player.money;
 			message["amount"] = player.money.into();		
 			player.money = 0;
 			num_all_in += 1;
 		    } else {
-			self.pot_manager.contribute(player.id, difference, false);
+			gamehand.pot_manager.contribute(player.id, difference, false);
 			cumulative_bets[i] += difference;
-			self.total_contributions[i] += difference;
+			gamehand.total_contributions[i] += difference;
 			message["amount"] = difference.into();					
 			player.money -= difference;
 			num_settled += 1;				
@@ -782,7 +736,7 @@ impl GameHand {
 		    current_bet = new_bet;
 		    cumulative_bets[i] += difference;
 		    println!("sup {:?}", player);
-		    self.total_contributions[i] += difference;
+		    gamehand.total_contributions[i] += difference;
 		    let all_in = if player.is_all_in() {
 			println!("Just bet the rest of our money!");
 			num_all_in += 1;
@@ -792,13 +746,13 @@ impl GameHand {
 			num_settled = 1;
 			false
 		    };
-		    self.pot_manager.contribute(player.id, difference, all_in);
+		    gamehand.pot_manager.contribute(player.id, difference, all_in);
 		    message["action"] = "bet".into();
 		    message["amount"] = new_bet.into();
 		}
 	    }
 	    message["money"] = player.money.into();
-	    message["pots"] = self.pot_manager.simple_repr().into();
+	    message["pots"] = gamehand.pot_manager.simple_repr().into();
 	    message["is_active"] = player.is_active.into();
 	    message["street_contributions"] = cumulative_bets[i].into();
 	    message["current_bet"] = current_bet.into();		    		    
@@ -806,7 +760,7 @@ impl GameHand {
 	    println!("{}", message.dump());
 	    PlayerConfig::send_group_message(
 		&message.dump(),
-		player_ids_to_configs
+		&self.player_ids_to_configs
 	    );
 	}
 	true // we can't actually get to this line
@@ -815,12 +769,10 @@ impl GameHand {
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
     /// this value is set by the game hub when handling a message from a player client
     fn get_action_from_player(
-	player: &Player,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>)
-	-> Option<PlayerAction>
-    {
+	&self, 
+	player: &Player) -> Option<PlayerAction> {
         if player.human_controlled {
-	    let mut actions = incoming_actions.lock().unwrap();	    
+	    let mut actions = self.incoming_actions.unwrap().lock().unwrap();	    
 	    println!("incoming_actions = {:?}", actions);	    
             if let Some(action) = actions.get_mut(&player.id) {
                 println!(
@@ -857,11 +809,7 @@ impl GameHand {
         player: &Player,
         current_bet: u32,
         player_cumulative: u32,
-	players: &mut [Option<Player>],
-	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: Option<&Addr<GameHub>>,
+	mut gamehand: GameHand,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -871,13 +819,13 @@ impl GameHand {
         let pause_duration = time::Duration::from_secs(1); 	
         thread::sleep(pause_duration);
 	
-        if self.street == Street::Preflop && current_bet == 0 {
+        if gamehand.street == Street::Preflop && current_bet == 0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(
                 self.small_blind,
                 player.money,
             ));
-        } else if self.street == Street::Preflop && current_bet == self.small_blind {
+        } else if gamehand.street == Street::Preflop && current_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(
                 cmp::min(self.big_blind, player.money),
@@ -896,7 +844,7 @@ impl GameHand {
 	PlayerConfig::send_specific_message(
 	    &message.dump(),
 	    player.id,
-	    &player_ids_to_configs,
+	    &self.player_ids_to_configs,
 	);			    			    
 		
         let mut action = None;
@@ -907,8 +855,7 @@ impl GameHand {
 	    // the first thing we do on each loop is handle meta action
 	    // this lets us display messages in real-time without having to wait until after the
 	    // current player gives their action
-	    Game::handle_meta_actions(players, player_ids_to_configs,
-				      incoming_meta_actions, hub_addr, self.buy_in);
+	    self.handle_meta_actions();
 	    
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -921,7 +868,7 @@ impl GameHand {
 		action = Some(PlayerAction::Fold);
 		break;
 	    }
-	    if !player_ids_to_configs.contains_key(&player.id) {
+	    if !self.player_ids_to_configs.contains_key(&player.id) {
 		// the config no longer exists for this player, so they must have left
 		println!("player config no longer exists, so the player must have left");
 		action = Some(PlayerAction::Fold);
@@ -929,7 +876,7 @@ impl GameHand {
 	    }
 	    
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match GameHand::get_action_from_player(player, incoming_actions) {
+            match self.get_action_from_player(player) {
 		None => {
                     // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
@@ -944,7 +891,7 @@ impl GameHand {
 			    PlayerConfig::send_specific_message(			    
 				&"You said fold but we will let you check!".to_owned(),
 				player.id,
-				player_ids_to_configs
+				&self.player_ids_to_configs
 			    );			    
                         }
                         action = Some(PlayerAction::Check);
@@ -960,7 +907,7 @@ impl GameHand {
 			    PlayerConfig::send_specific_message(
 				&"You can't check since there is a bet!!".to_owned(),
 				player.id,
-				player_ids_to_configs
+				&self.player_ids_to_configs
 			    );
                         }
                         continue;
@@ -977,7 +924,7 @@ impl GameHand {
 			PlayerConfig::send_specific_message(
 			    &"There is nothing for you to call!!".to_owned(),
 			    player.id,
-			    player_ids_to_configs
+			    &self.player_ids_to_configs
 			);
 			
                         action = Some(PlayerAction::Check);			
@@ -1005,7 +952,7 @@ impl GameHand {
 			PlayerConfig::send_specific_message(
 			    &"You can't bet more than you have!!".to_owned(),
 			    player.id,
-			    player_ids_to_configs
+			    &self.player_ids_to_configs
 			);
                         continue;
                     }
@@ -1014,7 +961,7 @@ impl GameHand {
 			PlayerConfig::send_specific_message(
 			    &"the new bet has to be larger than the current bet!".to_owned(),
 			    player.id,
-			    player_ids_to_configs
+			    &self.player_ids_to_configs
 			);
                         continue;
                     }
@@ -1039,7 +986,9 @@ impl GameHand {
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    pub name: String, 
+    incoming_actions: Option<&Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
+    incoming_meta_actions: Option<&Arc<Mutex<VecDeque<MetaAction>>>>,	
+    pub name: String,
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
@@ -1057,6 +1006,8 @@ impl Default for Game {
     fn default() -> Self {
         Self {
 	    hub_addr: None,
+	    incoming_actions: None,
+	    incoming_meta_actions: None,
 	    name: "Game".to_owned(),
             deck: Box::new(StandardDeck::new()),
             players: Default::default(),
@@ -1078,7 +1029,9 @@ impl Game {
     /// the address of the GameHub is optional so that unit tests need not worry about it
     /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
     pub fn new(
-	hub_addr: Option<Addr<GameHub>>,
+	hub_addr: Addr<GameHub>,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	
 	name: String,
 	deck_opt: Option<Box<dyn Deck>>,
 	max_players: u8, // how many will we let in the game    
@@ -1094,7 +1047,9 @@ impl Game {
 	    Box::new(StandardDeck::new())
 	};
         Game {
-	    hub_addr,
+	    hub_addr: Some(hub_addr),
+	    incoming_actions: Some(incoming_actions),
+	    incoming_meta_actions: Some(incoming_meta_actions),
 	    name,
             deck,
             players: Default::default(),
@@ -1113,28 +1068,27 @@ impl Game {
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
     pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true, self.buy_in)
+	let new_player = Player::new(player_config.id, true, self.buy_in);
+	self.add_player(player_config, new_player)
     }
 
     pub fn add_bot(&mut self, name: String) -> Option<usize> {
-	let new_bot = Player::new_bot();
+	let new_bot = Player::new_bot(self.buy_in);
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false, self.buy_in)
+	self.add_player(new_config, new_bot)
     }
     
     fn add_player(
-	players: &mut [Option<Player>],
-	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
+	&mut self,
 	player_config: PlayerConfig,
-	human_controlled: bool,
-	buy_in: u32,
+	player: Player,
     ) -> Option<usize> {
 	let mut index = None;
-	for (i, player_spot) in players.iter_mut().enumerate() {
+	for (i, player_spot) in self.players.iter_mut().enumerate() {
 	    if player_spot.is_none() {
 		let id = player_config.id; // copy the id for sending a message after we add the config
-		*player_spot = Some(Player::new(player_config.id, human_controlled, buy_in));
-		player_ids_to_configs.insert(player_config.id, player_config);
+		*player_spot = Some(player);
+		self.player_ids_to_configs.insert(player_config.id, player_config);
 		index = Some(i);
 		println!("Joining game at index: {}", i);
 		let message = object!{
@@ -1144,54 +1098,32 @@ impl Game {
 		PlayerConfig::send_specific_message(
 		    &message.dump(),
 		    id,
-		    &player_ids_to_configs,
+		    &self.player_ids_to_configs,
 		);			    			    
 		break;
 	    }
 	}
-	for (i, player_spot) in players.iter().enumerate() {
+	for (i, player_spot) in self.players.iter().enumerate() {
 	    // display the play positions for the front end to consume
 	    if let Some(player) = player_spot {
 		let mut message = object!{
 		    msg_type: "player_info".to_owned(),
 		    index: i,
 		};
-		let config = player_ids_to_configs.get(&player.id).unwrap();
+		let config = self.player_ids_to_configs.get(&player.id).unwrap();
 		let name = config.name.as_ref().unwrap().clone();
 		message["player_name"] = name.into();
 		message["money"] = player.money.into();
 		message["is_active"] = player.is_active.into();
 		PlayerConfig::send_group_message(&message.dump(),
-						 &player_ids_to_configs);			
+						 &self.player_ids_to_configs);			
 	    } 
 	}
 	index
     }
                 
-    pub fn play_one_hand(
-	&mut self,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-    ) {
-        let mut game_hand = GameHand::new(
-            self.button_idx,
-            self.small_blind,
-            self.big_blind,
-	    self.buy_in,
-        );
-        game_hand.play(
-	    &mut self.deck,	    
-	    &mut self.players,
-	    &mut self.player_ids_to_configs,
-	    incoming_actions,
-	    incoming_meta_actions,
-	    self.hub_addr.as_ref());
-    }
-
     pub fn play(
 	&mut self,
-	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
 	hand_limit: Option<u32>, // how many hands total should be play? None == no limit
     ) {
         let mut hand_count = 0;
@@ -1212,8 +1144,8 @@ impl Game {
 	    PlayerConfig::send_group_message(
 		&message.dump(),
 		&self.player_ids_to_configs);			
-	    	    
-            self.play_one_hand(incoming_actions, incoming_meta_actions);
+
+            self.play_one_hand();
 
 	    // check if any player is now missing from the config mapping,
 	    // this implies that the player left mid-hand, so they should fully be removed from the game
@@ -1226,13 +1158,7 @@ impl Game {
 		    }
 		}
 	    }
-	    Game::handle_meta_actions(
-		&mut self.players,
-		&mut self.player_ids_to_configs,
-		incoming_meta_actions,
-		self.hub_addr.as_ref(),
-		self.buy_in,
-	    );
+	    self.handle_meta_actions();
 	    // attempt to set the next button
 	    self.button_idx = self.find_next_button().expect("we could not find a valid button index!");
         }
@@ -1266,15 +1192,8 @@ impl Game {
 	Err("could not find a valid button")
     }
     
-    fn handle_meta_actions(
-	players: &mut [Option<Player>],
-	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
-	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-	hub_addr: Option<&Addr<GameHub>>,
-	buy_in: u32, // if a player is added, how much money do they start with
-    ) {
-	let mut meta_actions = incoming_meta_actions.lock().unwrap();
-	//println!("meta_actions = {:?}", meta_actions);
+    fn handle_meta_actions(&mut self ) {
+	let mut meta_actions = self.incoming_meta_actions.unwrap().lock().unwrap();
 	for _ in 0..meta_actions.len() {
 	    match meta_actions.pop_front().unwrap() {
 		MetaAction::Chat(id, text) => {
@@ -1282,7 +1201,7 @@ impl Game {
 		    // appended by the player name
 		    println!("chat message inside the game hand wow!");
 		    
-		    let name = &player_ids_to_configs.get(&id).unwrap().name;
+		    let name = &self.player_ids_to_configs.get(&id).unwrap().name;
 		    let message = object!{
 			msg_type: "chat".to_owned(),
 			player_name: name.clone(),
@@ -1290,42 +1209,38 @@ impl Game {
 		    };
 
 		    PlayerConfig::send_group_message(&message.dump(),
-						     &player_ids_to_configs);			
+						     &self.player_ids_to_configs);			
 		},
 		MetaAction::Join(player_config) => {
 		    // add a new player to the game
 		    let id = player_config.id; // copy the id so we can use to send a message later
-		    if Game::add_player(
-			players,
-			player_ids_to_configs,
+		    if self.add_user(
 			player_config,
-			true,
-			buy_in,
 		    ).is_none()
 		    {
 			// we were unable to add the player
 			PlayerConfig::send_specific_message(
 			    &"Unable to join game, it must be full!".to_owned(),
 			    id,
-			    &player_ids_to_configs,
+			    &self.player_ids_to_configs,
 			);
 		    }
 		},
 		MetaAction::Leave(id) => {
 		    println!("handling leave meta action");
-		    let config = player_ids_to_configs.remove(&id).unwrap();
+		    let config = self.player_ids_to_configs.remove(&id).unwrap();
 		    PlayerConfig::send_group_message(&format!("{:?} has left the game", config.name),
-		    				     &player_ids_to_configs);
-		    if hub_addr.is_some() {
+		    				     &self.player_ids_to_configs);
+		    if let Some(hub_addr) = self.hub_addr {
 			// tell the hub that we left			
-			hub_addr.unwrap().do_send(Removed{config});
+			hub_addr.do_send(Removed{config});
 		    }
 		},
 		MetaAction::PlayerName(id, new_name) => {
-		    PlayerConfig::set_player_name(id, &new_name, player_ids_to_configs);
+		    PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
 		},
 		MetaAction::SitOut(id) => {
-		    for player in players.iter_mut().flatten() {
+		    for player in self.players.iter_mut().flatten() {
 			if player.id == id {
 			    println!("player {} being set to is_sitting_out = true", id);	    
 			    player.is_sitting_out = true;
@@ -1333,7 +1248,7 @@ impl Game {
 		    }
 		},
 		MetaAction::ImBack(id) => {
-		    for player in players.iter_mut().flatten() {
+		    for player in self.players.iter_mut().flatten() {
 			if player.id == id {
 			    println!("player {} being set to is_sitting_out = false", id);
 			    player.is_sitting_out = false;
@@ -1341,11 +1256,10 @@ impl Game {
 		    }
 		    
 		},
-		
 	    }
-	
 	}
     }
+    
 }
 
 #[cfg(test)]
@@ -1414,6 +1328,12 @@ mod tests {
     #[test]
     fn instant_fold() {
         let mut game = Game::default();
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1431,13 +1351,8 @@ mod tests {
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 	
-	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
-	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
-
-	let cloned_actions = incoming_actions.clone();	    
-	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1460,6 +1375,12 @@ mod tests {
     #[test]
     fn call_check_bet_fold() {
         let mut game = Game::default();
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1484,7 +1405,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1516,6 +1437,12 @@ mod tests {
     #[test]
     fn pre_flop_bet_fold() {
         let mut game = Game::default();
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1540,7 +1467,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1562,6 +1489,12 @@ mod tests {
     #[test]
     fn bet_call_bet_fold() {
         let mut game = Game::default();
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1586,7 +1519,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1635,6 +1568,12 @@ mod tests {
 
         let mut game = Game::default();
 	game.deck = Box::new(deck);
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1659,7 +1598,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1699,6 +1638,12 @@ mod tests {
 
         let mut game = Game::default();
 	game.deck = Box::new(deck);
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1725,7 +1670,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1767,6 +1712,12 @@ mod tests {
 
         let mut game = Game::default();
 	game.deck = Box::new(deck);
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 	
 	// player1 will start as the button/big
 	let id1 = uuid::Uuid::new_v4();
@@ -1793,7 +1744,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1841,6 +1792,12 @@ mod tests {
 
         let mut game = Game::default();
 	game.deck = Box::new(deck);
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1875,7 +1832,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -1928,6 +1885,12 @@ mod tests {
 	
         let mut game = Game::default();
 	game.deck = Box::new(deck);
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -1962,7 +1925,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -2020,7 +1983,13 @@ mod tests {
 
         let mut game = Game::default();
 	game.deck = Box::new(deck);
-
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
+	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
@@ -2056,14 +2025,9 @@ mod tests {
         assert!(game.players[1].as_ref().unwrap().human_controlled);
         assert!(game.players[2].as_ref().unwrap().human_controlled);
         assert!(game.players[3].as_ref().unwrap().human_controlled);			
-	
-	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
-	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
 
-	let cloned_actions = incoming_actions.clone();	    
-	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 
@@ -2096,6 +2060,12 @@ mod tests {
     #[test]
     fn hand_limit() {
         let mut game = Game::default();
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -2119,7 +2089,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play(&cloned_actions, &cloned_meta_actions, Some(2));
+	    game.play(Some(2));
 	    game // return the game back
 	});
 	
@@ -2146,7 +2116,13 @@ mod tests {
     #[test]
     fn button_movement() {
         let mut game = Game::default();	
-	
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
+
 	let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
@@ -2174,7 +2150,7 @@ mod tests {
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let num_hands = 4;
 	let handler = thread::spawn( move || {
-	    game.play(&cloned_actions, &cloned_meta_actions, Some(num_hands));
+	    game.play(Some(num_hands));
 	    game // return the game back
 	});
 
@@ -2227,6 +2203,12 @@ mod tests {
     #[test]
     fn mid_hand_join() {
         let mut game = Game::default();		
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -2251,7 +2233,7 @@ mod tests {
 	let cloned_actions = incoming_actions.clone();	    
 	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
@@ -2314,6 +2296,12 @@ mod tests {
 	
         let mut game = Game::default();
 	game.deck = Box::new(deck);			
+	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
+	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+	let cloned_actions = incoming_actions.clone();	    
+	let cloned_meta_actions = incoming_meta_actions.clone();
+	game.incoming_actions = Some(&incoming_actions);
+	game.incoming_meta_actions = Some(&incoming_meta_actions);
 	
 	// player1 will start as the button
 	let id1 = uuid::Uuid::new_v4();
@@ -2337,14 +2325,8 @@ mod tests {
 	assert_eq!(not_sitting_out, 2);
 
 	
-	let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));	
-	let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
-
-
-	let cloned_actions = incoming_actions.clone();	    
-	let cloned_meta_actions = incoming_meta_actions.clone();
 	let handler = thread::spawn( move || {
-	    game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+	    game.play_one_hand();
 	    game // return the game back
 	});
 	
