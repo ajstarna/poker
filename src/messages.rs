@@ -1,8 +1,8 @@
 use crate::logic::{player::PlayerAction, PlayerConfig};
 use actix::prelude::{Message, Recipient};
-use uuid::Uuid;
-use std::fmt;
 use serde_json::Value;
+use std::fmt;
+use uuid::Uuid;
 
 /// Game server sends this messages to session
 
@@ -12,10 +12,10 @@ use serde_json::Value;
 pub enum MetaAction {
     Join(PlayerConfig),
     Leave(Uuid),
-    ImBack(Uuid),    
+    ImBack(Uuid),
     SitOut(Uuid),
     PlayerName(Uuid, String),
-    Chat(Uuid, String), 
+    Chat(Uuid, String),
 }
 
 #[derive(Message)]
@@ -70,48 +70,49 @@ pub struct PlayerName {
     pub name: String,
 }
 
-
 pub enum CreateGameError {
     NameNotSet,
     MissingField,
     InvalidFieldValue(String), // contains the invalid field
-    AlreadyAtTable(String), // contains the table name
+    AlreadyAtTable(String),    // contains the table name
 }
 
 impl fmt::Display for CreateGameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-	match self {
-	    CreateGameError::NameNotSet => {
-		write!(f, "Unable to create a game since you have not set your name")
-	    },
-	    CreateGameError::MissingField => {
-		write!(f, "Unable to create a game since missing field(s)")
-		/*
-		write!(f, "Unable to create a game since command is missing fields:")?;
-		for field in missing_fields {
-		    write!(f, format!("{:?}", field))?;
-		}
-		Ok(())
-		 */
-	    },
-	    CreateGameError::AlreadyAtTable(table_name) => {
-		write!(
-		    f,
-		    "Unable to create a game since already at a table: {}",
-		    table_name
-		)
-	    },
-	    CreateGameError::InvalidFieldValue(invalid_field) => {
-		write!(
-		    f,
-		    "Unable to create a game since invalid field value: {}",
-		    invalid_field
-		)
-	    }
-	}
+        match self {
+            CreateGameError::NameNotSet => {
+                write!(
+                    f,
+                    "Unable to create a game since you have not set your name"
+                )
+            }
+            CreateGameError::MissingField => {
+                write!(f, "Unable to create a game since missing field(s)")
+                /*
+                write!(f, "Unable to create a game since command is missing fields:")?;
+                for field in missing_fields {
+                    write!(f, format!("{:?}", field))?;
+                }
+                Ok(())
+                 */
+            }
+            CreateGameError::AlreadyAtTable(table_name) => {
+                write!(
+                    f,
+                    "Unable to create a game since already at a table: {}",
+                    table_name
+                )
+            }
+            CreateGameError::InvalidFieldValue(invalid_field) => {
+                write!(
+                    f,
+                    "Unable to create a game since invalid field value: {}",
+                    invalid_field
+                )
+            }
+        }
     }
 }
-
 
 /// Session wants to create a game
 #[derive(Message)]

@@ -66,9 +66,9 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "./static"))
             .wrap(Logger::default())
     })
-	.workers(2)
-	.bind(("127.0.0.1", 8080))?
-    //	.bind(("192.168.1.91", 8080))?	
-	.run()
-	.await
+    .workers(2)
+    .bind(("127.0.0.1", 8080))?
+    //	.bind(("192.168.1.91", 8080))?
+    .run()
+    .await
 }
