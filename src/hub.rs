@@ -349,7 +349,7 @@ impl Handler<Create> for GameHub {
 
             for i in 0..num_bots {
                 let name = format!("Mr {}", i);
-                game.add_bot(name);
+                game.add_bot(name).expect("error adding bot on freshly created game");
             }
 
             if is_private {
@@ -359,11 +359,28 @@ impl Handler<Create> for GameHub {
             // update the mapping to find the player at a table
             self.players_to_table.insert(id, table_name.clone());
 
-            if game.add_user(player_config, password).is_none() {
-                panic!("how were we unable to join a fresh game?");
-            } else {
-                println!("in the hub. we just joined fine?");
-            }
+	    // get the player addr so we can send them a message after joining
+	    // TODO: should this message happen within game.add_user()?
+	    // It used to, but then I moved the message to handle_meta_actions(),
+	    // do then I needed to duplicate it here.
+	    // When should the game versus the hub versus the session send a message hhmmm
+	    //let player_addr = player_config
+            //    .player_addr
+             //   .as_ref()
+              //  .unwrap()
+               // .clone();
+
+            if let Ok(index) = game.add_user(player_config, password) {
+		let message = object! {
+		    msg_type: "joined_game".to_owned(),
+		    index: index,
+		    table_name: table_name.clone(),
+		};
+		println!("blah successfully joined");
+                //player_addr.do_send(WsMessage(message.dump()));
+	    } else {
+		panic!("error adding user on freshly created game");		
+	    }
 
             std::thread::scope(|scope| {
                 // need to use scoped thread here so that the actions don't need static life time

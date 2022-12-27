@@ -143,7 +143,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
                 let m = text.trim();
 
                 if let Ok(object) = serde_json::from_str(m) {
-                    println!("{}", object);
+                    println!("parsed: {}", object);
                     self.handle_client_command(object, ctx);
                 } else {
                     println!("message unable to parse as json: {}", m);
@@ -181,7 +181,7 @@ impl WsGameSession {
                     self.handle_player_action(object, ctx);
                 }
                 "list" => {
-                    self.handle_list_tables(object, ctx);
+                    self.handle_list_tables(ctx);
                 }
                 "join" => {
                     self.handle_join_table(object, ctx);
@@ -239,7 +239,11 @@ impl WsGameSession {
                         }
                         Err(e) => {
                             println!("{}", e);
-                            ctx.text(format!("{}", e));
+                            let message = json::object! {
+                                msg_type: "unable_to_create".to_owned(),
+                                reason: e.to_string(),
+                            };
+                            ctx.text(message.dump());
                         }
                     },
                     _ => println!("MailBox error"),
@@ -252,7 +256,7 @@ impl WsGameSession {
         // of tables back
     }
 
-    fn handle_list_tables(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_list_tables(&self, ctx: &mut <WsGameSession as Actor>::Context) {
         // Send ListTables message to game server and wait for
         // response
         println!("List tables");

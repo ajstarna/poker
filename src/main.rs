@@ -4,8 +4,7 @@ use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
-    },
-    time::Instant,
+    }
 };
 
 use actix::*;
