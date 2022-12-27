@@ -71,10 +71,44 @@ pub struct PlayerName {
 }
 
 
-pub struct CreateGameError;
+pub enum CreateGameError {
+    NameNotSet,
+    MissingField,
+    InvalidFieldValue(String), // contains the invalid field
+    AlreadyAtTable(String), // contains the table name
+}
+
 impl fmt::Display for CreateGameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-	write!(f, "Unable to create a game!")
+	match self {
+	    CreateGameError::NameNotSet => {
+		write!(f, "Unable to create a game since you have not set your name")
+	    },
+	    CreateGameError::MissingField => {
+		write!(f, "Unable to create a game since missing field(s)")
+		/*
+		write!(f, "Unable to create a game since command is missing fields:")?;
+		for field in missing_fields {
+		    write!(f, format!("{:?}", field))?;
+		}
+		Ok(())
+		 */
+	    },
+	    CreateGameError::AlreadyAtTable(table_name) => {
+		write!(
+		    f,
+		    "Unable to create a game since already at a table: {}",
+		    table_name
+		)
+	    },
+	    CreateGameError::InvalidFieldValue(invalid_field) => {
+		write!(
+		    f,
+		    "Unable to create a game since invalid field value: {}",
+		    invalid_field
+		)
+	    }
+	}
     }
 }
 

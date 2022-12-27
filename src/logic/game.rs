@@ -165,9 +165,10 @@ struct GameHand {
     button_idx: usize, // the button index dictates where the action starts
     small_blind: u32,
     big_blind: u32,
+    buy_in: u32,
     street: Street,
     pot_manager: PotManager,
-    total_contributions: [u32; 9], // keep track of how much a player contributed to the pot during the whole hand
+    total_contributions: [u32; 9], // how much a player contributed to the pot during the whole hand
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -178,11 +179,13 @@ impl GameHand {
         button_idx: usize,
         small_blind: u32,
         big_blind: u32,
+	buy_in: u32, //how much money do new players get
     ) -> Self {
         GameHand {
             button_idx,
             small_blind,
             big_blind,
+	    buy_in, 
             street: Street::Preflop,
             pot_manager: PotManager::new(),
 	    total_contributions: [0; 9],
@@ -203,11 +206,15 @@ impl GameHand {
                     "\n===========================\nFlop = {:?}\n===========================",
                     self.flop
                 );
+		let message = object!{
+		    msg_type: "flop".to_owned(),
+                    flop: format!("{}{}{}",
+				  self.flop.as_ref().unwrap()[0],
+				  self.flop.as_ref().unwrap()[1],
+				  self.flop.as_ref().unwrap()[2]),
+		};
                 PlayerConfig::send_group_message(
-                    &format!("Flop: {}{}{}",
-			     self.flop.as_ref().unwrap()[0],
-			     self.flop.as_ref().unwrap()[1],
-			     self.flop.as_ref().unwrap()[2]),
+		    &message.dump(),
 		    player_ids_to_configs);		
             }
             Street::Flop => {
@@ -217,9 +224,13 @@ impl GameHand {
                     "\n==========================\nTurn = {:?}\n==========================",
                     self.turn
                 );
+		let message = object!{
+		    msg_type: "turn".to_owned(),
+                    turn: format!("{}", self.turn.unwrap())
+		};
                 PlayerConfig::send_group_message(
-                    &format!("Turn: {}", self.turn.unwrap()),
-		    player_ids_to_configs);		
+		    &message.dump(),
+		    player_ids_to_configs);				
             }
             Street::Turn => {
                 self.street = Street::River;
@@ -228,18 +239,24 @@ impl GameHand {
                     "\n==========================\nRiver = {:?}\n==========================",
                     self.river
                 );
+		let message = object!{
+		    msg_type: "river".to_owned(),
+                    river: format!("{}", self.river.unwrap())
+		};
                 PlayerConfig::send_group_message(
-                    &format!("River: {}", self.river.unwrap()),
-		    player_ids_to_configs);		
-            }
+		    &message.dump(),
+		    player_ids_to_configs);				
+	    }
             Street::River => {
                 self.street = Street::ShowDown;
                 println!(
                     "\n==========================\nShowDown!\n================================"
                 );
+		/*
                 PlayerConfig::send_group_message(
                     &format!("\n===========================\nShowDown!\n==========================="),
 		    player_ids_to_configs);						
+		 */
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
@@ -248,12 +265,6 @@ impl GameHand {
     fn deal_hands(&mut self, deck: &mut Box<dyn Deck>,
 		  players: &mut [Option<Player>], player_ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
         for player in players.iter_mut().flatten() {
-	    /*
-	    if player_spot.is_none() {
-		continue;
-	    }
-	    let player = player_spot.as_mut().unwrap();
-	     */
             if player.is_active {
                 for _ in 0..2 {
                     if let Some(card) = deck.draw_card() {
@@ -262,8 +273,12 @@ impl GameHand {
                         panic!("The deck is out of cards somehow?");
                     }		    
                 }
+		let message = object!{
+		    msg_type: "hole_cards".to_owned(),
+		    hole_cards: format!("{}{}", player.hole_cards[0], player.hole_cards[1]),
+		};
 		PlayerConfig::send_specific_message(
-		    &format!("Hole Cards: {}{}", player.hole_cards[0], player.hole_cards[1]),
+		    &message.dump(),
 		    player.id,
 		    player_ids_to_configs
 		);
@@ -404,10 +419,25 @@ impl GameHand {
                     payout, name, ranking_string
 		);
 		let hole_string = if is_showdown {
-		    format!("{}-{}",player.hole_cards[0], player.hole_cards[1])
+		    format!("{}{}",player.hole_cards[0], player.hole_cards[1])
 		} else {
 		    "Unknown".to_string()
 		};
+
+		let message = object!{
+		    msg_type: "paying_out".to_owned(),
+		    payout: payout,
+		    player_name: name,
+		    hole_cards: hole_string,
+		    hand_result: ranking_string,
+		    is_showdown: is_showdown,
+		};
+		PlayerConfig::send_group_message(
+		    &message.dump(),
+		    &player_ids_to_configs
+		);			
+
+		/*
 		PlayerConfig::send_group_message(
 		    &format!("paying out {:?} to {:?}, with hole cards = {:?}",
 			     payout, name, hole_string),
@@ -416,7 +446,7 @@ impl GameHand {
 		    &format!("hand result = {:?}",
 			     ranking_string),
 		    &player_ids_to_configs);			
-		
+		*/
 		player.pay(payout);
 		println!("after payment: {:?}", player);
 	    } 
@@ -521,7 +551,8 @@ impl GameHand {
 	    if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
-                PlayerConfig::send_group_message("\nGame is ending before showdown!", player_ids_to_configs);
+		// TODO is a msg here needed?
+                //PlayerConfig::send_group_message("\nGame is ending before showdown!", player_ids_to_configs);
                 break;
             } else {
                 // otherwise we move to the next street
@@ -648,11 +679,16 @@ impl GameHand {
 	    } else {
 		"Player who left".to_string()
 	    };
+
+	    let message = object!{
+		msg_type: "player_to_act".to_owned(),				
+		index: i,
+		player_name: name.clone(),
+	    };
 	    
-	    PlayerConfig::send_group_message(&format!(
-                "{} turn to act! index={}",
-                name, i
-	    ), player_ids_to_configs);
+	    PlayerConfig::send_group_message(
+		&message.dump(),
+		player_ids_to_configs);
 	    
 	    let action = self.get_and_validate_action(
 		&player,
@@ -853,13 +889,16 @@ impl GameHand {
 	} else {
 	    format!("Enter action (current bet = {}): ", current_bet)	    
 	};
+	let message = object!{
+	    msg_type: "prompt".to_owned(),
+	    prompt: prompt,
+	};
 	PlayerConfig::send_specific_message(
-	    &prompt,
+	    &message.dump(),
 	    player.id,
-	    player_ids_to_configs
-	);
-	
-	
+	    &player_ids_to_configs,
+	);			    			    
+		
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
@@ -868,7 +907,8 @@ impl GameHand {
 	    // the first thing we do on each loop is handle meta action
 	    // this lets us display messages in real-time without having to wait until after the
 	    // current player gives their action
-	    Game::handle_meta_actions(players, player_ids_to_configs, incoming_meta_actions, hub_addr);
+	    Game::handle_meta_actions(players, player_ids_to_configs,
+				      incoming_meta_actions, hub_addr, self.buy_in);
 	    
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -1073,31 +1113,36 @@ impl Game {
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
     pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true)
+	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, player_config, true, self.buy_in)
     }
 
     pub fn add_bot(&mut self, name: String) -> Option<usize> {
 	let new_bot = Player::new_bot();
 	let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false)
+	Game::add_player(&mut self.players, &mut self.player_ids_to_configs, new_config, false, self.buy_in)
     }
     
     fn add_player(
 	players: &mut [Option<Player>],
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,
 	player_config: PlayerConfig,
-	human_controlled: bool
+	human_controlled: bool,
+	buy_in: u32,
     ) -> Option<usize> {
 	let mut index = None;
 	for (i, player_spot) in players.iter_mut().enumerate() {
 	    if player_spot.is_none() {
 		let id = player_config.id; // copy the id for sending a message after we add the config
-		*player_spot = Some(Player::new(player_config.id, human_controlled));
+		*player_spot = Some(Player::new(player_config.id, human_controlled, buy_in));
 		player_ids_to_configs.insert(player_config.id, player_config);
 		index = Some(i);
 		println!("Joining game at index: {}", i);
+		let message = object!{
+		    msg_type: "joined_game".to_owned(),
+		    index: i,
+		};
 		PlayerConfig::send_specific_message(
-		    &format!("Joining game at index: {}", i),
+		    &message.dump(),
 		    id,
 		    &player_ids_to_configs,
 		);			    			    
@@ -1132,6 +1177,7 @@ impl Game {
             self.button_idx,
             self.small_blind,
             self.big_blind,
+	    self.buy_in,
         );
         game_hand.play(
 	    &mut self.deck,	    
@@ -1158,8 +1204,13 @@ impl Game {
 		}
 	    }	    
             println!("\n\n\nPlaying hand {}, button_idx = {}", hand_count, self.button_idx);
+	    let message = object!{
+		msg_type: "new_hand".to_owned(),
+		hand_num: hand_count,
+		button_index: self.button_idx,
+	    };
 	    PlayerConfig::send_group_message(
-		&format!("Playing hand {}, button_idx = {}", hand_count, self.button_idx),
+		&message.dump(),
 		&self.player_ids_to_configs);			
 	    	    
             self.play_one_hand(incoming_actions, incoming_meta_actions);
@@ -1180,6 +1231,7 @@ impl Game {
 		&mut self.player_ids_to_configs,
 		incoming_meta_actions,
 		self.hub_addr.as_ref(),
+		self.buy_in,
 	    );
 	    // attempt to set the next button
 	    self.button_idx = self.find_next_button().expect("we could not find a valid button index!");
@@ -1219,6 +1271,7 @@ impl Game {
 	player_ids_to_configs: &mut HashMap<Uuid, PlayerConfig>,	
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
 	hub_addr: Option<&Addr<GameHub>>,
+	buy_in: u32, // if a player is added, how much money do they start with
     ) {
 	let mut meta_actions = incoming_meta_actions.lock().unwrap();
 	//println!("meta_actions = {:?}", meta_actions);
@@ -1233,6 +1286,7 @@ impl Game {
 		    let message = object!{
 			msg_type: "chat".to_owned(),
 			player_name: name.clone(),
+			text: text,
 		    };
 
 		    PlayerConfig::send_group_message(&message.dump(),
@@ -1245,7 +1299,9 @@ impl Game {
 			players,
 			player_ids_to_configs,
 			player_config,
-			true).is_none()
+			true,
+			buy_in,
+		    ).is_none()
 		    {
 			// we were unable to add the player
 			PlayerConfig::send_specific_message(

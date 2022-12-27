@@ -18,7 +18,6 @@ use actix::prelude::{Actor, Context, Handler, MessageResult};
 use uuid::Uuid;
 use rand::Rng;
 use json::object;
-use serde_json::Value;
 
 // for generator random game names
 const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -107,9 +106,13 @@ impl Handler<PlayerName> for GameHub {
         // if the player is the main lobby, find them and set their name
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
 	    println!("setting player name in the main lobby");
+	    let message = object!{
+		msg_type: "name_changed".to_owned(),
+		new_name: msg.name.clone(),
+	    };	    
             player_config.player_addr.as_ref().unwrap()
 		.do_send(
-		    WsMessage(format!("You are changing your name to {:?}", msg.name))
+		    WsMessage(message.dump())
 		);	    
             player_config.name = Some(msg.name);
         } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
@@ -190,7 +193,10 @@ impl Handler<Removed> for GameHub {
 	}
 	// add the config back into the lobby
         if let Some(addr) = &msg.config.player_addr {
-            addr.do_send(WsMessage("You have left the game and are back in the lobby".to_owned()));
+	    let message = object!{
+		msg_type: "left_game".to_owned(),
+	    };	    
+            addr.do_send(WsMessage(message.dump()));
         }
 	
 	self.main_lobby_connections.insert(msg.config.id, msg.config);
@@ -212,39 +218,57 @@ impl Handler<Create> for GameHub {
 	    // the player is not in the main lobby,
 	    // so we must be waiting for the game to remove the player still
 	    println!("player config not in the main lobby, so they must already be at a game");
-	    return Err(CreateGameError);
+	    return Err(CreateGameError::AlreadyAtTable("todo".to_owned()));
 	} 
 	let player_config = player_config_option.unwrap();		
 
 	if player_config.name.is_none() {
 	    // they are not allowed to join a game without a Name set
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("You cannt join a game until you set your name!"))
-		);
 	    // put them back in the lobby
 	    self.main_lobby_connections.insert(player_config.id, player_config);
-	    return Err(CreateGameError);	    	    
+	    return Err(CreateGameError::NameNotSet);	    	    
 	}
 
 
 	let (mut game, table_name) = if let (Some(max_players),
-					 Some(small_blind),
-					 Some(big_blind),
-					 Some(buy_in),
-					 Some(is_private),
-					 Some(password)) = (create_msg.get("max_players"),
-							    create_msg.get("small_blind"),
-							    create_msg.get("big_blind"),
-							    create_msg.get("buy_in"),
-							    create_msg.get("is_private"),
-							    create_msg.get("password")) 	{
-	    let max_players = max_players.to_string().parse::<u8>().map_err(|_| CreateGameError)?;
-	    let small_blind = small_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let big_blind = big_blind.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let buy_in = buy_in.to_string().parse::<u32>().map_err(|_| CreateGameError)?;
-	    let is_private = is_private.to_string().parse::<bool>().map_err(|_| CreateGameError)?;	    	    
-	    let password = password.to_string();
+					     Some(small_blind),
+					     Some(big_blind),
+					     Some(buy_in),
+					     Some(num_bots),					     
+					     Some(is_private),
+					     Some(password)) = (create_msg.get("max_players"),
+								create_msg.get("small_blind"),
+								create_msg.get("big_blind"),
+								create_msg.get("buy_in"),
+								create_msg.get("num_bots"),
+								create_msg.get("is_private"),
+								create_msg.get("password")) 	{
+	    let max_players = max_players.to_string()
+		.parse::<u8>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("max_players".to_owned()))?;
+	    let small_blind = small_blind.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("small_blind".to_owned()))?;
+	    let big_blind = big_blind.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("big_blind".to_owned()))?;
+	    let buy_in = buy_in.to_string()
+		.parse::<u32>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("buy_in".to_owned()))?;
+	    let num_bots = num_bots.to_string()
+		.parse::<u8>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("num_bots".to_owned()))?;
+	    let is_private = is_private.to_string()
+		.parse::<bool>()
+		.map_err(|_| CreateGameError::InvalidFieldValue("is_private".to_owned()))?;
+
+	    println!("password in create game = {:?}", password);	    
+
+	    let password = if password.is_string() {
+		Some(password.to_string())
+	    } else {
+		None
+	    };
 
 	    let mut rng = rand::thread_rng();	
 	    let table_name = loop {
@@ -263,7 +287,7 @@ impl Handler<Create> for GameHub {
 		break genned_name
 	    };
 	    
-            let game = Game::new(
+            let mut game = Game::new(
 		Some(ctx.address()),
 		table_name.clone(),
 		None, // no deck needed to pass in
@@ -272,23 +296,23 @@ impl Handler<Create> for GameHub {
 		big_blind,
 		buy_in,
 		is_private,
-		Some(password),
+		password,
 	    );
+
+            for i in 0..num_bots {
+		let name = format!("Mr {}", i);
+		game.add_bot(name);
+            }
+	    
             // update the mapping to find the player at a table	
             self.players_to_table.insert(id, table_name.clone());
 	    (game, table_name)
 	    
 	} else {
 	    println!("create message missing one or more required fields!");
-	    return Err(CreateGameError);
+	    return Err(CreateGameError::MissingField);
 	};
 		
-	
-        let num_bots = 2;
-        for i in 0..num_bots {
-	    let name = format!("Mr {}", i);
-	    game.add_bot(name);
-        }
 	
         if game.add_user(player_config).is_none() {
 	    panic!("how were we unable to join a fresh game?");
