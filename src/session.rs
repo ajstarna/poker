@@ -43,8 +43,6 @@ impl WsGameSession {
         Self {
             id: Uuid::new_v4(),
             hb: Instant::now(),
-            //table: None,
-            //name: None,
             hub_addr,
         }
     }
@@ -276,10 +274,11 @@ impl WsGameSession {
 	    .then(|res, _, ctx| {
 		match res {
 		    Ok(tables) => {
-			ctx.text(format!("there are {:?} tables:", tables.len()));
-			for table in tables {
-			    ctx.text(table);
-			}
+			let message = json::object!{
+			    msg_type: "tables_list".to_owned(),
+			    tables: tables,
+			};	    
+			ctx.text(message.dump());			
 		    }
 		    _ => println!("Something is wrong"),
 		}

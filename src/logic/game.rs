@@ -1358,7 +1358,8 @@ mod tests {
     fn add_bot() {
         let mut game = Game::default();
         let name = "Mr Bot".to_string();
-        game.add_bot(name);
+        let index = game.add_bot(name);
+        assert_eq!(index.unwrap(), 0); // the first position to be added to is index 0
         assert_eq!(game.players.len(), 9);
 	// flatten to get all the Some() players
 	let some_players = game.players.iter().flatten().count();
@@ -1379,8 +1380,8 @@ mod tests {
         assert_eq!(some_players, 1);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
     }
-
-
+    
+    
     /// the small blind folds, so the big blind should win and get paid
     #[test]
     fn instant_fold() {
