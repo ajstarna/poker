@@ -1380,7 +1380,35 @@ mod tests {
         assert_eq!(some_players, 1);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
     }
-    
+
+    /// if we set max_players, then trying to add anyone past that point will
+    /// not work
+    #[test]
+    fn max_players_in_game_() {
+        let mut game = Game::default();
+       let max_players = 3;
+       game.max_players = max_players;
+
+       // we TRY to add 5 bots
+       for i in 0..5 {
+            let name = format!("Bot {}", i);
+            let index = game.add_bot(name);
+           if i < max_players {
+               assert_eq!(index.unwrap() as u8, i);
+           } else {
+               // above max_players, the returned index should be None
+               // i.e. the player was not added to the game
+               assert_eq!(index, None);
+           }
+       }
+        assert_eq!(game.players.len(), 9); // len of players always simply 9
+       
+       // flatten to get all the Some() players
+       let some_players = game.players.iter().flatten().count();
+       // but only max_players players are in the game at the end      
+        assert_eq!(some_players as u8, max_players);
+       
+    }
     
     /// the small blind folds, so the big blind should win and get paid
     #[test]
