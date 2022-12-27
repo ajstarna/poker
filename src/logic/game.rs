@@ -9,7 +9,7 @@ use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 use crate::messages::{MetaAction, Removed};
 
-use std::{cmp, fmt, iter, thread, time};
+use std::{cmp, fmt, iter, thread, time, sync::Arc};
 
 use uuid::Uuid;
 
@@ -219,7 +219,7 @@ impl fmt::Display for JoinGameError {
     }
 }
 
-impl<'a> Game<'a> {
+impl Game {
     fn transition(&mut self, gamehand: &mut GameHand) {
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -507,7 +507,10 @@ impl<'a> Game<'a> {
         }
     }
 
-    fn play_one_hand(&mut self) {
+    fn play_one_hand(&mut self,
+		     incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+		     incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	
+    ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
         let mut gamehand = GameHand::default();
 
@@ -543,7 +546,7 @@ impl<'a> Game<'a> {
             // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2);
             thread::sleep(pause_duration);
-            let finished = self.play_street(&mut gamehand);
+            let finished = self.play_street(&incoming_actions, &incoming_meta_actions, &mut gamehand);
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -571,7 +574,11 @@ impl<'a> Game<'a> {
     }
 
     /// this method returns a bool indicating whether the hand is over or not
-    fn play_street(&mut self, gamehand: &mut GameHand) -> bool {
+    fn play_street(&mut self,
+		   incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+		   incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,			   		   
+		   gamehand: &mut GameHand,
+    ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0; self.players.len()];
@@ -678,7 +685,14 @@ impl<'a> Game<'a> {
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
             let action =
-                self.get_and_validate_action(&player, current_bet, player_cumulative, gamehand);
+                self.get_and_validate_action(
+		    &incoming_actions,
+		    &incoming_meta_actions,
+		    &player,
+		    current_bet,
+		    player_cumulative,
+		    gamehand
+		);
 
             let mut message = object! {
             msg_type: "player_action".to_owned(),
@@ -796,9 +810,11 @@ impl<'a> Game<'a> {
 
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
     /// this value is set by the game hub when handling a message from a player client
-    fn get_action_from_player(&self, player: &Player) -> Option<PlayerAction> {
+    fn get_action_from_player(&self,
+			      incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,			      
+			      player: &Player) -> Option<PlayerAction> {
         if player.human_controlled {
-            let mut actions = self.incoming_actions.unwrap().lock().unwrap();
+            let mut actions = incoming_actions.lock().unwrap();
             println!("incoming_actions = {:?}", actions);
             if let Some(action) = actions.get_mut(&player.id) {
                 println!("Player: {:?} has action {:?}", player.id, action);
@@ -829,6 +845,8 @@ impl<'a> Game<'a> {
 
     fn get_and_validate_action(
         &mut self,
+	incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,			   	
         player: &Player,
         current_bet: u32,
         player_cumulative: u32,
@@ -872,7 +890,7 @@ impl<'a> Game<'a> {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions();
+            self.handle_meta_actions(&incoming_meta_actions);
 
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -893,7 +911,7 @@ impl<'a> Game<'a> {
             }
 
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match self.get_action_from_player(player) {
+            match self.get_action_from_player(&incoming_actions, player) {
                 None => {
                     // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
@@ -1000,10 +1018,8 @@ impl<'a> Game<'a> {
 }
 
 #[derive(Debug)]
-pub struct Game<'a> {
+pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    incoming_actions: Option<&'a Mutex<HashMap<Uuid, PlayerAction>>>,
-    incoming_meta_actions: Option<&'a Mutex<VecDeque<MetaAction>>>,
     pub name: String,
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
@@ -1017,12 +1033,10 @@ pub struct Game<'a> {
 }
 
 /// useful for unit tests, for example
-impl<'a> Default for Game<'a> {
+impl Default for Game {
     fn default() -> Self {
         Self {
             hub_addr: None,
-            incoming_actions: None,
-            incoming_meta_actions: None,
             name: "Game".to_owned(),
             deck: Box::new(StandardDeck::new()),
             players: Default::default(),
@@ -1037,13 +1051,11 @@ impl<'a> Default for Game<'a> {
     }
 }
 
-impl<'a> Game<'a> {
+impl Game {
     /// the address of the GameHub is optional so that unit tests need not worry about it
     /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
     pub fn new(
         hub_addr: Addr<GameHub>,
-        incoming_actions: &'a Mutex<HashMap<Uuid, PlayerAction>>,
-        incoming_meta_actions: &'a Mutex<VecDeque<MetaAction>>,
         name: String,
         deck_opt: Option<Box<dyn Deck>>,
         max_players: u8, // how many will we let in the game
@@ -1059,8 +1071,6 @@ impl<'a> Game<'a> {
         };
         Game {
             hub_addr: Some(hub_addr),
-            incoming_actions: Some(incoming_actions),
-            incoming_meta_actions: Some(incoming_meta_actions),
             name,
             deck,
             players: Default::default(),
@@ -1140,8 +1150,10 @@ impl<'a> Game<'a> {
 
     pub fn play(
         &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,	
         hand_limit: Option<u32>, // how many hands total should be play? None == no limit
-    ) {
+    ) {	
         let mut hand_count = 0;
         loop {
             hand_count += 1;
@@ -1162,7 +1174,7 @@ impl<'a> Game<'a> {
             };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-            self.play_one_hand();
+            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
 
             // check if any player is now missing from the config mapping,
             // this implies that the player left mid-hand, so they should fully be removed from the game
@@ -1178,7 +1190,7 @@ impl<'a> Game<'a> {
                     }
                 }
             }
-            self.handle_meta_actions();
+            self.handle_meta_actions(&incoming_meta_actions);
             // attempt to set the next button
             self.button_idx = self
                 .find_next_button()
@@ -1213,8 +1225,10 @@ impl<'a> Game<'a> {
         Err("could not find a valid button")
     }
 
-    fn handle_meta_actions(&mut self) {
-        let mut meta_actions = self.incoming_meta_actions.unwrap().lock().unwrap();
+    fn handle_meta_actions(&mut self,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+    ) {
+        let mut meta_actions = incoming_meta_actions.lock().unwrap();
         for _ in 0..meta_actions.len() {
             match meta_actions.pop_front().unwrap() {
                 MetaAction::Chat(id, text) => {

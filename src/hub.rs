@@ -34,9 +34,9 @@ pub struct GameHub {
     players_to_table: HashMap<Uuid, String>,
 
     // this is where the hub can add incoming player actions for a running game to grab from
-    tables_to_actions: HashMap<String, Mutex<HashMap<Uuid, PlayerAction>>>,
+    tables_to_actions: HashMap<String, Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
 
-    tables_to_meta_actions: HashMap<String, Mutex<VecDeque<MetaAction>>>,
+    tables_to_meta_actions: HashMap<String, Arc<Mutex<VecDeque<MetaAction>>>>,
 
     private_tables: HashSet<String>, // which games do not show up in the loby
 
@@ -331,13 +331,13 @@ impl Handler<Create> for GameHub {
                 break genned_name;
             };
 
-            let actions = Mutex::new(HashMap::new());
-            let meta_actions = Mutex::new(VecDeque::new());
-
+            let actions = Arc::new(Mutex::new(HashMap::new()));
+            let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+	    let cloned_actions = actions.clone();
+	    let cloned_meta_actions = meta_actions.clone();
+	    
             let mut game = Game::new(
                 ctx.address(),
-                &actions,
-                &meta_actions,
                 table_name.clone(),
                 None, // no deck needed to pass in
                 max_players,
@@ -382,13 +382,18 @@ impl Handler<Create> for GameHub {
 		panic!("error adding user on freshly created game");		
 	    }
 
+	    /*
             std::thread::scope(|scope| {
                 // need to use scoped thread here so that the actions don't need static life time
                 scope.spawn(move || {
                     game.play(None);
                 });
             });
-
+	     */
+	    std::thread::spawn(move || {
+		game.play(&cloned_actions, &cloned_meta_actions, None);
+	    });
+		
             self.tables_to_actions.insert(table_name.clone(), actions);
             self.tables_to_meta_actions
                 .insert(table_name.clone(), meta_actions);
