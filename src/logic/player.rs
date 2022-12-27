@@ -1,8 +1,8 @@
 use super::card::Card;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
@@ -33,7 +33,7 @@ impl PlayerConfig {
 
     /// given a message, send it to all players in the HashMap that have a Recipient address    
     pub fn send_group_message(message: &str, ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-	for player_config in ids_to_configs.values() {
+        for player_config in ids_to_configs.values() {
             if let Some(addr) = &player_config.player_addr {
                 addr.do_send(WsMessage(message.to_owned()));
             }
@@ -41,31 +41,39 @@ impl PlayerConfig {
     }
 
     /// send a given message to one player
-    pub fn send_specific_message(message: &str, id: Uuid, ids_to_configs: &HashMap<Uuid, PlayerConfig>) {
-	if let Some(player_config) = ids_to_configs.get(&id) {
+    pub fn send_specific_message(
+        message: &str,
+        id: Uuid,
+        ids_to_configs: &HashMap<Uuid, PlayerConfig>,
+    ) {
+        if let Some(player_config) = ids_to_configs.get(&id) {
             if let Some(addr) = &player_config.player_addr {
-		addr.do_send(WsMessage(message.to_owned()));
-	    }
-	}
+                addr.do_send(WsMessage(message.to_owned()));
+            }
+        }
     }
 
     /// find a player with the given id, and set their name to be the given name
     pub fn set_player_name(id: Uuid, name: &str, ids_to_configs: &mut HashMap<Uuid, PlayerConfig>) {
-	if let Some(player_config) = ids_to_configs.get_mut(&id) {
+        if let Some(player_config) = ids_to_configs.get_mut(&id) {
             player_config.name = Some(name.to_string());
-            player_config.player_addr.as_ref().unwrap()
-		.do_send(
-		    WsMessage(format!("You are changing your name to {:?}", name))
-		);	    	    
-	}
-    }    
+            player_config
+                .player_addr
+                .as_ref()
+                .unwrap()
+                .do_send(WsMessage(format!(
+                    "You are changing your name to {:?}",
+                    name
+                )));
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Player {
     pub id: Uuid,
     pub human_controlled: bool, // do we need user input or let the computer control it
-    pub money: u32,    
+    pub money: u32,
     pub is_active: bool,      // is still playing the current hand
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     pub hole_cards: Vec<Card>,
@@ -75,11 +83,11 @@ impl Player {
     pub fn new(id: Uuid, human_controlled: bool, money: u32) -> Self {
         Player {
             id,
-            human_controlled,	    	    
-            money,	    
+            human_controlled,
+            money,
             is_active: false, // a branch new player is not active in a hand
             is_sitting_out: false,
-            hole_cards: Vec::<Card>::with_capacity(2),	    
+            hole_cards: Vec::<Card>::with_capacity(2),
         }
     }
 

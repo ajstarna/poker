@@ -27,21 +27,21 @@ pub enum Rank {
 
 impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-	let string = match self {
-	    Rank::Two => "2",
-	    Rank::Three => "3",
-	    Rank::Four => "4",
-	    Rank::Five => "5",
-	    Rank::Six => "6",
-	    Rank::Seven => "7",
-	    Rank::Eight => "8",
-	    Rank::Nine => "9",
-	    Rank::Ten => "T",
-	    Rank::Jack => "J",
-	    Rank::Queen => "Q",
-	    Rank::King => "K",
-	    Rank::Ace => "A",
-	};
+        let string = match self {
+            Rank::Two => "2",
+            Rank::Three => "3",
+            Rank::Four => "4",
+            Rank::Five => "5",
+            Rank::Six => "6",
+            Rank::Seven => "7",
+            Rank::Eight => "8",
+            Rank::Nine => "9",
+            Rank::Ten => "T",
+            Rank::Jack => "J",
+            Rank::Queen => "Q",
+            Rank::King => "K",
+            Rank::Ace => "A",
+        };
         write!(f, "{}", string)
     }
 }
@@ -56,12 +56,12 @@ pub enum Suit {
 
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-	let string = match self {
-	    Suit::Club => "c",
-	    Suit::Diamond => "d",
-	    Suit::Heart => "h",
-	    Suit::Spade => "s",
-	};
+        let string = match self {
+            Suit::Club => "c",
+            Suit::Diamond => "d",
+            Suit::Heart => "h",
+            Suit::Spade => "s",
+        };
         write!(f, "{}", string)
     }
 }
@@ -153,19 +153,20 @@ impl PartialEq for HandResult {
 }
 impl ToString for HandResult {
     fn to_string(&self) -> String {
-	format!("{:?}: {}, {}",
-		self.hand_ranking,
-		self.constituent_cards
-		.iter()
-		.map(|x| x.to_string())
-		.collect::<Vec<String>>()
-		.join("-"),
-		self.kickers
-		.iter()
-		.map(|x| x.to_string())
-		.collect::<Vec<String>>()
-		.join("-")
-	)
+        format!(
+            "{:?}: {}, {}",
+            self.hand_ranking,
+            self.constituent_cards
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join("-"),
+            self.kickers
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join("-")
+        )
     }
 }
 
@@ -182,23 +183,23 @@ impl HandResult {
         let mut value = hand_ranking as u32;
         value <<= 20; // shift it into the most significant area we need
 
-	// add the values of the constituent cards and then kickers
-	// note that this is only a tie breaker when the handranking is the same for both hands
-	// e.g. a pair of Kings will lead to higher "extra" bit value than a two-pair of 5s and 6s,
-	// but the original significant bits will be higher for the two-pair
-	
-	// The constituent cards have more significant value than the kickers,
-	// e.g. a pair of Queens with a highest card of 6 in its kickers will get a higher score
-	// than a pair of 10s with a highest card of King in its kickers (because the King doesn't get added
-	// until we are dealing with the kicker bits, and the Queens get a higher score than the 10s)
+        // add the values of the constituent cards and then kickers
+        // note that this is only a tie breaker when the handranking is the same for both hands
+        // e.g. a pair of Kings will lead to higher "extra" bit value than a two-pair of 5s and 6s,
+        // but the original significant bits will be higher for the two-pair
+
+        // The constituent cards have more significant value than the kickers,
+        // e.g. a pair of Queens with a highest card of 6 in its kickers will get a higher score
+        // than a pair of 10s with a highest card of King in its kickers (because the King doesn't get added
+        // until we are dealing with the kicker bits, and the Queens get a higher score than the 10s)
         let mut shift_amount = 16;
         for card in constituent_cards.iter().rev() {
-	    // the highest cards are shifted all the way to the left
+            // the highest cards are shifted all the way to the left
             let mut extra = card.rank as u32;
             extra <<= shift_amount;
             value += extra;
             shift_amount -= 4;
-        }	
+        }
         for kicker in kickers.iter().rev() {
             let mut extra = kicker.rank as u32;
             extra <<= shift_amount;
@@ -221,7 +222,7 @@ impl HandResult {
         let mut is_flush = true;
         let first_suit = five_cards[0].suit;
         let mut is_straight = true;
-	let mut is_low_ace_straight = false;
+        let mut is_low_ace_straight = false;
         let first_rank = five_cards[0].rank as usize;
         for (i, card) in five_cards.iter().enumerate() {
             let count = rank_counts.entry(card.rank).or_insert(0);
@@ -229,10 +230,10 @@ impl HandResult {
             if card.suit != first_suit {
                 is_flush = false;
             }
-	    if i == 4 && card.rank == Rank::Ace && first_rank == 2 {
-		// completing the straight with an Ace on 2-->Ace
-		is_low_ace_straight = true;
-	    } else if card.rank as usize != first_rank + i {
+            if i == 4 && card.rank == Rank::Ace && first_rank == 2 {
+                // completing the straight with an Ace on 2-->Ace
+                is_low_ace_straight = true;
+            } else if card.rank as usize != first_rank + i {
                 is_straight = false;
             }
         }
@@ -317,20 +318,20 @@ impl HandResult {
         }
         constituent_cards.sort();
 
-	if hand_ranking == HandRanking::FullHouse {
-	    // for a full house we actually want to make sure the sort has the 3 of a kind
-	    // sorted "higher" than the pair (since that is what matters more when determining
-	    // hand value)
-	    if constituent_cards[0].rank == constituent_cards[2].rank {
-		constituent_cards.reverse();
-	    }
-	} else if is_low_ace_straight {
-	    // we want the constituent cards to be sorted with the Ace being "low",
-	    // so we need to move it to the beginning
-	    let ace = constituent_cards.pop().unwrap();
-	    constituent_cards.insert(0, ace);
-	}
-	
+        if hand_ranking == HandRanking::FullHouse {
+            // for a full house we actually want to make sure the sort has the 3 of a kind
+            // sorted "higher" than the pair (since that is what matters more when determining
+            // hand value)
+            if constituent_cards[0].rank == constituent_cards[2].rank {
+                constituent_cards.reverse();
+            }
+        } else if is_low_ace_straight {
+            // we want the constituent cards to be sorted with the Ace being "low",
+            // so we need to move it to the beginning
+            let ace = constituent_cards.pop().unwrap();
+            constituent_cards.insert(0, ace);
+        }
+
         kickers.sort();
         let value = HandResult::score_hand(hand_ranking, &constituent_cards, &kickers);
         Self {
@@ -341,7 +342,6 @@ impl HandResult {
         }
     }
 }
-
 
 /// trait to define behaviour that you would expect out of a deck of cards
 /// in unit tests, we may want to provide a rigged deck, wherease in a normal game
@@ -393,7 +393,6 @@ impl Deck for StandardDeck {
     }
 }
 
-
 #[derive(Debug)]
 pub struct RiggedDeck {
     cards: Vec<Card>,
@@ -409,7 +408,7 @@ impl RiggedDeck {
     /// push a card into the deck.
     /// we can set the order exactly how we want
     pub fn push(&mut self, card: Card) {
-	self.cards.push(card);
+        self.cards.push(card);
     }
 }
 
@@ -432,275 +431,583 @@ impl Deck for RiggedDeck {
 
 #[cfg(test)]
 mod tests {
-     use super::*;
+    use super::*;
 
     #[test]
     fn ace_high_low() {
         let hand1 = vec![
-	    Card{rank: Rank::Ace, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Three, suit: Suit::Heart},
-	    Card{rank: Rank::Four, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Ace,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Four,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::Straight);
 
         let hand2 = vec![
-	    Card{rank: Rank::Three, suit: Suit::Spade},
-	    Card{rank: Rank::Four, suit: Suit::Club},
-	    Card{rank: Rank::Five, suit: Suit::Spade},
-	    Card{rank: Rank::Six, suit: Suit::Heart},
-	    Card{rank: Rank::Seven, suit: Suit::Spade},	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Four,
+                suit: Suit::Club,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Six,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Seven,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::Straight);
-	assert!(result1 < result2);
+        assert!(result1 < result2);
 
         let hand3 = vec![
-	    Card{rank: Rank::Ten, suit: Suit::Spade},
-	    Card{rank: Rank::Jack, suit: Suit::Club},
-	    Card{rank: Rank::Queen, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Heart},
-	    Card{rank: Rank::Ace, suit: Suit::Spade},	    
-	];
-	
-	let result3 = HandResult::analyze_hand(hand3);
-        assert_eq!(result3.hand_ranking, HandRanking::Straight);
-	assert!(result1 < result3);
-	assert!(result2 < result3);		
+            Card {
+                rank: Rank::Ten,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Club,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Ace,
+                suit: Suit::Spade,
+            },
+        ];
 
+        let result3 = HandResult::analyze_hand(hand3);
+        assert_eq!(result3.hand_ranking, HandRanking::Straight);
+        assert!(result1 < result3);
+        assert!(result2 < result3);
     }
-    
+
     #[test]
     fn compare_high_card_and_pair() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Four, suit: Suit::Spade},
-	    Card{rank: Rank::Five, suit: Suit::Heart},
-	    Card{rank: Rank::Nine, suit: Suit::Heart},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Four,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Nine,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::HighCard);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Club},
-	    Card{rank: Rank::Three, suit: Suit::Spade},
-	    Card{rank: Rank::Seven, suit: Suit::Heart},
-	    Card{rank: Rank::Nine, suit: Suit::Spade},	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Club,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Seven,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Nine,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::Pair);
         assert_eq!(
-	    result2.constituent_cards,
-	    vec![
-	    	Card{rank: Rank::Two, suit: Suit::Spade},
-		Card{rank: Rank::Two, suit: Suit::Club},
-	    ]
-	);
+            result2.constituent_cards,
+            vec![
+                Card {
+                    rank: Rank::Two,
+                    suit: Suit::Spade
+                },
+                Card {
+                    rank: Rank::Two,
+                    suit: Suit::Club
+                },
+            ]
+        );
 
-	assert!(result1 < result2);
+        assert!(result1 < result2);
     }
-    
+
     #[test]
     fn compare_two_pair_and_three() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Diamond},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::TwoPair);
         assert_eq!(
-	    result1.constituent_cards,
-	    vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Diamond},		
-	    ]
-	);
+            result1.constituent_cards,
+            vec![
+                Card {
+                    rank: Rank::Two,
+                    suit: Suit::Spade
+                },
+                Card {
+                    rank: Rank::Two,
+                    suit: Suit::Heart
+                },
+                Card {
+                    rank: Rank::Five,
+                    suit: Suit::Heart
+                },
+                Card {
+                    rank: Rank::Five,
+                    suit: Suit::Diamond
+                },
+            ]
+        );
 
         let hand2 = vec![
-	    Card{rank: Rank::King, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Heart},
-	    Card{rank: Rank::King, suit: Suit::Diamond},
-	    Card{rank: Rank::Five, suit: Suit::Diamond},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},	    
-	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::ThreeOfAKind);
         assert_eq!(
-	    result2.constituent_cards,
-	    vec![
-	    Card{rank: Rank::King, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Heart},
-	    Card{rank: Rank::King, suit: Suit::Diamond},		
-	    ]
-	);
+            result2.constituent_cards,
+            vec![
+                Card {
+                    rank: Rank::King,
+                    suit: Suit::Spade
+                },
+                Card {
+                    rank: Rank::King,
+                    suit: Suit::Heart
+                },
+                Card {
+                    rank: Rank::King,
+                    suit: Suit::Diamond
+                },
+            ]
+        );
 
-	assert!(result1 < result2);
+        assert!(result1 < result2);
     }
 
     #[test]
     fn compare_high_cards() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Seven, suit: Suit::Spade},
-	    Card{rank: Rank::Eight, suit: Suit::Diamond},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Seven,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Eight,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::HighCard);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Five, suit: Suit::Spade}, // the 5 is less than the 7
-	    Card{rank: Rank::Eight, suit: Suit::Diamond},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Spade},	    	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Spade,
+            }, // the 5 is less than the 7
+            Card {
+                rank: Rank::Eight,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::HighCard);
-	assert!(result1 > result2);
+        assert!(result1 > result2);
     }
-    
+
     #[test]
     fn compare_straights() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Three, suit: Suit::Heart},
-	    Card{rank: Rank::Four, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Diamond},
-	    Card{rank: Rank::Six, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Four,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Six,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::Straight);
 
         let hand2 = vec![
-	    Card{rank: Rank::Nine, suit: Suit::Spade},
-	    Card{rank: Rank::Ten, suit: Suit::Heart},
-	    Card{rank: Rank::Jack, suit: Suit::Diamond},
-	    Card{rank: Rank::Queen, suit: Suit::Diamond},
-	    Card{rank: Rank::King, suit: Suit::Spade},	    
-	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Nine,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Ten,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::Straight);
-	assert!(result1 < result2);
+        assert!(result1 < result2);
     }
 
     /// these flushes have some cards in common (as will happen in a real game)
     #[test]
     fn compare_flushes() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Seven, suit: Suit::Spade},
-	    Card{rank: Rank::Eight, suit: Suit::Spade},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Spade},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Seven,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Eight,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::Flush);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Five, suit: Suit::Spade}, // the 5 is less than the 7
-	    Card{rank: Rank::Eight, suit: Suit::Spade},
-	    Card{rank: Rank::Jack, suit: Suit::Spade},
-	    Card{rank: Rank::King, suit: Suit::Spade},	    	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Spade,
+            }, // the 5 is less than the 7
+            Card {
+                rank: Rank::Eight,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Spade,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::Flush);
-	assert!(result1 > result2);
-    }    
+        assert!(result1 > result2);
+    }
 
     #[test]
     fn compare_full_houses() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Heart},
-	    Card{rank: Rank::Queen, suit: Suit::Spade},
-	    Card{rank: Rank::Queen, suit: Suit::Heart},
-	    Card{rank: Rank::Queen, suit: Suit::Club},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Club,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::FullHouse);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Heart},
-	    Card{rank: Rank::Two, suit: Suit::Diamond},
-	    Card{rank: Rank::Queen, suit: Suit::Heart},
-	    Card{rank: Rank::Queen, suit: Suit::Club},	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Club,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::FullHouse);
-	assert!(result1 > result2);
-    }    
+        assert!(result1 > result2);
+    }
 
     #[test]
     fn compare_full_houses_2() {
-	// the fives should beat the twos
+        // the fives should beat the twos
         let hand1 = vec![
-	    Card{rank: Rank::Five, suit: Suit::Spade},
-	    Card{rank: Rank::Five, suit: Suit::Heart},
-	    Card{rank: Rank::Five, suit: Suit::Diamond},
-	    Card{rank: Rank::Jack, suit: Suit::Heart},
-	    Card{rank: Rank::Jack, suit: Suit::Club},	    
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Five,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Jack,
+                suit: Suit::Club,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::FullHouse);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Two, suit: Suit::Heart},
-	    Card{rank: Rank::Two, suit: Suit::Diamond},
-	    Card{rank: Rank::Queen, suit: Suit::Heart},
-	    Card{rank: Rank::Queen, suit: Suit::Club},	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Diamond,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Club,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::FullHouse);
-	assert!(result1 > result2);
-    }    
-    
+        assert!(result1 > result2);
+    }
+
     #[test]
     fn compare_pairs() {
         let hand1 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Three, suit: Suit::Heart},
-	    Card{rank: Rank::Six, suit: Suit::Club},	    	    
-	    Card{rank: Rank::Queen, suit: Suit::Spade},
-	    Card{rank: Rank::Queen, suit: Suit::Heart},
-	];
-	let result1 = HandResult::analyze_hand(hand1);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Six,
+                suit: Suit::Club,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Queen,
+                suit: Suit::Heart,
+            },
+        ];
+        let result1 = HandResult::analyze_hand(hand1);
         assert_eq!(result1.hand_ranking, HandRanking::Pair);
 
         let hand2 = vec![
-	    Card{rank: Rank::Two, suit: Suit::Spade},
-	    Card{rank: Rank::Three, suit: Suit::Heart},
-	    Card{rank: Rank::Ten, suit: Suit::Heart},
-	    Card{rank: Rank::Ten, suit: Suit::Club},
-	    Card{rank: Rank::King, suit: Suit::Diamond},	    
-	];
-	
-	let result2 = HandResult::analyze_hand(hand2);
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Spade,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Ten,
+                suit: Suit::Heart,
+            },
+            Card {
+                rank: Rank::Ten,
+                suit: Suit::Club,
+            },
+            Card {
+                rank: Rank::King,
+                suit: Suit::Diamond,
+            },
+        ];
+
+        let result2 = HandResult::analyze_hand(hand2);
         assert_eq!(result2.hand_ranking, HandRanking::Pair);
-	assert!(result1 > result2);
-    }    
-    
+        assert!(result1 > result2);
+    }
 }

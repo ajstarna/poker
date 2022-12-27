@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use actix::prelude::*;
 use actix_web_actors::ws;
 
-use uuid::Uuid;
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::hub;
 use crate::logic::player::PlayerAction;
@@ -57,12 +57,12 @@ impl WsGameSession {
                 // heartbeat timed out
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
-		// notify game server. A Leave is the same thing for the game
-		act.hub_addr.do_send(messages::MetaActionMessage {
-		    id: act.id,
-		    meta_action: messages::MetaAction::Leave(act.id),
-		});
-		
+                // notify game server. A Leave is the same thing for the game
+                act.hub_addr.do_send(messages::MetaActionMessage {
+                    id: act.id,
+                    meta_action: messages::MetaAction::Leave(act.id),
+                });
+
                 // stop actor
                 ctx.stop();
 
@@ -137,7 +137,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
         };
 
         log::debug!("WEBSOCKET MESSAGE: {msg:?}");
-        //println!("WEBSOCKET MESSAGE: {:?}", msg);	
+        //println!("WEBSOCKET MESSAGE: {:?}", msg);
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb = Instant::now();
@@ -149,13 +149,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
             ws::Message::Text(text) => {
                 let m = text.trim();
 
-		if let Ok(object) = serde_json::from_str(m) {
-		    println!("{}", object);		    
-		    self.handle_client_command(object, ctx);
-		} else {
-		    println!("message unable to parse as json: {}", m);
-		};	
-	    }			
+                if let Ok(object) = serde_json::from_str(m) {
+                    println!("{}", object);
+                    self.handle_client_command(object, ctx);
+                } else {
+                    println!("message unable to parse as json: {}", m);
+                };
+            }
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {
                 ctx.close(reason);
@@ -175,200 +175,198 @@ impl WsGameSession {
         object: Value,
         ctx: &mut <WsGameSession as Actor>::Context,
     ) {
-	println!("Entered handle_client_command {:?}", object);
-	let msg_type_opt = object.get("msg_type");
-	if msg_type_opt.is_none() {
-	    println!("missing message type!");
-	    return;
-	}
-	let msg_type = msg_type_opt.unwrap();
+        println!("Entered handle_client_command {:?}", object);
+        let msg_type_opt = object.get("msg_type");
+        if msg_type_opt.is_none() {
+            println!("missing message type!");
+            return;
+        }
+        let msg_type = msg_type_opt.unwrap();
         match msg_type {
-	    Value::String(type_str) => {
-		match type_str.as_str() {
-		    "player_action" => {
-			self.handle_player_action(object, ctx);
-		    }
-		    "list" => {
-			self.handle_list_tables(object, ctx);			
-		    }
-		    "join" => {
-			self.handle_join_table(object, ctx);
-		    }
-		    "create" => {
-			self.handle_create_table(object, ctx);
-		    }		    
-		    "leave" => {
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::Leave(self.id),
-			});
-		    }	    
-		    "sitout" => {
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::SitOut(self.id),
-			});
-		    }	    
-		    "imback" => {
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::ImBack(self.id),
-			});
-		    }	    
-		    "name" => {
-			self.handle_player_name(object, ctx);
-		    }
-		    "chat" => {
-			self.handle_chat(object, ctx);
-		    }
-		    _ => ctx.text(format!("!!! unknown command: {:?}", object)),
-		}
-	    }
-	    _ => ctx.text(format!("!!! improper msg_type in: {:?}", object)),
-	}
+            Value::String(type_str) => match type_str.as_str() {
+                "player_action" => {
+                    self.handle_player_action(object, ctx);
+                }
+                "list" => {
+                    self.handle_list_tables(object, ctx);
+                }
+                "join" => {
+                    self.handle_join_table(object, ctx);
+                }
+                "create" => {
+                    self.handle_create_table(object, ctx);
+                }
+                "leave" => {
+                    self.hub_addr.do_send(messages::MetaActionMessage {
+                        id: self.id,
+                        meta_action: messages::MetaAction::Leave(self.id),
+                    });
+                }
+                "sitout" => {
+                    self.hub_addr.do_send(messages::MetaActionMessage {
+                        id: self.id,
+                        meta_action: messages::MetaAction::SitOut(self.id),
+                    });
+                }
+                "imback" => {
+                    self.hub_addr.do_send(messages::MetaActionMessage {
+                        id: self.id,
+                        meta_action: messages::MetaAction::ImBack(self.id),
+                    });
+                }
+                "name" => {
+                    self.handle_player_name(object, ctx);
+                }
+                "chat" => {
+                    self.handle_chat(object, ctx);
+                }
+                _ => ctx.text(format!("!!! unknown command: {:?}", object)),
+            },
+            _ => ctx.text(format!("!!! improper msg_type in: {:?}", object)),
+        }
     }
 
     fn handle_create_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	self.hub_addr
-	    .send(messages::Create {
-		id: self.id,
-		create_msg: object
-	    })
-	    .into_actor(self)
-	    .then(|res, _, ctx| {
-		match res {
-		    Ok(create_game_result) => {
-			match create_game_result {
-			    Ok(table_name) => {
-				println!("created game = {}", table_name);				
-				let message = json::object!{
-				    msg_type: "created_game".to_owned(),
-				    table_name: table_name,
-				};	    
-				ctx.text(message.dump());
-			    },
-			    Err(e) => {
-				println!("{}", e);
-				ctx.text(format!("{}", e));
-			    },
-			}
-		    }
-		    _ => println!("MailBox error"),
-		}
-		fut::ready(())
-	    })
-	    .wait(ctx)
-	// .wait(ctx) pauses all events in context,
-	// so actor wont receive any new messages until it get list
-	// of tables back					    
-	
+        self.hub_addr
+            .send(messages::Create {
+                id: self.id,
+                create_msg: object,
+            })
+            .into_actor(self)
+            .then(|res, _, ctx| {
+                match res {
+                    Ok(create_game_result) => match create_game_result {
+                        Ok(table_name) => {
+                            println!("created game = {}", table_name);
+                            let message = json::object! {
+                                msg_type: "created_game".to_owned(),
+                                table_name: table_name,
+                            };
+                            ctx.text(message.dump());
+                        }
+                        Err(e) => {
+                            println!("{}", e);
+                            ctx.text(format!("{}", e));
+                        }
+                    },
+                    _ => println!("MailBox error"),
+                }
+                fut::ready(())
+            })
+            .wait(ctx)
+        // .wait(ctx) pauses all events in context,
+        // so actor wont receive any new messages until it get list
+        // of tables back
     }
-    
+
     fn handle_list_tables(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	// Send ListTables message to game server and wait for
-	// response
-	println!("List tables");
-	self.hub_addr
-	    .send(messages::ListTables)
-	    .into_actor(self)
-	    .then(|res, _, ctx| {
-		match res {
-		    Ok(tables) => {
-			let message = json::object!{
-			    msg_type: "tables_list".to_owned(),
-			    tables: tables,
-			};	    
-			ctx.text(message.dump());			
-		    }
-		    _ => println!("Something is wrong"),
-		}
-		fut::ready(())
-	    })
-	    .wait(ctx)
-	// .wait(ctx) pauses all events in context,
-	// so actor wont receive any new messages until it get list
-	// of tables back
+        // Send ListTables message to game server and wait for
+        // response
+        println!("List tables");
+        self.hub_addr
+            .send(messages::ListTables)
+            .into_actor(self)
+            .then(|res, _, ctx| {
+                match res {
+                    Ok(tables) => {
+                        let message = json::object! {
+                            msg_type: "tables_list".to_owned(),
+                            tables: tables,
+                        };
+                        ctx.text(message.dump());
+                    }
+                    _ => println!("Something is wrong"),
+                }
+                fut::ready(())
+            })
+            .wait(ctx)
+        // .wait(ctx) pauses all events in context,
+        // so actor wont receive any new messages until it get list
+        // of tables back
     }
-    
+
     fn handle_join_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(Value::String(table_name)) = object.get("table_name") {
-	    let table_name = table_name.to_string();
-	    self.hub_addr.do_send(messages::Join {
-		id: self.id,
-		table_name,
-	    });
-	} else {
-	    println!("missing table name!");
-	    ctx.text("!!! table_name is required");	    
-	    return;
-	}
+        if let Some(Value::String(table_name)) = object.get("table_name") {
+            let table_name = table_name.to_string();
+            self.hub_addr.do_send(messages::Join {
+                id: self.id,
+                table_name,
+            });
+        } else {
+            println!("missing table name!");
+            ctx.text("!!! table_name is required");
+            return;
+        }
     }
 
     fn handle_player_action(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(Value::String(player_action)) = object.get("action") {
-	    let player_action = player_action.to_string();
-	    match player_action.as_str() {
-		"check" => {
-		    self.hub_addr.do_send(messages::PlayerActionMessage {
-			id: self.id,
-			player_action: PlayerAction::Check,
-		    });
-		}
-		"fold" => {
-		    self.hub_addr.do_send(messages::PlayerActionMessage {
-			id: self.id,
-			player_action: PlayerAction::Fold,
-		    });
-		}
-		"call" => {
-		    self.hub_addr.do_send(messages::PlayerActionMessage {
-			id: self.id,
-			player_action: PlayerAction::Call,
-		    });
-		}
-		"bet" => {
-		    if let Some(Value::String(amount)) = object.get("amount") {
-			let amount = amount.to_string();
-			self.hub_addr.do_send(messages::PlayerActionMessage {
-			    id: self.id,
-			    player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
-			});
-			//ctx.text(format!("placing bet of: {:?}", v[1]));
-		    } else {
-			ctx.text("!!!You much specify how much to bet!");		    
-		    }
-		}
-		other => {
-		    ctx.text(format!("invalid action set for type:player_action: {:?}", other));
-		}
-	    }
-	} else {
-	    ctx.text("!!! action is required");
-	}	    
+        if let Some(Value::String(player_action)) = object.get("action") {
+            let player_action = player_action.to_string();
+            match player_action.as_str() {
+                "check" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Check,
+                    });
+                }
+                "fold" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Fold,
+                    });
+                }
+                "call" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Call,
+                    });
+                }
+                "bet" => {
+                    if let Some(Value::String(amount)) = object.get("amount") {
+                        let amount = amount.to_string();
+                        self.hub_addr.do_send(messages::PlayerActionMessage {
+                            id: self.id,
+                            player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
+                        });
+                    //ctx.text(format!("placing bet of: {:?}", v[1]));
+                    } else {
+                        ctx.text("!!!You much specify how much to bet!");
+                    }
+                }
+                other => {
+                    ctx.text(format!(
+                        "invalid action set for type:player_action: {:?}",
+                        other
+                    ));
+                }
+            }
+        } else {
+            ctx.text("!!! action is required");
+        }
     }
 
     fn handle_player_name(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(Value::String(name)) = object.get("player_name") {
-		println!("{}", name);
-	    self.hub_addr
-		.do_send(messages::PlayerName { id: self.id, name: name.to_string() });
-	} else {
-	    ctx.text("!!! player_name is required");
-	}
+        if let Some(Value::String(name)) = object.get("player_name") {
+            println!("{}", name);
+            self.hub_addr.do_send(messages::PlayerName {
+                id: self.id,
+                name: name.to_string(),
+            });
+        } else {
+            ctx.text("!!! player_name is required");
+        }
     }
 
     fn handle_chat(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-	if let Some(Value::String(text)) = object.get("text") {
-	    let text = text.to_string();
-	    self.hub_addr.do_send(
-		messages::MetaActionMessage {
-		    id: self.id,
-		    meta_action: messages::MetaAction::Chat(self.id, text)
-		}
-	    )
-	} else {
-	    println!("missing chat_message!");
-	    ctx.text("!!! chat_message is required");	    
-	}
+        if let Some(Value::String(text)) = object.get("text") {
+            let text = text.to_string();
+            self.hub_addr.do_send(messages::MetaActionMessage {
+                id: self.id,
+                meta_action: messages::MetaAction::Chat(self.id, text),
+            })
+        } else {
+            println!("missing chat_message!");
+            ctx.text("!!! chat_message is required");
+        }
     }
 }
