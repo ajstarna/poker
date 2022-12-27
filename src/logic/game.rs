@@ -184,7 +184,7 @@ impl GameHand {
 
 }
 
-impl Game {
+impl <'a> Game {
     
     fn transition(&mut self, mut gamehand: GameHand) {
         let pause_duration = time::Duration::from_secs(2); 	
@@ -984,10 +984,10 @@ impl Game {
 }
 
 #[derive(Debug)]
-pub struct Game {
+pub struct Game<'a> {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    incoming_actions: Option<&Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
-    incoming_meta_actions: Option<&Arc<Mutex<VecDeque<MetaAction>>>>,	
+    incoming_actions: Option<&'a Arc<Mutex<HashMap<Uuid, PlayerAction>>>>,
+    incoming_meta_actions: Option<&'a Arc<Mutex<VecDeque<MetaAction>>>>,	
     pub name: String,
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
@@ -1002,7 +1002,7 @@ pub struct Game {
 }
 
 /// useful for unit tests, for example
-impl Default for Game {
+impl<'a> Default for Game<'a> {
     fn default() -> Self {
         Self {
 	    hub_addr: None,
@@ -1024,8 +1024,7 @@ impl Default for Game {
     }
 }
 
-impl Game {
-
+impl<'a> Game<'a> {
     /// the address of the GameHub is optional so that unit tests need not worry about it
     /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
     pub fn new(
