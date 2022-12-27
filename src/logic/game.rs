@@ -1394,7 +1394,13 @@ mod tests {
 	for i in 0..5 {
             let name = format!("Bot {}", i);
             let index = game.add_bot(name);
-            assert_eq!(index.unwrap(), i);
+	    if i < max_players {
+		assert_eq!(index.unwrap() as u8, i);
+	    } else {
+		// above max_players, the returned index should be None
+		// i.e. the player was not added to the game
+		assert_eq!(index, None);
+	    }
 	}
         assert_eq!(game.players.len(), 9); // len of players always simply 9
 	
