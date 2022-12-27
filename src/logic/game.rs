@@ -1052,9 +1052,21 @@ impl<'a> Game<'a> {
     }
 
     /// add a given playerconfig to an empty seat
+    /// if the game requires a password, then a matching password must be provided for the user to be added
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
-    pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
+    pub fn add_user(&mut self, player_config: PlayerConfig, password: Option<String>) -> Option<usize> {
+	if let Some(game_password) = &self.password {
+	    if let Some(given_password) = password {
+		if game_password.ne(&given_password) {
+		    // the provided password does not match the game password
+		    return None;
+		}
+	    } else {
+		// we did not provide a password, but the game requires one
+		return None;
+	    }
+	}
         let new_player = Player::new(player_config.id, true, self.buy_in);
         self.add_player(player_config, new_player)
     }
@@ -1203,10 +1215,10 @@ impl<'a> Game<'a> {
 
                     PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
                 }
-                MetaAction::Join(player_config) => {
+                MetaAction::Join(player_config, password) => {
                     // add a new player to the game
                     let id = player_config.id; // copy the id so we can use to send a message later
-                    if self.add_user(player_config).is_none() {
+                    if self.add_user(player_config, password).is_none() {
                         // we were unable to add the player
                         PlayerConfig::send_specific_message(
                             &"Unable to join game, it must be full!".to_owned(),
@@ -1271,12 +1283,12 @@ mod tests {
     }
 
     #[test]
-    fn add_user_no_connection() {
+    fn add_user() {
         let mut game = Game::default();
         let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
         let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
+        game.add_user(settings, None);
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -1284,6 +1296,92 @@ mod tests {
         assert!(game.players[0].as_ref().unwrap().human_controlled);
     }
 
+    /// test that a player can join with the correct password
+    #[test]
+    fn add_user_password_success() {
+        let mut game = Game::default();
+        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
+        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
+        game.incoming_actions = Some(&incoming_actions);
+        game.incoming_meta_actions = Some(&incoming_meta_actions);
+
+	let password = "123".to_string();
+	game.password = Some(password.clone());
+	
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, Some(password)));
+
+	game.handle_meta_actions();
+	
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+    }
+
+    /// test that a player can NOT join with the incorrect password
+    #[test]
+    fn add_user_password_fail() {
+        let mut game = Game::default();
+        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
+        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
+        game.incoming_actions = Some(&incoming_actions);
+        game.incoming_meta_actions = Some(&incoming_meta_actions);
+
+	game.password = Some("123".to_string());
+	
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, Some("345".to_string())));
+
+	game.handle_meta_actions();
+	
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // did not make it in
+    }
+
+    /// test that a player can NOT join without providing a password
+    #[test]
+    fn add_user_password_missing() {
+        let mut game = Game::default();
+        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
+        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
+        game.incoming_actions = Some(&incoming_actions);
+        game.incoming_meta_actions = Some(&incoming_meta_actions);
+
+	game.password = Some("123".to_string());		
+	
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, None)); // no password passed in
+
+	game.handle_meta_actions();
+	
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // did not make it in
+    }
+    
     /// if we set max_players, then trying to add anyone past that point will
     /// not work
     #[test]
@@ -1325,13 +1423,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1372,13 +1470,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1439,13 +1537,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1491,13 +1589,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1603,13 +1701,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1700,7 +1798,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -1708,7 +1806,7 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1801,7 +1899,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Big".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -1809,7 +1907,7 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1914,7 +2012,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -1922,13 +2020,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None);
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2044,7 +2142,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2052,13 +2150,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None);
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2185,7 +2283,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2193,19 +2291,19 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None);
 
         // player4 will start as UTG
         let id4 = uuid::Uuid::new_v4();
         let name4 = "UTG".to_string();
         let settings4 = PlayerConfig::new(id4, Some(name4), None);
-        game.add_user(settings4);
+        game.add_user(settings4, None);
         // set UTG to have medium money so there is a second side pot
         game.players[3].as_mut().unwrap().money = 750;
 
@@ -2274,13 +2372,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2330,17 +2428,17 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
 
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Human3".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None);
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2350,7 +2448,7 @@ mod tests {
         let num_hands = 4;
         let game = std::thread::scope(|scope| {
             let handler = scope.spawn(move || {
-                game.play_one_hand();
+                game.play(Some(num_hands));
                 game // return the game back
             });
 
@@ -2426,7 +2524,7 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     /// a player joins during the hand, and it works fine
     #[test]
-    fn mid_hand_join() {
+    fn join_mid_hand() {
         let mut game = Game::default();
         let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
         let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
@@ -2437,13 +2535,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2470,10 +2568,11 @@ mod tests {
             let id3 = uuid::Uuid::new_v4();
             let name3 = "Human3".to_string();
             let settings3 = PlayerConfig::new(id3, Some(name3), None);
+	    
             incoming_meta_actions
                 .lock()
                 .unwrap()
-                .push_back(MetaAction::Join(settings3));
+                .push_back(MetaAction::Join(settings3, None)); // no password needed
 
             // wait for the flop
             let wait_duration = time::Duration::from_secs(8);
@@ -2558,13 +2657,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None);
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None);
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();

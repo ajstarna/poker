@@ -10,7 +10,7 @@ use uuid::Uuid;
 /// to the running games Player name change. player join/leave
 #[derive(Debug)]
 pub enum MetaAction {
-    Join(PlayerConfig),
+    Join(PlayerConfig, Option<String>),
     Leave(Uuid),
     ImBack(Uuid),
     SitOut(Uuid),
@@ -52,6 +52,8 @@ pub struct Join {
 
     /// Table name
     pub table_name: String,
+
+    pub password: Option<String>,
 }
 
 /// the game sends this message to confirm that a player has been removed

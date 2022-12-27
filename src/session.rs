@@ -27,13 +27,6 @@ pub struct WsGameSession {
     /// otherwise we drop connection.
     pub hb: Instant,
 
-    /// joined table (if at one)
-    // ADAM: rfemoving this. should the session need to know anything excect how to contact the gamehub
-    //pub table: Option<String>,
-
-    /// user name
-    //pub name: Option<String>,
-
     /// Game hub address
     pub hub_addr: Addr<hub::GameHub>,
 }
@@ -286,15 +279,29 @@ impl WsGameSession {
     }
 
     fn handle_join_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-        if let Some(Value::String(table_name)) = object.get("table_name") {
+        if let (
+	    Some(Value::String(table_name)),
+	    Some(password),
+	)
+	= (
+	    object.get("table_name"),
+	    object.get("password"),		
+	) {
             let table_name = table_name.to_string();
+            let password = if password.is_string() {
+                Some(password.to_string())
+            } else {
+                None
+            };
+	    
             self.hub_addr.do_send(messages::Join {
                 id: self.id,
                 table_name,
+		password
             });
         } else {
-            println!("missing table name!");
-            ctx.text("!!! table_name is required");
+            println!("missing table name or password!");
+            ctx.text("!!! table_name and password (possibly null) are required");
             return;
         }
     }

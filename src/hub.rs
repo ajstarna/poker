@@ -154,7 +154,7 @@ impl Handler<Join> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join { id, table_name } = msg;
+        let Join { id, table_name, password } = msg;
 
         let player_config_option = self.main_lobby_connections.remove(&id);
         if player_config_option.is_none() {
@@ -190,7 +190,7 @@ impl Handler<Join> for GameHub {
             meta_actions
                 .lock()
                 .unwrap()
-                .push_back(MetaAction::Join(player_config));
+                .push_back(MetaAction::Join(player_config, password));
         } else {
             player_config
                 .player_addr
@@ -344,7 +344,7 @@ impl Handler<Create> for GameHub {
                 small_blind,
                 big_blind,
                 buy_in,
-                password,
+                password.clone(),
             );
 
             for i in 0..num_bots {
@@ -359,7 +359,7 @@ impl Handler<Create> for GameHub {
             // update the mapping to find the player at a table
             self.players_to_table.insert(id, table_name.clone());
 
-            if game.add_user(player_config).is_none() {
+            if game.add_user(player_config, password).is_none() {
                 panic!("how were we unable to join a fresh game?");
             } else {
                 println!("in the hub. we just joined fine?");
