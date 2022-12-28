@@ -283,25 +283,20 @@ impl WsGameSession {
     }
 
     fn handle_join_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-        if let (
-	    Some(Value::String(table_name)),
-	    Some(password),
-	)
-	= (
-	    object.get("table_name"),
-	    object.get("password"),		
-	) {
+        if let (Some(Value::String(table_name)), Some(password)) =
+            (object.get("table_name"), object.get("password"))
+        {
             let table_name = table_name.to_string();
             let password = if password.is_string() {
                 Some(password.to_string())
             } else {
                 None
             };
-	    
+
             self.hub_addr.do_send(messages::Join {
                 id: self.id,
                 table_name,
-		password
+                password,
             });
         } else {
             println!("missing table name or password!");

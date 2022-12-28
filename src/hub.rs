@@ -154,7 +154,11 @@ impl Handler<Join> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join { id, table_name, password } = msg;
+        let Join {
+            id,
+            table_name,
+            password,
+        } = msg;
 
         let player_config_option = self.main_lobby_connections.remove(&id);
         if player_config_option.is_none() {
@@ -192,19 +196,17 @@ impl Handler<Join> for GameHub {
                 .unwrap()
                 .push_back(MetaAction::Join(player_config, password));
         } else {
-	    let message = object! {
-		msg_type: "unable_to_join".to_owned(),
-		table_name: table_name.clone(),
-		reason: "no table with that name exisits",
-	    };
-	    
+            let message = object! {
+            msg_type: "unable_to_join".to_owned(),
+            table_name: table_name.clone(),
+            reason: "no table with that name exisits",
+            };
+
             player_config
                 .player_addr
                 .as_ref()
                 .unwrap()
-                .do_send(WsMessage(
-		    message.dump()
-                ));
+                .do_send(WsMessage(message.dump()));
             // put them back in the lobby
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
@@ -218,35 +220,31 @@ impl Handler<Returned> for GameHub {
     type Result = ();
 
     fn handle(&mut self, msg: Returned, _: &mut Context<Self>) {
-	let Returned {config, reason} = msg;
+        let Returned { config, reason } = msg;
         println!("Handling player {:?} removed", config);
         if let Some(table_name) = self.players_to_table.remove(&config.id) {
             // we stil think this player is at table in our mapping, so remove it
-            println!(
-                "removing player {:?} removed from {:?}",
-                config, table_name
-            );
+            println!("removing player {:?} removed from {:?}", config, table_name);
         }
 
-	// tell the player what happened (successful leave/why couldn't they join)
+        // tell the player what happened (successful leave/why couldn't they join)
 
         if let Some(addr) = &config.player_addr {
-            let mut message = object! { };
-	    match reason {
-		ReturnedReason::Left => {
-		    message["msg_type"] = "left_game".into();
-		},
-		ReturnedReason::FailureToJoin(err) => {
-		    message["msg_type"] = "unable_to_join".into();
-		    message["reason"] = err.to_string().into();
-		}
-	    }
+            let mut message = object! {};
+            match reason {
+                ReturnedReason::Left => {
+                    message["msg_type"] = "left_game".into();
+                }
+                ReturnedReason::FailureToJoin(err) => {
+                    message["msg_type"] = "unable_to_join".into();
+                    message["reason"] = err.to_string().into();
+                }
+            }
             addr.do_send(WsMessage(message.dump()));
         }
 
-        // add the config back into the lobby	
-        self.main_lobby_connections
-            .insert(config.id, config);
+        // add the config back into the lobby
+        self.main_lobby_connections.insert(config.id, config);
     }
 }
 
@@ -264,12 +262,12 @@ impl Handler<Create> for GameHub {
             // the player is not in the main lobby,
             // so we must be waiting for the game to remove the player still
             println!("player config not in the main lobby, so they must already be at a game");
-	    if let Some(table_name) = self.players_to_table.get(&id) {
-		return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
-	    } else {
-		println!("player not at lobby nor at a table");
-		return Err(CreateGameError::AlreadyAtTable("unknown".to_string()));		    
-	    }
+            if let Some(table_name) = self.players_to_table.get(&id) {
+                return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
+            } else {
+                println!("player not at lobby nor at a table");
+                return Err(CreateGameError::AlreadyAtTable("unknown".to_string()));
+            }
         }
         let player_config = player_config_option.unwrap();
 
@@ -350,9 +348,9 @@ impl Handler<Create> for GameHub {
 
             let actions = Arc::new(Mutex::new(HashMap::new()));
             let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-	    let cloned_actions = actions.clone();
-	    let cloned_meta_actions = meta_actions.clone();
-	    
+            let cloned_actions = actions.clone();
+            let cloned_meta_actions = meta_actions.clone();
+
             let mut game = Game::new(
                 ctx.address(),
                 table_name.clone(),
@@ -366,7 +364,8 @@ impl Handler<Create> for GameHub {
 
             for i in 0..num_bots {
                 let name = format!("Mr {}", i);
-                game.add_bot(name).expect("error adding bot on freshly created game");
+                game.add_bot(name)
+                    .expect("error adding bot on freshly created game");
             }
 
             if is_private {
@@ -376,17 +375,18 @@ impl Handler<Create> for GameHub {
             // update the mapping to find the player at a table
             self.players_to_table.insert(id, table_name.clone());
 
-            game.add_user(player_config, password).expect("error joining freshly created game");
+            game.add_user(player_config, password)
+                .expect("error joining freshly created game");
 
-	    std::thread::spawn(move || {
-		// Note: I tried having the actions and meta actions as part of the game struct,
-		// but this led to lifetime concerns.
-		// Then I changed to using scoped threads, and this sort of "solved" it,
-		// but it did not play nicely with actix async (i.e. the tests worked but the app did not)
-		// TLDR keep the actions as something passed in to play()
-		game.play(&cloned_actions, &cloned_meta_actions, None);
-	    });
-		
+            std::thread::spawn(move || {
+                // Note: I tried having the actions and meta actions as part of the game struct,
+                // but this led to lifetime concerns.
+                // Then I changed to using scoped threads, and this sort of "solved" it,
+                // but it did not play nicely with actix async (i.e. the tests worked but the app did not)
+                // TLDR keep the actions as something passed in to play()
+                game.play(&cloned_actions, &cloned_meta_actions, None);
+            });
+
             self.tables_to_actions.insert(table_name.clone(), actions);
             self.tables_to_meta_actions
                 .insert(table_name.clone(), meta_actions);

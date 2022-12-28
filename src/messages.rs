@@ -53,16 +53,10 @@ impl fmt::Display for JoinGameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             JoinGameError::GameIsFull => {
-                write!(
-                    f,
-                    "Game is full",
-                )
+                write!(f, "Game is full",)
             }
             JoinGameError::InvalidPassword => {
-                write!(
-                    f,
-                    "Invalid Password"
-                )
+                write!(f, "Invalid Password")
             }
         }
     }
@@ -83,7 +77,7 @@ pub struct Join {
 
 pub enum ReturnedReason {
     Left, // the player left
-    FailureToJoin(JoinGameError)
+    FailureToJoin(JoinGameError),
 }
 
 /// the game sends this message when a player config has been returned to the hub
