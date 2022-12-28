@@ -1611,6 +1611,97 @@ mod tests {
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
     }
 
+    /// if the big blind player doesn't have enough to post the big blind amount,
+    /// the current bet still goes up to the big blind
+    #[test]
+    fn big_blind_not_enough_money() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button/big blind to win
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Heart,
+        });
+        // now the small blind's hole cards
+        deck.push(Card {
+            rank: Rank::Two,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Three,
+            suit: Suit::Club,
+        });
+        // now the full run out
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Diamond,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+	
+        let mut game = Game::default();
+        game.deck = Box::new(deck);
+	
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button/big blind
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1, None).unwrap();
+        game.players[0].as_mut().unwrap().money = 3; // set the player to have less than the norm 8 BB
+	
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2, None).unwrap();
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
+        });
+
+        // set the action that player (small blind) bets,
+	// even though player1 is already all-in, so the BB can only 3 win bucks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(22));
+
+	
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+        // check that the money changed hands
+        assert_eq!(game.players[0].as_ref().unwrap().money, 6);
+        assert_eq!(game.players[1].as_ref().unwrap().money, 9997);
+    }
+    
     /// the small blind bets, the big blind calls
     /// the small blind bets on the flop, and the big blind folds
     #[test]
