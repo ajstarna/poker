@@ -1,17 +1,15 @@
 use actix::Addr;
 use json::object;
 use rand::Rng;
-use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::iter;
 use std::sync::Mutex;
 
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{MetaAction, Removed};
+use crate::messages::{JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{thread, time};
+use std::{cmp, iter, sync::Arc, thread, time};
 
 use uuid::Uuid;
 
@@ -196,7 +194,7 @@ impl GameHand {
     }
 }
 
-impl<'a> Game<'a> {
+impl Game {
     fn transition(&mut self, gamehand: &mut GameHand) {
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -484,7 +482,11 @@ impl<'a> Game<'a> {
         }
     }
 
-    fn play_one_hand(&mut self) {
+    fn play_one_hand(
+        &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+    ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
         let mut gamehand = GameHand::default();
 
@@ -520,7 +522,8 @@ impl<'a> Game<'a> {
             // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2);
             thread::sleep(pause_duration);
-            let finished = self.play_street(&mut gamehand);
+            let finished =
+                self.play_street(&incoming_actions, &incoming_meta_actions, &mut gamehand);
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -548,7 +551,12 @@ impl<'a> Game<'a> {
     }
 
     /// this method returns a bool indicating whether the hand is over or not
-    fn play_street(&mut self, gamehand: &mut GameHand) -> bool {
+    fn play_street(
+        &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+        gamehand: &mut GameHand,
+    ) -> bool {
         let mut current_bet: u32 = 0;
         // each index keeps track of that players' contribution this street
         let mut cumulative_bets = vec![0; self.players.len()];
@@ -601,10 +609,11 @@ impl<'a> Game<'a> {
         //let (left, right) = players.split_at_mut(starting_idx);
         //for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
+            /*
             println!(
                 "start loop index = {}: num_active = {}, num_settled = {}, num_all_in = {}",
                 i, num_active, num_settled, num_all_in
-            );
+            );*/
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
@@ -654,8 +663,14 @@ impl<'a> Game<'a> {
 
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-            let action =
-                self.get_and_validate_action(&player, current_bet, player_cumulative, gamehand);
+            let action = self.get_and_validate_action(
+                &incoming_actions,
+                &incoming_meta_actions,
+                &player,
+                current_bet,
+                player_cumulative,
+                gamehand,
+            );
 
             let mut message = object! {
             msg_type: "player_action".to_owned(),
@@ -773,9 +788,13 @@ impl<'a> Game<'a> {
 
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
     /// this value is set by the game hub when handling a message from a player client
-    fn get_action_from_player(&self, player: &Player) -> Option<PlayerAction> {
+    fn get_action_from_player(
+        &self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        player: &Player,
+    ) -> Option<PlayerAction> {
         if player.human_controlled {
-            let mut actions = self.incoming_actions.unwrap().lock().unwrap();
+            let mut actions = incoming_actions.lock().unwrap();
             println!("incoming_actions = {:?}", actions);
             if let Some(action) = actions.get_mut(&player.id) {
                 println!("Player: {:?} has action {:?}", player.id, action);
@@ -806,6 +825,8 @@ impl<'a> Game<'a> {
 
     fn get_and_validate_action(
         &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         player: &Player,
         current_bet: u32,
         player_cumulative: u32,
@@ -849,7 +870,7 @@ impl<'a> Game<'a> {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions();
+            self.handle_meta_actions(&incoming_meta_actions);
 
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -870,7 +891,7 @@ impl<'a> Game<'a> {
             }
 
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match self.get_action_from_player(player) {
+            match self.get_action_from_player(&incoming_actions, player) {
                 None => {
                     // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
@@ -977,10 +998,8 @@ impl<'a> Game<'a> {
 }
 
 #[derive(Debug)]
-pub struct Game<'a> {
+pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    incoming_actions: Option<&'a Mutex<HashMap<Uuid, PlayerAction>>>,
-    incoming_meta_actions: Option<&'a Mutex<VecDeque<MetaAction>>>,
     pub name: String,
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
@@ -994,12 +1013,10 @@ pub struct Game<'a> {
 }
 
 /// useful for unit tests, for example
-impl<'a> Default for Game<'a> {
+impl Default for Game {
     fn default() -> Self {
         Self {
             hub_addr: None,
-            incoming_actions: None,
-            incoming_meta_actions: None,
             name: "Game".to_owned(),
             deck: Box::new(StandardDeck::new()),
             players: Default::default(),
@@ -1014,13 +1031,11 @@ impl<'a> Default for Game<'a> {
     }
 }
 
-impl<'a> Game<'a> {
+impl Game {
     /// the address of the GameHub is optional so that unit tests need not worry about it
     /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
     pub fn new(
         hub_addr: Addr<GameHub>,
-        incoming_actions: &'a Mutex<HashMap<Uuid, PlayerAction>>,
-        incoming_meta_actions: &'a Mutex<VecDeque<MetaAction>>,
         name: String,
         deck_opt: Option<Box<dyn Deck>>,
         max_players: u8, // how many will we let in the game
@@ -1036,8 +1051,6 @@ impl<'a> Game<'a> {
         };
         Game {
             hub_addr: Some(hub_addr),
-            incoming_actions: Some(incoming_actions),
-            incoming_meta_actions: Some(incoming_meta_actions),
             name,
             deck,
             players: Default::default(),
@@ -1052,66 +1065,87 @@ impl<'a> Game<'a> {
     }
 
     /// add a given playerconfig to an empty seat
+    /// if the game requires a password, then a matching password must be provided for the user to be added
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
-    pub fn add_user(&mut self, player_config: PlayerConfig) -> Option<usize> {
-        let new_player = Player::new(player_config.id, true, self.buy_in);
-        self.add_player(player_config, new_player)
+    pub fn add_user(
+        &mut self,
+        player_config: PlayerConfig,
+        password: Option<String>,
+    ) -> Result<usize, JoinGameError> {
+        if let Some(game_password) = &self.password {
+            if let Some(given_password) = password {
+                if game_password.ne(&given_password) {
+                    // the provided password does not match the game password
+                    return Err(JoinGameError::InvalidPassword);
+                }
+            } else {
+                // we did not provide a password, but the game requires one
+                return Err(JoinGameError::InvalidPassword);
+            }
+        }
+        let id = player_config.id; // copy so that we can send the messsage later
+        let new_player = Player::new(id, true, self.buy_in);
+        let result = self.add_player(player_config, new_player);
+        if let Ok(index) = result {
+            // note: I tried moving this message to either the hub or in handling meta actions,
+            // but this messed up the front end, so I am just moving it back here rather than refactor the front
+            let message = object! {
+            msg_type: "joined_game".to_owned(),
+            index: index,
+            table_name: self.name.clone(),
+            };
+            PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
+            for (i, player_spot) in self.players.iter().enumerate() {
+                // display the play positions for the front end to consume
+                if let Some(player) = player_spot {
+                    let mut message = object! {
+                    msg_type: "player_info".to_owned(),
+                    index: i,
+                    };
+                    let config = self.player_ids_to_configs.get(&player.id).unwrap();
+                    let name = config.name.as_ref().unwrap().clone();
+                    message["player_name"] = name.into();
+                    message["money"] = player.money.into();
+                    message["is_active"] = player.is_active.into();
+                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+                }
+            }
+        }
+        result
     }
 
-    pub fn add_bot(&mut self, name: String) -> Option<usize> {
+    pub fn add_bot(&mut self, name: String) -> Result<usize, JoinGameError> {
         let new_bot = Player::new_bot(self.buy_in);
         let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
         self.add_player(new_config, new_bot)
     }
 
-    fn add_player(&mut self, player_config: PlayerConfig, player: Player) -> Option<usize> {
-        let mut index = None;
+    fn add_player(
+        &mut self,
+        player_config: PlayerConfig,
+        player: Player,
+    ) -> Result<usize, JoinGameError> {
         if self.players.iter().flatten().count() >= self.max_players.into() {
             // we already have as many as we can fit in the game
-            return index;
+            return Err(JoinGameError::GameIsFull);
         }
         for (i, player_spot) in self.players.iter_mut().enumerate() {
             if player_spot.is_none() {
-                let id = player_config.id; // copy the id for sending a message after we add the config
                 *player_spot = Some(player);
                 self.player_ids_to_configs
                     .insert(player_config.id, player_config);
-                index = Some(i);
-                println!("Joining game at index: {}", i);
-                let message = object! {
-                    msg_type: "joined_game".to_owned(),
-                    index: i,
-		    table_name: self.name.clone(),
-                };
-                PlayerConfig::send_specific_message(
-                    &message.dump(),
-                    id,
-                    &self.player_ids_to_configs,
-                );
-                break;
+                return Ok(i);
             }
         }
-        for (i, player_spot) in self.players.iter().enumerate() {
-            // display the play positions for the front end to consume
-            if let Some(player) = player_spot {
-                let mut message = object! {
-                    msg_type: "player_info".to_owned(),
-                    index: i,
-                };
-                let config = self.player_ids_to_configs.get(&player.id).unwrap();
-                let name = config.name.as_ref().unwrap().clone();
-                message["player_name"] = name.into();
-                message["money"] = player.money.into();
-                message["is_active"] = player.is_active.into();
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-            }
-        }
-        index
+        // if we did not early return, then we must have been full
+        Err(JoinGameError::GameIsFull)
     }
 
     pub fn play(
         &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         hand_limit: Option<u32>, // how many hands total should be play? None == no limit
     ) {
         let mut hand_count = 0;
@@ -1134,7 +1168,7 @@ impl<'a> Game<'a> {
             };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-            self.play_one_hand();
+            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
 
             // check if any player is now missing from the config mapping,
             // this implies that the player left mid-hand, so they should fully be removed from the game
@@ -1150,7 +1184,7 @@ impl<'a> Game<'a> {
                     }
                 }
             }
-            self.handle_meta_actions();
+            self.handle_meta_actions(&incoming_meta_actions);
             // attempt to set the next button
             self.button_idx = self
                 .find_next_button()
@@ -1185,8 +1219,8 @@ impl<'a> Game<'a> {
         Err("could not find a valid button")
     }
 
-    fn handle_meta_actions(&mut self) {
-        let mut meta_actions = self.incoming_meta_actions.unwrap().lock().unwrap();
+    fn handle_meta_actions(&mut self, incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>) {
+        let mut meta_actions = incoming_meta_actions.lock().unwrap();
         for _ in 0..meta_actions.len() {
             match meta_actions.pop_front().unwrap() {
                 MetaAction::Chat(id, text) => {
@@ -1199,32 +1233,56 @@ impl<'a> Game<'a> {
                     msg_type: "chat".to_owned(),
                     player_name: name.clone(),
                     text: text,
-                    };
+                            };
 
                     PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
                 }
-                MetaAction::Join(player_config) => {
+                MetaAction::Join(player_config, password) => {
                     // add a new player to the game
-                    let id = player_config.id; // copy the id so we can use to send a message later
-                    if self.add_user(player_config).is_none() {
-                        // we were unable to add the player
-                        PlayerConfig::send_specific_message(
-                            &"Unable to join game, it must be full!".to_owned(),
-                            id,
-                            &self.player_ids_to_configs,
-                        );
+                    let cloned_config = player_config.clone(); // clone in case we need to send back
+                    println!(
+                        "handling join meta action for {:?} inside game = {:?}",
+                        cloned_config.id, &self.name
+                    );
+                    match self.add_user(player_config, password) {
+                        Ok(index) => {
+                            println!("Joining game at index: {}", index);
+                        }
+                        Err(err) => {
+                            // we were unable to add the player
+                            println!("unable to join game: {:?}", err);
+                            if let Some(hub_addr) = &self.hub_addr {
+                                // tell the hub that we left
+                                hub_addr.do_send(Returned {
+                                    config: cloned_config,
+                                    reason: ReturnedReason::FailureToJoin(err),
+                                });
+                            }
+                        }
                     }
                 }
                 MetaAction::Leave(id) => {
-                    println!("handling leave meta action");
+                    println!(
+                        "handling leave meta action for {:?} inside game = {:?}",
+                        id, &self.name
+                    );
                     let config = self.player_ids_to_configs.remove(&id).unwrap();
-                    PlayerConfig::send_group_message(
-                        &format!("{:?} has left the game", config.name),
+                    let message = object! {
+                    msg_type: "player_left".to_owned(),
+                    name: config.name.clone(),
+                    };
+                    PlayerConfig::send_specific_message(
+                        &message.dump(),
+                        id,
                         &self.player_ids_to_configs,
                     );
+
                     if let Some(hub_addr) = &self.hub_addr {
                         // tell the hub that we left
-                        hub_addr.do_send(Removed { config });
+                        hub_addr.do_send(Returned {
+                            config,
+                            reason: ReturnedReason::Left,
+                        });
                     }
                 }
                 MetaAction::PlayerName(id, new_name) => {
@@ -1271,17 +1329,99 @@ mod tests {
     }
 
     #[test]
-    fn add_user_no_connection() {
+    fn add_user() {
         let mut game = Game::default();
         let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
         let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings);
+        game.add_user(settings, None).expect("could not add user");
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 1);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
+    }
+
+    /// test that a player can join with the correct password
+    #[test]
+    fn add_user_password_success() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        let password = "123".to_string();
+        game.password = Some(password.clone());
+
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, Some(password)));
+
+        game.handle_meta_actions(&cloned_meta_actions);
+
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+    }
+
+    /// test that a player can NOT join with the incorrect password
+    #[test]
+    fn add_user_password_fail() {
+        let mut game = Game::default();
+        //let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+        game.password = Some("123".to_string());
+
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, Some("345".to_string())));
+
+        game.handle_meta_actions(&incoming_meta_actions);
+
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // did not make it in
+    }
+
+    /// test that a player can NOT join without providing a password
+    #[test]
+    fn add_user_password_missing() {
+        let mut game = Game::default();
+        //let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+
+        game.password = Some("123".to_string());
+
+        let id = uuid::Uuid::new_v4();
+        let name = "Human".to_string();
+        let settings = PlayerConfig::new(id, Some(name), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings, None)); // no password passed in
+
+        game.handle_meta_actions(&incoming_meta_actions);
+
+        assert_eq!(game.players.len(), 9);
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // did not make it in
     }
 
     /// if we set max_players, then trying to add anyone past that point will
@@ -1301,7 +1441,7 @@ mod tests {
             } else {
                 // above max_players, the returned index should be None
                 // i.e. the player was not added to the game
-                assert_eq!(index, None);
+                assert!(index.is_err());
             }
         }
         assert_eq!(game.players.len(), 9); // len of players always simply 9
@@ -1316,42 +1456,40 @@ mod tests {
     #[test]
     fn instant_fold() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(game.players[0].as_ref().unwrap().money, 1004);
@@ -1363,63 +1501,61 @@ mod tests {
     #[test]
     fn call_check_bet_fold() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Call);
-            // player1 checks
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Check);
-
-            // wait for the flop
-            let wait_duration = time::Duration::from_secs(7);
-            thread::sleep(wait_duration);
-
-            // player2 bets on the flop
-            println!("now sending the flop actions");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(10));
-            // player1 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+        // player1 checks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(7);
+        thread::sleep(wait_duration);
+
+        // player2 bets on the flop
+        println!("now sending the flop actions");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(10));
+        // player1 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(game.players[0].as_ref().unwrap().money, 992);
@@ -1430,47 +1566,45 @@ mod tests {
     #[test]
     fn pre_flop_bet_fold() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 bets
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(22));
-            // player1 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 bets
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(22));
+        // player1 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(game.players[0].as_ref().unwrap().money, 992);
@@ -1482,63 +1616,61 @@ mod tests {
     #[test]
     fn bet_call_bet_fold() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 bets
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(22));
-            // player1 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Call);
-
-            // wait for the flop
-            let wait_duration = time::Duration::from_secs(7);
-            thread::sleep(wait_duration);
-
-            // player2 bets on the flop
-            println!("now sending the flop actions");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(10));
-            // player1 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 bets
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(22));
+        // player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(7);
+        thread::sleep(wait_duration);
+
+        // player2 bets on the flop
+        println!("now sending the flop actions");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(10));
+        // player1 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(game.players[0].as_ref().unwrap().money, 978);
@@ -1594,47 +1726,45 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 bets
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(1000));
-            // player1 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 bets
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1000));
+        // player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the small blind won
         assert_eq!(game.players[0].as_ref().unwrap().money, 0);
@@ -1691,16 +1821,16 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -1708,32 +1838,30 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 bets
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(500));
-            // player1 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 bets
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(500));
+        // player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the small blind won
         assert_eq!(game.players[0].as_ref().unwrap().money, 0);
@@ -1792,16 +1920,16 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button/big
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Big".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -1809,32 +1937,30 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 bets a bunch
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(1000));
-            // player1 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 bets a bunch
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1000));
+        // player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the big blind caller won, but only doubles its money
         assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
@@ -1905,16 +2031,16 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -1922,13 +2048,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -1937,31 +2063,29 @@ mod tests {
         assert!(game.players[1].as_ref().unwrap().human_controlled);
         assert!(game.players[2].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // the button goes all in with the short stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Bet(500));
-            // the small blind goes all in with a full stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(1000));
-            // the big blind calls the full all-in
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id3, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // the button goes all in with the short stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(500));
+        // the small blind goes all in with a full stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1000));
+        // the big blind calls the full all-in
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(game.players[0].as_ref().unwrap().money, 1500);
@@ -2035,16 +2159,16 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2052,13 +2176,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2067,31 +2191,29 @@ mod tests {
         assert!(game.players[1].as_ref().unwrap().human_controlled);
         assert!(game.players[2].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // the button goes all in with the short stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Bet(500));
-            // the small blind goes all in with a full stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(1000));
-            // the big blind calls the full all-in
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id3, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // the button goes all in with the short stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(500));
+        // the small blind goes all in with a full stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1000));
+        // the big blind calls the full all-in
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(game.players[0].as_ref().unwrap().money, 750);
@@ -2176,16 +2298,16 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2193,19 +2315,19 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None).unwrap();
 
         // player4 will start as UTG
         let id4 = uuid::Uuid::new_v4();
         let name4 = "UTG".to_string();
         let settings4 = PlayerConfig::new(id4, Some(name4), None);
-        game.add_user(settings4);
+        game.add_user(settings4, None).unwrap();
         // set UTG to have medium money so there is a second side pot
         game.players[3].as_mut().unwrap().money = 750;
 
@@ -2217,36 +2339,34 @@ mod tests {
         assert!(game.players[2].as_ref().unwrap().human_controlled);
         assert!(game.players[3].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // UTG goes all in with the medium stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id4, PlayerAction::Bet(750));
-            // the button calls (and thus goes all in with the short stack)
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Call);
-            // the small blind goes all in with a full stack
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(1000));
-            // the big blind calls the full all-in
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id3, PlayerAction::Call);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // UTG goes all in with the medium stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id4, PlayerAction::Bet(750));
+        // the button calls (and thus goes all in with the short stack)
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+        // the small blind goes all in with a full stack
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1000));
+        // the big blind calls the full all-in
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(game.players[0].as_ref().unwrap().money, 2000);
@@ -2265,48 +2385,46 @@ mod tests {
     #[test]
     fn hand_limit() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play(Some(2));
-                game // return the game back
-            });
-
-            // set the action that player2 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Fold);
-
-            // then player1 folds next hand
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play(&cloned_actions, &cloned_meta_actions, Some(2));
+            game // return the game back
         });
+
+        // set the action that player2 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+
+        // then player1 folds next hand
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // check that the money balances out
         assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
@@ -2322,25 +2440,25 @@ mod tests {
     #[test]
     fn button_movement() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
 
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Human3".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3);
+        game.add_user(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2348,72 +2466,70 @@ mod tests {
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
         let num_hands = 4;
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // id3 should not have to act as the big blind
-            println!("\n\nsetting 1!");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Fold);
-            //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
-
-            // wait for next hand
-            let wait_duration = time::Duration::from_secs(8);
-            thread::sleep(wait_duration);
-
-            println!("\n\nsetting 2!");
-            // id1 should not have to act as the big blind
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Fold);
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id3, PlayerAction::Fold);
-
-            // wait for next hand
-            thread::sleep(wait_duration);
-
-            println!("\n\nsetting 3!");
-            // id2 should not have to act as the big blind
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id3, PlayerAction::Fold);
-
-            // wait for next hand
-            thread::sleep(wait_duration);
-
-            // We should be back to the beginning with the button,
-            // so id1 should be the button, and id3 should be the big blind
-            // id3 should not have to act as the big blind
-            println!("\n\nsetting 4!");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Fold);
-            //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
-
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play(&cloned_actions, &cloned_meta_actions, Some(num_hands));
+            game // return the game back
         });
+
+        // id3 should not have to act as the big blind
+        println!("\n\nsetting 1!");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+        //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
+
+        // wait for next hand
+        let wait_duration = time::Duration::from_secs(8);
+        thread::sleep(wait_duration);
+
+        println!("\n\nsetting 2!");
+        // id1 should not have to act as the big blind
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Fold);
+
+        // wait for next hand
+        thread::sleep(wait_duration);
+
+        println!("\n\nsetting 3!");
+        // id2 should not have to act as the big blind
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Fold);
+
+        // wait for next hand
+        thread::sleep(wait_duration);
+
+        // We should be back to the beginning with the button,
+        // so id1 should be the button, and id3 should be the big blind
+        // id3 should not have to act as the big blind
+        println!("\n\nsetting 4!");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+        //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
+
+        let game = handler.join().unwrap();
 
         // Everyone lost their small blind and won someone else's small blind
         // then in the last hand, id3 won the small blind from id2
@@ -2426,74 +2542,73 @@ mod tests {
     /// the small blind bets on the flop, and the big blind folds
     /// a player joins during the hand, and it works fine
     #[test]
-    fn mid_hand_join() {
+    fn join_mid_hand() {
         let mut game = Game::default();
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Call);
-            // player1 checks
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Check);
-
-            // a new player joins the game
-            let id3 = uuid::Uuid::new_v4();
-            let name3 = "Human3".to_string();
-            let settings3 = PlayerConfig::new(id3, Some(name3), None);
-            incoming_meta_actions
-                .lock()
-                .unwrap()
-                .push_back(MetaAction::Join(settings3));
-
-            // wait for the flop
-            let wait_duration = time::Duration::from_secs(8);
-            thread::sleep(wait_duration);
-
-            // player2 bets on the flop
-            println!("now sending the flop actions");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(10));
-            // player1 folds
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Fold);
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+        // player1 checks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+        // a new player joins the game
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Join(settings3, None)); // no password needed
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(8);
+        thread::sleep(wait_duration);
+
+        // player2 bets on the flop
+        println!("now sending the flop actions");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(10));
+        // player1 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // there is another player now
         let some_players = game.players.iter().flatten().count();
@@ -2549,22 +2664,22 @@ mod tests {
 
         let mut game = Game::default();
         game.deck = Box::new(deck);
-        let incoming_actions = Mutex::new(HashMap::<Uuid, PlayerAction>::new());
-        let incoming_meta_actions = Mutex::new(VecDeque::<MetaAction>::new());
-        game.incoming_actions = Some(&incoming_actions);
-        game.incoming_meta_actions = Some(&incoming_meta_actions);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
 
         // player1 will start as the button
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1);
+        game.add_user(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2);
+        game.add_user(settings2, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2580,43 +2695,41 @@ mod tests {
             .count();
         assert_eq!(not_sitting_out, 2);
 
-        let game = std::thread::scope(|scope| {
-            let handler = scope.spawn(move || {
-                game.play_one_hand();
-                game // return the game back
-            });
-
-            // set the action that player2 calls
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Call);
-            // player1 checks
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id1, PlayerAction::Check);
-
-            // wait for the flop
-            let wait_duration = time::Duration::from_secs(8);
-            thread::sleep(wait_duration);
-
-            // player2 bets on the flop
-            println!("now sending the flop actions");
-            incoming_actions
-                .lock()
-                .unwrap()
-                .insert(id2, PlayerAction::Bet(10));
-
-            // player1 sits out, which folds and moves on
-            incoming_meta_actions
-                .lock()
-                .unwrap()
-                .push_back(MetaAction::SitOut(id1));
-
-            // get the game back from the thread
-            handler.join().unwrap()
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
         });
+
+        // set the action that player2 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+        // player1 checks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(8);
+        thread::sleep(wait_duration);
+
+        // player2 bets on the flop
+        println!("now sending the flop actions");
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(10));
+
+        // player1 sits out, which folds and moves on
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::SitOut(id1));
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
 
         // one player sitting out
         let not_sitting_out = game

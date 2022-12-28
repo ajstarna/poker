@@ -15,7 +15,7 @@ pub enum PlayerAction {
     //Raise(u32), // i guess a raise is just a bet really?
 }
 /// this struct holds the player name and recipient address
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PlayerConfig {
     pub id: Uuid,
     pub name: Option<String>,
