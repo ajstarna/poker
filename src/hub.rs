@@ -12,7 +12,7 @@ use std::{
 use crate::logic::{Game, PlayerAction, PlayerConfig};
 use crate::messages::{
     Connect, Create, CreateGameError, Join, ListTables, MetaAction, MetaActionMessage,
-    PlayerActionMessage, PlayerName, Removed, WsMessage,
+    PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
 use actix::AsyncContext;
@@ -192,13 +192,19 @@ impl Handler<Join> for GameHub {
                 .unwrap()
                 .push_back(MetaAction::Join(player_config, password));
         } else {
+	    let message = object! {
+		msg_type: "unable_to_join".to_owned(),
+		table_name: table_name.clone(),
+		reason: "no table with that name exisits",
+	    };
+	    
             player_config
                 .player_addr
                 .as_ref()
                 .unwrap()
-                .do_send(WsMessage(format!(
-                    "No table with that name exists to join!"
-                )));
+                .do_send(WsMessage(
+		    message.dump()
+                ));
             // put them back in the lobby
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
@@ -206,30 +212,41 @@ impl Handler<Join> for GameHub {
     }
 }
 
-/// Handler for a player that has been removed from a game officially
+/// Handler for a player that has been returned from a game officially
 /// This message comes FROM a game and provides the config, which we can put back in the lobby`
-impl Handler<Removed> for GameHub {
+impl Handler<Returned> for GameHub {
     type Result = ();
 
-    fn handle(&mut self, msg: Removed, _: &mut Context<Self>) {
-        println!("Handling player {:?} removed", msg.config);
-        if let Some(table_name) = self.players_to_table.remove(&msg.config.id) {
+    fn handle(&mut self, msg: Returned, _: &mut Context<Self>) {
+	let Returned {config, reason} = msg;
+        println!("Handling player {:?} removed", config);
+        if let Some(table_name) = self.players_to_table.remove(&config.id) {
             // we stil think this player is at table in our mapping, so remove it
             println!(
                 "removing player {:?} removed from {:?}",
-                msg.config, table_name
+                config, table_name
             );
         }
-        // add the config back into the lobby
-        if let Some(addr) = &msg.config.player_addr {
-            let message = object! {
-            msg_type: "left_game".to_owned(),
-            };
+
+	// tell the player what happened (successful leave/why couldn't they join)
+
+        if let Some(addr) = &config.player_addr {
+            let mut message = object! { };
+	    match reason {
+		ReturnedReason::Left => {
+		    message["msg_type"] = "left_game".into();
+		},
+		ReturnedReason::FailureToJoin(err) => {
+		    message["msg_type"] = "unable_to_join".into();
+		    message["reason"] = err.to_string().into();
+		}
+	    }
             addr.do_send(WsMessage(message.dump()));
         }
 
+        // add the config back into the lobby	
         self.main_lobby_connections
-            .insert(msg.config.id, msg.config);
+            .insert(config.id, config);
     }
 }
 

@@ -279,6 +279,7 @@
 					// Get player position (x, y)
 					let position = mappedIndexToPlayerPosition[mapped_index];
 				    let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
+				    /*
 					console.log(
 						"drawing player: " +
 							player.name +
@@ -288,7 +289,7 @@
 						player.is_active +
 						" mapped_index = " +
 						mapped_index
-					);
+					);*/
 					// Draw player
 					let is_players_turn_to_act = toActIdx == player.index;
 					player.is_players_turn_to_act = is_players_turn_to_act;
@@ -552,10 +553,13 @@
 					    log(output2, "message");
 					} else if (msg.msg_type == "left_game") {
 					    // want to clear the screen
+					    // TODO: how come the cards and players still show up Mike?
 					    drawTable(context, width, height);
 					    // Show Lobby
 					    $gameMenu.style.display = "none";
 					    $lobbyMenu.style.display = "block";
+					    // have this log for now just for clarity. if the UI is more clear wont need?
+					    log("You have left the game and are in the lobby", "message")
 					} else if (msg.msg_type == "created_game") {
 					    // TODO: anything needed here?
 					    // msg.table_name
@@ -619,12 +623,12 @@
 			}
 
 			function joinTable() {
-				var msg = {}; // build the json to send
-				msg["msg_type"] = "join";
-				msg["table_name"] = $tableId.value;
-			    msg["password"] = "333";
-				log("Sending: " + JSON.stringify(msg));
-				socket.send(JSON.stringify(msg));
+			    var msg = {}; // build the json to send
+			    msg["msg_type"] = "join";
+			    msg["table_name"] = $tableId.value;
+			    msg["password"] = "123";
+			    log("Sending: " + JSON.stringify(msg));
+			    socket.send(JSON.stringify(msg));
 			}
 
 			function listPublicTable() {

@@ -7,9 +7,9 @@ use std::sync::Mutex;
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{MetaAction, Removed};
+use crate::messages::{JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{cmp, fmt, iter, thread, time, sync::Arc};
+use std::{cmp, iter, thread, time, sync::Arc};
 
 use uuid::Uuid;
 
@@ -190,31 +190,6 @@ impl GameHand {
             flop: None,
             turn: None,
             river: None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum JoinGameError {
-    GameIsFull,
-    InvalidPassword,
-}
-
-impl fmt::Display for JoinGameError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            JoinGameError::GameIsFull => {
-                write!(
-                    f,
-                    "Game is already full!",
-                )
-            }
-            JoinGameError::InvalidPassword => {
-                write!(
-                    f,
-                    "Invalid Password"
-                )
-            }
         }
     }
 }
@@ -631,10 +606,11 @@ impl Game {
         //let (left, right) = players.split_at_mut(starting_idx);
         //for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
+	    /*
             println!(
                 "start loop index = {}: num_active = {}, num_settled = {}, num_all_in = {}",
                 i, num_active, num_settled, num_all_in
-            );
+            );*/
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
@@ -1245,47 +1221,36 @@ impl Game {
                     // send the message to all players,
                     // appended by the player name
                     println!("chat message inside the game hand wow!");
-
+		    
                     let name = &self.player_ids_to_configs.get(&id).unwrap().name;
                     let message = object! {
-                    msg_type: "chat".to_owned(),
-                    player_name: name.clone(),
-                    text: text,
+			msg_type: "chat".to_owned(),
+			player_name: name.clone(),
+			text: text,
                     };
 
                     PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
                 }
                 MetaAction::Join(player_config, password) => {
                     // add a new player to the game
-                    let id = player_config.id; // copy the id so we can use to send a message later
-                    println!("handling join meta action for {:?} inside game = {:?}", id, &self.name);		    
+		    let cloned_config = player_config.clone(); // clone in case we need to send back
+                    println!("handling join meta action for {:?} inside game = {:?}",
+			     cloned_config.id, &self.name);		    
                     match self.add_user(player_config, password) {
 			Ok(index) => {
 			    println!("Joining game at index: {}", index);
-			    let message = object! {
-				msg_type: "joined_game".to_owned(),
-				index: index,
-				table_name: self.name.clone(),
-			    };
-			    PlayerConfig::send_specific_message(
-				&message.dump(),
-				id,
-				&self.player_ids_to_configs,
-			    );			    
 			},
 			Err(err) => {
                             // we were unable to add the player
 			    println!("unable to join game: {:?}", err);
-			    let message = object! {
-				msg_type: "unable_to_join".to_owned(),
-				table_name: self.name.clone(),
-				reason: err.to_string(),
-			    };
-			    PlayerConfig::send_specific_message(
-				&message.dump(),
-				id,
-				&self.player_ids_to_configs,
-			    );
+			    if let Some(hub_addr) = &self.hub_addr {
+				// tell the hub that we left
+				hub_addr.do_send(
+				    Returned {
+					config: cloned_config,
+					reason: ReturnedReason::FailureToJoin(err)
+				    });
+			    }
 			}
                     }
                 }
@@ -1304,7 +1269,11 @@ impl Game {
 		    
                     if let Some(hub_addr) = &self.hub_addr {
                         // tell the hub that we left
-                        hub_addr.do_send(Removed { config });
+                        hub_addr.do_send(
+			    Returned {
+				config,
+				reason: ReturnedReason::Left
+			    });
                     }
                 }
                 MetaAction::PlayerName(id, new_name) => {
