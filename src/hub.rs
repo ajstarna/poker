@@ -186,7 +186,7 @@ impl Handler<Join> for GameHub {
         if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
             // since the meta actions already exist, this means the game already exists
             // so we can simply join it
-            println!("joining existing game!");
+            println!("joining existing game! {:?}", meta_actions);
             meta_actions
                 .lock()
                 .unwrap()
@@ -359,38 +359,14 @@ impl Handler<Create> for GameHub {
             // update the mapping to find the player at a table
             self.players_to_table.insert(id, table_name.clone());
 
-	    // get the player addr so we can send them a message after joining
-	    // TODO: should this message happen within game.add_user()?
-	    // It used to, but then I moved the message to handle_meta_actions(),
-	    // do then I needed to duplicate it here.
-	    // When should the game versus the hub versus the session send a message hhmmm
-	    //let player_addr = player_config
-            //    .player_addr
-             //   .as_ref()
-              //  .unwrap()
-               // .clone();
+            game.add_user(player_config, password).expect("error joining freshly created game");
 
-            if let Ok(index) = game.add_user(player_config, password) {
-		let message = object! {
-		    msg_type: "joined_game".to_owned(),
-		    index: index,
-		    table_name: table_name.clone(),
-		};
-		println!("blah successfully joined");
-                //player_addr.do_send(WsMessage(message.dump()));
-	    } else {
-		panic!("error adding user on freshly created game");		
-	    }
-
-	    /*
-            std::thread::scope(|scope| {
-                // need to use scoped thread here so that the actions don't need static life time
-                scope.spawn(move || {
-                    game.play(None);
-                });
-            });
-	     */
 	    std::thread::spawn(move || {
+		// Note: I tried having the actions and meta actions as part of the game struct,
+		// but this led to lifetime concerns.
+		// Then I changed to using scoped threads, and this sort of "solved" it,
+		// but it did not play nicely with actix async (i.e. the tests worked but the app did not)
+		// TLDR keep the actions as something passed in to play()
 		game.play(&cloned_actions, &cloned_meta_actions, None);
 	    });
 		

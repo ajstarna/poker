@@ -279,16 +279,16 @@
 					// Get player position (x, y)
 					let position = mappedIndexToPlayerPosition[mapped_index];
 				    let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
-				    /*
 					console.log(
 						"drawing player: " +
 							player.name +
 							" at " +
 							position +
 							" player is active " +
-							player.is_active
+						player.is_active +
+						" mapped_index = " +
+						mapped_index
 					);
-				    */
 					// Draw player
 					let is_players_turn_to_act = toActIdx == player.index;
 					player.is_players_turn_to_act = is_players_turn_to_act;
@@ -622,7 +622,7 @@
 				var msg = {}; // build the json to send
 				msg["msg_type"] = "join";
 				msg["table_name"] = $tableId.value;
-
+			    msg["password"] = "333";
 				log("Sending: " + JSON.stringify(msg));
 				socket.send(JSON.stringify(msg));
 			}
@@ -644,7 +644,7 @@
 			    msg["big_blind"] = 8;
 			    msg["buy_in"] = 1000;
 			    msg["is_private"] = false;
-			    msg["password"] = null;
+			    msg["password"] = "123";
 			    log("Sending: " + JSON.stringify(msg));
 			    socket.send(JSON.stringify(msg));
 			}
