@@ -203,7 +203,8 @@
 		const $playerName = document.getElementById("playerName");
 		const $tableId = document.getElementById("tableId");
 		const $tableName = document.getElementById("table_name");
-		const $tableControls = document.getElementById("table_controls");
+	  const $tableControls = document.getElementById("table_controls");
+	  $tableControls.style.display = "block";	  
 		const $betSlider = document.getElementById("betSizeSlider");
 		const $betSize = document.getElementById("betSize");
 
@@ -318,7 +319,7 @@
 		}
 
 		function drawEverything() {
-			// this is called after very change of state to re-render the entire UI.
+			// this is called after every change of state to re-render the entire UI.
 			drawTable(context, width, height); // Draws the background and the table
 			for (var mapped_index in playerStates) {
 				// Get player object
@@ -590,7 +591,7 @@
 						playerAtTable = false;
 						// Show Lobby
 						$gameMenu.style.display = "none";
-						$tableControls.style.display = "none";
+						//$tableControls.style.display = "none";
 						$lobbyMenu.style.display = "block";
 						// have this log for now just for clarity. if the UI is more clear wont need?
 						log("You have left the game and are in the lobby", "message")
@@ -611,7 +612,6 @@
 						}
 						$publicTableList.innerHTML = tables;
 						log(ev.data, "message");
-					    log(ev.data, "message");	
 					} else if (msg.msg_type == "unable_to_join") {
 					    let output = "Unable to join table " + msg.table_name +": " +  msg.reason
 					    log(output, "message");	
@@ -668,7 +668,7 @@
 			msg["msg_type"] = "name";
 			msg["player_name"] = $playerName.value;
 
-			log("Sending: " + JSON.stringify(msg));
+			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -677,7 +677,7 @@
 			msg["msg_type"] = "join";
 			msg["table_name"] = $tableId.value;
 			msg["password"] = "123";
-			log("Sending: " + JSON.stringify(msg));
+			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -685,7 +685,7 @@
 			var msg = {}; // build the json to send
 			msg["msg_type"] = "list";
 
-			log("Sending: " + JSON.stringify(msg));
+			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -699,7 +699,7 @@
 			msg["buy_in"] = parseInt($startingStackValue.value);
 			msg["is_private"] = false;
 			msg["password"] = "123";
-			log("Sending: " + JSON.stringify(msg));
+			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -712,7 +712,7 @@
 				msg["amount"] = $betSize.value;
 			}
 
-			log("Sending: " + JSON.stringify(msg));
+			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
