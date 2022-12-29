@@ -555,7 +555,7 @@
 					    // want to clear the screen
 					    // TODO: how come the cards and players still show up Mike?
 					    drawTable(context, width, height);
-					    // Show Lobby
+					    // Show Lobby					    
 					    $gameMenu.style.display = "none";
 					    $lobbyMenu.style.display = "block";
 					    // have this log for now just for clarity. if the UI is more clear wont need?
@@ -678,11 +678,9 @@
 				msg["msg_type"] = "leave";
 
 				log("Sending: " + JSON.stringify(msg));
-				socket.send(JSON.stringify(msg));
-
-				// Show Lobby
-				$gameMenu.style.display = "none";
-				$lobbyMenu.style.display = "block";
+			    socket.send(JSON.stringify(msg));
+			    // note: we don't show the lobby until we get the confirmation from the game that we
+			    // actually left the game successfully
 			}
 
 			function sendMessage() {
