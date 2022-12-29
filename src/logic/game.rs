@@ -327,10 +327,26 @@ impl Game {
         player_config: PlayerConfig,
         player: Player,
     ) -> Result<usize, JoinGameError> {
+
+	// Kinda weird, but first check if the player is already at the table
+	// Could happen if their Leave wasn't completed yet
+	// TODO: verify this can actually happen. Unit testable even?
+        for (i, player_spot) in self.players.iter_mut().enumerate() {
+	    if let Some(existing) = player_spot {
+		if existing.id == player.id {
+		    println!("the player was ALREADY at the table!");
+                    self.player_ids_to_configs
+			.insert(player_config.id, player_config);
+		    return Ok(i);
+		}
+	    }
+	}
+	
         if self.players.iter().flatten().count() >= self.max_players.into() {
             // we already have as many as we can fit in the game
             return Err(JoinGameError::GameIsFull);
         }
+	    
         for (i, player_spot) in self.players.iter_mut().enumerate() {
             if player_spot.is_none() {
                 *player_spot = Some(player);
