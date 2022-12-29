@@ -240,7 +240,8 @@ impl WsGameSession {
                         Err(e) => {
                             println!("{}", e);
                             let message = json::object! {
-                                msg_type: "unable_to_create".to_owned(),
+                                msg_type: "error".to_owned(),
+				error: "unable_to_create".to_owned(),
                                 reason: e.to_string(),
                             };
                             ctx.text(message.dump());

@@ -196,12 +196,11 @@ impl Handler<Join> for GameHub {
                 .unwrap()
                 .push_back(MetaAction::Join(player_config, password));
         } else {
-            let message = object! {
-            msg_type: "unable_to_join".to_owned(),
-            table_name: table_name.clone(),
-            reason: "no table with that name exisits",
+            let message = json::object! {
+                msg_type: "error".to_owned(),
+		error: "unable_to_join".to_owned(),
+                reason: format!("no table named {} exisits", table_name),
             };
-
             player_config
                 .player_addr
                 .as_ref()
@@ -329,6 +328,16 @@ impl Handler<Create> for GameHub {
                 None
             };
 
+	    if num_bots >= max_players {
+		self.main_lobby_connections.insert(player_config.id, player_config);
+		return Err(CreateGameError::TooManyBots);
+	    }
+
+	    if big_blind > buy_in || small_blind > buy_in {
+		self.main_lobby_connections.insert(player_config.id, player_config);
+		return Err(CreateGameError::TooLargeBlinds);		
+	    }
+	    
             let mut rng = rand::thread_rng();
             let table_name = loop {
                 // create a new 4-char unique name for the table
@@ -393,6 +402,7 @@ impl Handler<Create> for GameHub {
             Ok(table_name) // return the table name
         } else {
             println!("create message missing one or more required fields!");
+	    self.main_lobby_connections.insert(player_config.id, player_config);	    
             return Err(CreateGameError::MissingField);
         }
     }

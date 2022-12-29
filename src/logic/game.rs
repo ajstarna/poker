@@ -1246,8 +1246,13 @@ impl Game {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
+			    let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "You said fold but we will let you check!".to_owned(),
+			    };
                             PlayerConfig::send_specific_message(
-                                &"You said fold but we will let you check!".to_owned(),
+                                &message.dump(),
                                 player.id,
                                 &self.player_ids_to_configs,
                             );
@@ -1262,8 +1267,13 @@ impl Game {
                     if current_bet > player_cumulative {
                         // if the current bet is higher than this player's bet
                         if player.human_controlled {
+			    let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "You can't check since there is a bet!!".to_owned(),
+			    };
                             PlayerConfig::send_specific_message(
-                                &"You can't check since there is a bet!!".to_owned(),
+                                &message.dump(),
                                 player.id,
                                 &self.player_ids_to_configs,
                             );
@@ -1278,17 +1288,20 @@ impl Game {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
-                        // we can let them check
+			let message = json::object! {
+			    msg_type: "error".to_owned(),
+			    error: "invalid_action".to_owned(),
+			    reason: "There is nothing for you to call!".to_owned()
+			};
                         PlayerConfig::send_specific_message(
-                            &"There is nothing for you to call!!".to_owned(),
+                            &message.dump(),
                             player.id,
                             &self.player_ids_to_configs,
                         );
-
-                        action = Some(PlayerAction::Check);
-                    } else {
-                        action = Some(PlayerAction::Call);
-                    }
+			// we COULD let them check, but better to wait for a better action
+			continue;
+                    } 
+                    action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
                     if current_bet < player_cumulative {
@@ -1307,8 +1320,13 @@ impl Game {
                     // NOTE ---> I changed it now
                     if new_bet > player.money + player_cumulative {
                         println!("cant bet more than you have");
+			let message = json::object! {
+			    msg_type: "error".to_owned(),
+			    error: "invalid_action".to_owned(),
+			    reason:"You can't bet more than you have!!".to_owned(),
+			};
                         PlayerConfig::send_specific_message(
-                            &"You can't bet more than you have!!".to_owned(),
+                            &message.dump(),
                             player.id,
                             &self.player_ids_to_configs,
                         );
@@ -1316,8 +1334,13 @@ impl Game {
                     }
                     if new_bet <= current_bet {
                         println!("new bet must be larger than current");
+			let message = json::object! {
+			    msg_type: "error".to_owned(),
+			    error: "invalid_action".to_owned(),
+			    reason: "the new bet must be larger than the current bet!".to_owned(),
+			};
                         PlayerConfig::send_specific_message(
-                            &"the new bet has to be larger than the current bet!".to_owned(),
+                            &message.dump(),
                             player.id,
                             &self.player_ids_to_configs,
                         );
