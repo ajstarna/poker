@@ -110,11 +110,11 @@ impl fmt::Display for CreateGameError {
             CreateGameError::NameNotSet => {
                 write!(
                     f,
-                    "Unable to create a game since you have not set your name"
+                    "You have not set your name"
                 )
             }
             CreateGameError::MissingField => {
-                write!(f, "Unable to create a game since missing field(s)")
+                write!(f, "Missing field(s)")
                 /*
                 write!(f, "Unable to create a game since command is missing fields:")?;
                 for field in missing_fields {
@@ -126,14 +126,14 @@ impl fmt::Display for CreateGameError {
             CreateGameError::AlreadyAtTable(table_name) => {
                 write!(
                     f,
-                    "Unable to create a game since already at a table: {}",
+                    "You are already at the table {}",
                     table_name
                 )
             }
             CreateGameError::InvalidFieldValue(invalid_field) => {
                 write!(
                     f,
-                    "Unable to create a game since invalid field value: {}",
+                    "Invalid field value: {}",
                     invalid_field
                 )
             }
