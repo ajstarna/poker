@@ -64,13 +64,17 @@ impl PotManager {
         self.pots.iter().map(|x| x.money).collect()
     }
 
-    fn contribute(&mut self, player_id: Uuid, new: u32, all_in: bool) {
+    /// given a player id and an amount they need to contribute to the pot
+    /// and whether this is putting them all-in), this method puts the proper
+    /// amount into the proper pot(s), and possibly create and redistribute into a new side pot
+    fn contribute(&mut self, player_id: Uuid, amount: u32, all_in: bool) {
         println!(
             "inside contribute: {:?}, {:?}, all_in={:?}",
-            player_id, new, all_in
+            player_id, amount, all_in
         );
-        let mut to_contribute = new;
-        let mut push_pot = false;
+        let mut to_contribute = amount;
+	// insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
+	// and the new cap for the pot at that index
         let mut insert_pot: Option<(usize, u32)> = None;
         for (i, pot) in self.pots.iter_mut().enumerate() {
             let so_far = pot.contributions.entry(player_id).or_insert(0);
@@ -117,19 +121,15 @@ impl PotManager {
                 *so_far += to_contribute;
                 pot.money += to_contribute;
                 if all_in {
-                    pot.cap = Some(pot.contributions[&player_id]);
-                    push_pot = true;
+                    //pot.cap = Some(pot.contributions[&player_id]);		    
+		    insert_pot = Some((i, pot.contributions[&player_id]));		    
                 }
                 break;
             }
         }
-        if push_pot {
-            // need to add a new pot
-            println!("adding a new pot!");
-            self.pots.push(Pot::new());
-        } else if let Some((index, new_cap)) = insert_pot {
+        if let Some((index, new_cap)) = insert_pot {
             println!(
-                "inserting a pot at index {} and a new cap {}",
+                "inserting a pot at index {} and capping the previous pot at {}",
                 index + 1,
                 new_cap
             );
@@ -138,15 +138,17 @@ impl PotManager {
         }
     }
 
-    /// give the index of a newly created pot, we move any excess contributions from the pot
-    /// to the next one in the vecdeque. We also move the existing cap into the pot at index+1 and
-    /// se the new_cap
-    /// this happens when a smaller all-in happens after a larger bet
+    /// give the index of a newly-capped pot, we move any excess contributions from the pot
+    /// to the next one in the vecdeque. We also move the existing cap-differential into the pot at index+1
+    /// and set the new_cap in the pot at index.
+    /// This happens when a all-in happens and makes the pot at index newly-capped
+    /// Note: if none of the contributions to the previous pot were higher than the new cap, then no money
+    /// will need to be transfered into the new pot at index+1
     fn transfer_excess(&mut self, index: usize, new_cap: u32) {
         let prev_pot = self.pots.get_mut(index).unwrap();
         println!("prev_pot = {:?}", prev_pot);
         let mut transfers = HashMap::<Uuid, u32>::new();
-        let prev_cap = prev_pot.cap.unwrap();
+        let prev_cap_opt = prev_pot.cap; // move the previous cap to the new pot (if needed)
         prev_pot.cap = Some(new_cap);
         for (id, amount) in prev_pot.contributions.iter_mut() {
             //let b: bool = id;
@@ -164,10 +166,12 @@ impl PotManager {
         new_pot.money = transfers.values().sum();
         new_pot.contributions = transfers;
 
-        // the new pot is capped at the difference
-        // e.g. if someone was all-in with 750, then someone calls to go all-in with 500,
-        // the the pre_pot is NOW capped at 500, and the next pot is capped at 250
-        new_pot.cap = Some(prev_cap - new_cap);
+	if let Some(prev_cap) = prev_cap_opt {
+            // if the old pot had a cap already, then the new pot is capped at the difference.
+            // e.g. if someone was all-in with 750, then someone calls to go all-in with 500,
+            // the the prev_pot is NOW capped at 500, and the next pot is capped at 250
+            new_pot.cap = Some(prev_cap - new_cap);
+	}
     }
 }
 
@@ -194,7 +198,327 @@ impl GameHand {
     }
 }
 
+#[derive(Debug)]
+pub struct Game {
+    hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
+    pub name: String,
+    deck: Box<dyn Deck>,
+    players: [Option<Player>; 9], // 9 spots where players can sit
+    player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
+    max_players: u8,   // how many will we let in the game
+    button_idx: usize, // index of the player with the button
+    small_blind: u32,
+    big_blind: u32,
+    buy_in: u32,
+    password: Option<String>,
+}
+
+/// useful for unit tests, for example
+impl Default for Game {
+    fn default() -> Self {
+        Self {
+            hub_addr: None,
+            name: "Game".to_owned(),
+            deck: Box::new(StandardDeck::new()),
+            players: Default::default(),
+            player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
+            max_players: 9,
+            button_idx: 0,
+            small_blind: 4,
+            big_blind: 8,
+            buy_in: 1000,
+            password: None,
+        }
+    }
+}
+
 impl Game {
+    /// the address of the GameHub is optional so that unit tests need not worry about it
+    /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
+    pub fn new(
+        hub_addr: Addr<GameHub>,
+        name: String,
+        deck_opt: Option<Box<dyn Deck>>,
+        max_players: u8, // how many will we let in the game
+        small_blind: u32,
+        big_blind: u32,
+        buy_in: u32,
+        password: Option<String>,
+    ) -> Self {
+        let deck = if deck_opt.is_some() {
+            deck_opt.unwrap()
+        } else {
+            Box::new(StandardDeck::new())
+        };
+        Game {
+            hub_addr: Some(hub_addr),
+            name,
+            deck,
+            players: Default::default(),
+            player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
+            max_players,
+            button_idx: 0,
+            small_blind,
+            big_blind,
+            buy_in,
+            password,
+        }
+    }
+
+    /// add a given playerconfig to an empty seat
+    /// if the game requires a password, then a matching password must be provided for the user to be added
+    /// TODO: eventually we wanmt the player to select an open seat I guess
+    /// returns the index of the seat that they joined (if they were able to join)
+    pub fn add_user(
+        &mut self,
+        player_config: PlayerConfig,
+        password: Option<String>,
+    ) -> Result<usize, JoinGameError> {
+        if let Some(game_password) = &self.password {
+            if let Some(given_password) = password {
+                if game_password.ne(&given_password) {
+                    // the provided password does not match the game password
+                    return Err(JoinGameError::InvalidPassword);
+                }
+            } else {
+                // we did not provide a password, but the game requires one
+                return Err(JoinGameError::InvalidPassword);
+            }
+        }
+        let id = player_config.id; // copy so that we can send the messsage later
+        let new_player = Player::new(id, true, self.buy_in);
+        let result = self.add_player(player_config, new_player);
+        if let Ok(index) = result {
+            // note: I tried moving this message to either the hub or in handling meta actions,
+            // but this messed up the front end, so I am just moving it back here rather than refactor the front
+            let message = object! {
+            msg_type: "joined_game".to_owned(),
+            index: index,
+            table_name: self.name.clone(),
+            };
+            PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
+            for (i, player_spot) in self.players.iter().enumerate() {
+                // display the play positions for the front end to consume
+                if let Some(player) = player_spot {
+                    let mut message = object! {
+                    msg_type: "player_info".to_owned(),
+                    index: i,
+                    };
+                    let config = self.player_ids_to_configs.get(&player.id).unwrap();
+                    let name = config.name.as_ref().unwrap().clone();
+                    message["player_name"] = name.into();
+                    message["money"] = player.money.into();
+                    message["is_active"] = player.is_active.into();
+                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+                }
+            }
+        }
+        result
+    }
+
+    pub fn add_bot(&mut self, name: String) -> Result<usize, JoinGameError> {
+        let new_bot = Player::new_bot(self.buy_in);
+        let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
+        self.add_player(new_config, new_bot)
+    }
+
+    fn add_player(
+        &mut self,
+        player_config: PlayerConfig,
+        player: Player,
+    ) -> Result<usize, JoinGameError> {
+
+	// Kinda weird, but first check if the player is already at the table
+	// Could happen if their Leave wasn't completed yet
+	// TODO: verify this can actually happen. Unit testable even?
+        for (i, player_spot) in self.players.iter_mut().enumerate() {
+	    if let Some(existing) = player_spot {
+		if existing.id == player.id {
+		    println!("the player was ALREADY at the table!");
+                    self.player_ids_to_configs
+			.insert(player_config.id, player_config);
+		    return Ok(i);
+		}
+	    }
+	}
+	
+        if self.players.iter().flatten().count() >= self.max_players.into() {
+            // we already have as many as we can fit in the game
+            return Err(JoinGameError::GameIsFull);
+        }
+	    
+        for (i, player_spot) in self.players.iter_mut().enumerate() {
+            if player_spot.is_none() {
+                *player_spot = Some(player);
+                self.player_ids_to_configs
+                    .insert(player_config.id, player_config);
+                return Ok(i);
+            }
+        }
+        // if we did not early return, then we must have been full
+        Err(JoinGameError::GameIsFull)
+    }
+
+    pub fn play(
+        &mut self,
+        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
+        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+        hand_limit: Option<u32>, // how many hands total should be play? None == no limit
+    ) {
+        let mut hand_count = 0;
+        loop {
+            hand_count += 1;
+            if let Some(limit) = hand_limit {
+                if hand_count > limit {
+                    println!("hand limit has been reached");
+                    break;
+                }
+            }
+            println!(
+                "\n\n\nPlaying hand {}, button_idx = {}",
+                hand_count, self.button_idx
+            );
+            let message = object! {
+            msg_type: "new_hand".to_owned(),
+            hand_num: hand_count,
+            button_index: self.button_idx,
+            };
+            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+
+            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+            self.handle_meta_actions(&incoming_meta_actions);
+            // attempt to set the next button
+            self.button_idx = self
+                .find_next_button()
+                .expect("we could not find a valid button index!");
+        }
+    }
+
+    /// move the button to the next Player who is not sitting out
+    /// if non can be found, then return false
+    fn find_next_button(&mut self) -> Result<usize, &'static str> {
+        for i in (self.button_idx + 1..9).chain(0..self.button_idx + 1) {
+            //self.button_idx += 1;
+            //self.button_idx %= 9; // loop back to 0 if we reach the end
+            println!("checking for next button at index {}", i);
+            let button_spot = &mut self.players[i];
+            if let Some(button_player) = button_spot {
+                if button_player.is_sitting_out {
+                    println!(
+                        "Player at index {} is sitting out so cannot be the button",
+                        i
+                    );
+                } else if button_player.money == 0 {
+                    println!("Player at index {} has no money so cannot be the button", i);
+                } else {
+                    // We found a player who is not sitting out, so it is a valid
+                    // button position
+                    println!("found the button!");
+                    return Ok(i);
+                }
+            }
+        }
+        Err("could not find a valid button")
+    }
+
+    fn handle_meta_actions(&mut self, incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>) {
+        let mut meta_actions = incoming_meta_actions.lock().unwrap();
+        for _ in 0..meta_actions.len() {
+            match meta_actions.pop_front().unwrap() {
+                MetaAction::Chat(id, text) => {
+                    // send the message to all players,
+                    // appended by the player name
+                    println!("chat message inside the game hand wow!");
+
+                    let name = &self.player_ids_to_configs.get(&id).unwrap().name;
+                    let message = object! {
+                    msg_type: "chat".to_owned(),
+                    player_name: name.clone(),
+                    text: text,
+                            };
+
+                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+                }
+                MetaAction::Join(player_config, password) => {
+                    // add a new player to the game
+                    let cloned_config = player_config.clone(); // clone in case we need to send back
+                    println!(
+                        "handling join meta action for {:?} inside game = {:?}",
+                        cloned_config.id, &self.name
+                    );
+                    match self.add_user(player_config, password) {
+                        Ok(index) => {
+                            println!("Joining game at index: {}", index);
+                        }
+                        Err(err) => {
+                            // we were unable to add the player
+                            println!("unable to join game: {:?}", err);
+                            if let Some(hub_addr) = &self.hub_addr {
+                                // tell the hub that we left
+                                hub_addr.do_send(Returned {
+                                    config: cloned_config,
+                                    reason: ReturnedReason::FailureToJoin(err),
+                                });
+                            }
+                        }
+                    }
+                }
+                MetaAction::Leave(id) => {
+                    println!(
+                        "handling leave meta action for {:?} inside game = {:?}",
+                        id, &self.name
+                    );
+                    if let Some(config) = self.player_ids_to_configs.remove(&id){			
+			// note: we don't remove  the player from self.players quite yet,
+			// we use the lack of the config to indicate to the game during a street
+			// that a player has left. If they were active at the time, this information
+			// needs to be taken into account					
+			let message = object! {
+			    msg_type: "player_left".to_owned(),
+			    name: config.name.clone(),
+			};
+			PlayerConfig::send_specific_message(
+                            &message.dump(),
+                            id,
+                            &self.player_ids_to_configs,
+			);
+			
+			if let Some(hub_addr) = &self.hub_addr {
+                            // tell the hub that we left
+                            hub_addr.do_send(Returned {
+				config,
+				reason: ReturnedReason::Left,
+                            });
+			}
+		    } else {
+			// should not normally happen, but check for Some() to be safe
+			// Perhaps if the client sent many leave messages before them being responded to
+			println!("\n\nA leave message was received for a player that no longer has a config!")
+		    }
+                }
+                MetaAction::PlayerName(id, new_name) => {
+                    PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
+                }
+                MetaAction::SitOut(id) => {
+                    for player in self.players.iter_mut().flatten() {
+                        if player.id == id {
+                            println!("player {} being set to is_sitting_out = true", id);
+                            player.is_sitting_out = true;
+                        }
+                    }
+                }
+                MetaAction::ImBack(id) => {
+                    for player in self.players.iter_mut().flatten() {
+                        if player.id == id {
+                            println!("player {} being set to is_sitting_out = false", id);
+                            player.is_sitting_out = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     fn transition(&mut self, gamehand: &mut GameHand) {
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -782,6 +1106,25 @@ impl Game {
 
             println!("{}", message.dump());
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+
+	    // double check at the end of the loop if any players left as a meta-action during the current
+	    // player's turn. They should no longer be considered as active or all_in
+	    for player_spot in self.players.iter_mut() {
+		if let Some(player) = player_spot {
+		    if !self.player_ids_to_configs.contains_key(&player.id) {
+			println!("player is no longer in the config at the end of the loop");
+			if player.is_all_in() {
+			    num_all_in -= 1;			    
+			}
+			if player.is_active {
+			    player.deactivate(); // technically redundant I guess since setting to None later
+			    num_active -= 1;
+			}
+			*player_spot = None;
+		    }
+		}
+	    }
+	    
         }
         true // we can't actually get to this line
     }
@@ -993,318 +1336,6 @@ impl Game {
             action.unwrap()
         } else {
             PlayerAction::Fold
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Game {
-    hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
-    pub name: String,
-    deck: Box<dyn Deck>,
-    players: [Option<Player>; 9], // 9 spots where players can sit
-    player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
-    max_players: u8,   // how many will we let in the game
-    button_idx: usize, // index of the player with the button
-    small_blind: u32,
-    big_blind: u32,
-    buy_in: u32,
-    password: Option<String>,
-}
-
-/// useful for unit tests, for example
-impl Default for Game {
-    fn default() -> Self {
-        Self {
-            hub_addr: None,
-            name: "Game".to_owned(),
-            deck: Box::new(StandardDeck::new()),
-            players: Default::default(),
-            player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
-            max_players: 9,
-            button_idx: 0,
-            small_blind: 4,
-            big_blind: 8,
-            buy_in: 1000,
-            password: None,
-        }
-    }
-}
-
-impl Game {
-    /// the address of the GameHub is optional so that unit tests need not worry about it
-    /// We can pass in a custom Deck object, but if not, we will just construct a StandardDeck
-    pub fn new(
-        hub_addr: Addr<GameHub>,
-        name: String,
-        deck_opt: Option<Box<dyn Deck>>,
-        max_players: u8, // how many will we let in the game
-        small_blind: u32,
-        big_blind: u32,
-        buy_in: u32,
-        password: Option<String>,
-    ) -> Self {
-        let deck = if deck_opt.is_some() {
-            deck_opt.unwrap()
-        } else {
-            Box::new(StandardDeck::new())
-        };
-        Game {
-            hub_addr: Some(hub_addr),
-            name,
-            deck,
-            players: Default::default(),
-            player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
-            max_players,
-            button_idx: 0,
-            small_blind,
-            big_blind,
-            buy_in,
-            password,
-        }
-    }
-
-    /// add a given playerconfig to an empty seat
-    /// if the game requires a password, then a matching password must be provided for the user to be added
-    /// TODO: eventually we wanmt the player to select an open seat I guess
-    /// returns the index of the seat that they joined (if they were able to join)
-    pub fn add_user(
-        &mut self,
-        player_config: PlayerConfig,
-        password: Option<String>,
-    ) -> Result<usize, JoinGameError> {
-        if let Some(game_password) = &self.password {
-            if let Some(given_password) = password {
-                if game_password.ne(&given_password) {
-                    // the provided password does not match the game password
-                    return Err(JoinGameError::InvalidPassword);
-                }
-            } else {
-                // we did not provide a password, but the game requires one
-                return Err(JoinGameError::InvalidPassword);
-            }
-        }
-        let id = player_config.id; // copy so that we can send the messsage later
-        let new_player = Player::new(id, true, self.buy_in);
-        let result = self.add_player(player_config, new_player);
-        if let Ok(index) = result {
-            // note: I tried moving this message to either the hub or in handling meta actions,
-            // but this messed up the front end, so I am just moving it back here rather than refactor the front
-            let message = object! {
-            msg_type: "joined_game".to_owned(),
-            index: index,
-            table_name: self.name.clone(),
-            };
-            PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
-            for (i, player_spot) in self.players.iter().enumerate() {
-                // display the play positions for the front end to consume
-                if let Some(player) = player_spot {
-                    let mut message = object! {
-                    msg_type: "player_info".to_owned(),
-                    index: i,
-                    };
-                    let config = self.player_ids_to_configs.get(&player.id).unwrap();
-                    let name = config.name.as_ref().unwrap().clone();
-                    message["player_name"] = name.into();
-                    message["money"] = player.money.into();
-                    message["is_active"] = player.is_active.into();
-                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-                }
-            }
-        }
-        result
-    }
-
-    pub fn add_bot(&mut self, name: String) -> Result<usize, JoinGameError> {
-        let new_bot = Player::new_bot(self.buy_in);
-        let new_config = PlayerConfig::new(new_bot.id, Some(name), None);
-        self.add_player(new_config, new_bot)
-    }
-
-    fn add_player(
-        &mut self,
-        player_config: PlayerConfig,
-        player: Player,
-    ) -> Result<usize, JoinGameError> {
-        if self.players.iter().flatten().count() >= self.max_players.into() {
-            // we already have as many as we can fit in the game
-            return Err(JoinGameError::GameIsFull);
-        }
-        for (i, player_spot) in self.players.iter_mut().enumerate() {
-            if player_spot.is_none() {
-                *player_spot = Some(player);
-                self.player_ids_to_configs
-                    .insert(player_config.id, player_config);
-                return Ok(i);
-            }
-        }
-        // if we did not early return, then we must have been full
-        Err(JoinGameError::GameIsFull)
-    }
-
-    pub fn play(
-        &mut self,
-        incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
-        incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-        hand_limit: Option<u32>, // how many hands total should be play? None == no limit
-    ) {
-        let mut hand_count = 0;
-        loop {
-            hand_count += 1;
-            if let Some(limit) = hand_limit {
-                if hand_count > limit {
-                    println!("hand limit has been reached");
-                    break;
-                }
-            }
-            println!(
-                "\n\n\nPlaying hand {}, button_idx = {}",
-                hand_count, self.button_idx
-            );
-            let message = object! {
-            msg_type: "new_hand".to_owned(),
-            hand_num: hand_count,
-            button_index: self.button_idx,
-            };
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
-            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
-
-            // check if any player is now missing from the config mapping,
-            // this implies that the player left mid-hand, so they should fully be removed from the game
-            for player_spot in self.players.iter_mut() {
-                if let Some(player) = player_spot {
-                    if !self.player_ids_to_configs.contains_key(&player.id) {
-                        // the player is no more
-                        println!(
-                            "removing player {:?} since no longer in the config between hands",
-                            player
-                        );
-                        *player_spot = None;
-                    }
-                }
-            }
-            self.handle_meta_actions(&incoming_meta_actions);
-            // attempt to set the next button
-            self.button_idx = self
-                .find_next_button()
-                .expect("we could not find a valid button index!");
-        }
-    }
-
-    /// move the button to the next Player who is not sitting out
-    /// if non can be found, then return false
-    fn find_next_button(&mut self) -> Result<usize, &'static str> {
-        for i in (self.button_idx + 1..9).chain(0..self.button_idx + 1) {
-            //self.button_idx += 1;
-            //self.button_idx %= 9; // loop back to 0 if we reach the end
-            println!("checking for next button at index {}", i);
-            let button_spot = &mut self.players[i];
-            if let Some(button_player) = button_spot {
-                if button_player.is_sitting_out {
-                    println!(
-                        "Player at index {} is sitting out so cannot be the button",
-                        i
-                    );
-                } else if button_player.money == 0 {
-                    println!("Player at index {} has no money so cannot be the button", i);
-                } else {
-                    // We found a player who is not sitting out, so it is a valid
-                    // button position
-                    println!("found the button!");
-                    return Ok(i);
-                }
-            }
-        }
-        Err("could not find a valid button")
-    }
-
-    fn handle_meta_actions(&mut self, incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>) {
-        let mut meta_actions = incoming_meta_actions.lock().unwrap();
-        for _ in 0..meta_actions.len() {
-            match meta_actions.pop_front().unwrap() {
-                MetaAction::Chat(id, text) => {
-                    // send the message to all players,
-                    // appended by the player name
-                    println!("chat message inside the game hand wow!");
-
-                    let name = &self.player_ids_to_configs.get(&id).unwrap().name;
-                    let message = object! {
-                    msg_type: "chat".to_owned(),
-                    player_name: name.clone(),
-                    text: text,
-                            };
-
-                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-                }
-                MetaAction::Join(player_config, password) => {
-                    // add a new player to the game
-                    let cloned_config = player_config.clone(); // clone in case we need to send back
-                    println!(
-                        "handling join meta action for {:?} inside game = {:?}",
-                        cloned_config.id, &self.name
-                    );
-                    match self.add_user(player_config, password) {
-                        Ok(index) => {
-                            println!("Joining game at index: {}", index);
-                        }
-                        Err(err) => {
-                            // we were unable to add the player
-                            println!("unable to join game: {:?}", err);
-                            if let Some(hub_addr) = &self.hub_addr {
-                                // tell the hub that we left
-                                hub_addr.do_send(Returned {
-                                    config: cloned_config,
-                                    reason: ReturnedReason::FailureToJoin(err),
-                                });
-                            }
-                        }
-                    }
-                }
-                MetaAction::Leave(id) => {
-                    println!(
-                        "handling leave meta action for {:?} inside game = {:?}",
-                        id, &self.name
-                    );
-                    let config = self.player_ids_to_configs.remove(&id).unwrap();
-                    let message = object! {
-                    msg_type: "player_left".to_owned(),
-                    name: config.name.clone(),
-                    };
-                    PlayerConfig::send_specific_message(
-                        &message.dump(),
-                        id,
-                        &self.player_ids_to_configs,
-                    );
-
-                    if let Some(hub_addr) = &self.hub_addr {
-                        // tell the hub that we left
-                        hub_addr.do_send(Returned {
-                            config,
-                            reason: ReturnedReason::Left,
-                        });
-                    }
-                }
-                MetaAction::PlayerName(id, new_name) => {
-                    PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
-                }
-                MetaAction::SitOut(id) => {
-                    for player in self.players.iter_mut().flatten() {
-                        if player.id == id {
-                            println!("player {} being set to is_sitting_out = true", id);
-                            player.is_sitting_out = true;
-                        }
-                    }
-                }
-                MetaAction::ImBack(id) => {
-                    for player in self.players.iter_mut().flatten() {
-                        if player.id == id {
-                            println!("player {} being set to is_sitting_out = false", id);
-                            player.is_sitting_out = false;
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -1611,6 +1642,97 @@ mod tests {
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
     }
 
+    /// if the big blind player doesn't have enough to post the big blind amount,
+    /// the current bet still goes up to the big blind
+    #[test]
+    fn big_blind_not_enough_money() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button/big blind to win
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Heart,
+        });
+        // now the small blind's hole cards
+        deck.push(Card {
+            rank: Rank::Two,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Three,
+            suit: Suit::Club,
+        });
+        // now the full run out
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Diamond,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+	
+        let mut game = Game::default();
+        game.deck = Box::new(deck);
+	
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button/big blind
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1, None).unwrap();
+        game.players[0].as_mut().unwrap().money = 3; // set the player to have less than the norm 8 BB
+	
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2, None).unwrap();
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
+        });
+
+        // set the action that player (small blind) bets,
+	// even though player1 is already all-in, so the BB can only 3 win bucks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(22));
+
+	
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+        // check that the money changed hands
+        assert_eq!(game.players[0].as_ref().unwrap().money, 6);
+        assert_eq!(game.players[1].as_ref().unwrap().money, 997);
+    }
+    
     /// the small blind bets, the big blind calls
     /// the small blind bets on the flop, and the big blind folds
     #[test]
@@ -2745,4 +2867,100 @@ mod tests {
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
         assert!(!game.players[0].as_ref().unwrap().is_active);
     }
+    /// player1 has the best hand, but chooses to leave out mid hand,
+    /// This leads to a fold and player2 winning the pot
+    /// It doesn't actually matter what the hands are, since it doesn't go to showdown
+    #[test]
+    fn leave() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button to have the best hand
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Diamond,
+        });
+
+        // the small blind player2 wins regardless
+        deck.push(Card {
+            rank: Rank::Six,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Heart,
+        });
+
+        // the flop
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+
+        let mut game = Game::default();
+        game.deck = Box::new(deck);
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2, None).unwrap();
+
+        // flatten to get all the Some() players
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+        assert!(game.players[0].as_ref().unwrap().human_controlled);
+	
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
+        });
+
+        // set the action that player2 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+
+        // player1 leave, which folds and ends the hand
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Leave(id1));
+	
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+        // flatten to get all the Some() players
+	// now there are only one
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+	assert_eq!(game.player_ids_to_configs.len(), 1);
+	
+        // check that the money changed hands
+        assert!(game.players[0].is_none()); // the spot is empty now
+        assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
+    }
+    
 }
