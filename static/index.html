@@ -573,6 +573,12 @@
 					} else if (msg.msg_type == "tables_list") {
 					    // TODO show in a list on front end?
 					    log(ev.data, "message");	
+					} else if (msg.msg_type == "unable_to_join") {
+					    let output = "Unable to join table " + msg.table_name +": " +  msg.reason
+					    log(output, "message");	
+					} else if (msg.msg_type == "unable_to_create") {
+					    let output = "Unable to create table: " +  msg.reason
+					    log(output, "message");	
 					} else {
 					    log("We are not handling this message properly!", "message");
 					}
@@ -643,9 +649,9 @@
 			    var msg = {}; // build the json to send
 			    msg["msg_type"] = "create";
 			    msg["max_players"] = 9;
-			    msg["num_bots"] = 3;			    
-			    msg["small_blind"] = 4;
-			    msg["big_blind"] = 8;
+			    msg["num_bots"] = 8;			    
+			    msg["small_blind"] = 5;
+			    msg["big_blind"] = 10;
 			    msg["buy_in"] = 1000;
 			    msg["is_private"] = false;
 			    msg["password"] = "123";
