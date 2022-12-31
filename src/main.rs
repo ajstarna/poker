@@ -1,3 +1,5 @@
+use clap::Parser;
+
 mod logic;
 
 use std::sync::{
@@ -15,6 +17,18 @@ use actix_web_actors::ws;
 mod hub;
 mod messages;
 mod session;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+   /// ip address
+   #[arg(short, long, default_value_t = ("localhost".to_string()))]
+   ip: String,
+
+   /// port
+   #[arg(short, long, default_value_t = 8080)]
+   port: u16,
+}
 
 async fn index() -> impl Responder {
     NamedFile::open_async("./static/index.html").await.unwrap()
@@ -42,6 +56,8 @@ async fn get_count(count: web::Data<AtomicUsize>) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let args = Args::parse();
+
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // set up applications state
@@ -51,7 +67,7 @@ async fn main() -> std::io::Result<()> {
     // start main hub actor
     let hub = hub::GameHub::new(app_state.clone()).start();
 
-    log::info!("starting HTTP server at http://localhost:8080");
+    log::info!("starting HTTP server at http://{}:{}", args.ip, args.port);
 
     HttpServer::new(move || {
         App::new()
@@ -64,8 +80,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
     })
     .workers(2)
-    //.bind(("127.0.0.1", 8080))?
-    .bind(("192.168.1.91", 8080))?
+    .bind((args.ip, args.port))?
     .run()
     .await
 }
