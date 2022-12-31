@@ -102,6 +102,8 @@ pub enum CreateGameError {
     MissingField,
     InvalidFieldValue(String), // contains the invalid field
     AlreadyAtTable(String),    // contains the table name
+    TooManyBots,
+    TooLargeBlinds,
 }
 
 impl fmt::Display for CreateGameError {
@@ -124,11 +126,7 @@ impl fmt::Display for CreateGameError {
                  */
             }
             CreateGameError::AlreadyAtTable(table_name) => {
-                write!(
-                    f,
-                    "You are already at the table {}",
-                    table_name
-                )
+                write!(f, "You are already at the table {}", table_name)
             }
             CreateGameError::InvalidFieldValue(invalid_field) => {
                 write!(
@@ -136,6 +134,12 @@ impl fmt::Display for CreateGameError {
                     "Invalid field value: {}",
                     invalid_field
                 )
+            }
+            CreateGameError::TooManyBots => {
+                write!(f, "Too many bots selected")
+            }
+            CreateGameError::TooLargeBlinds => {
+                write!(f, "Blinds must be smaller than the starting stacks.")
             }
         }
     }

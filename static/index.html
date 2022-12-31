@@ -612,12 +612,8 @@
 						}
 						$publicTableList.innerHTML = tables;
 						log(ev.data, "message");
-					} else if (msg.msg_type == "unable_to_join") {
-					    let output = "Unable to join table " + msg.table_name +": " +  msg.reason
-					    log(output, "message");	
-					} else if (msg.msg_type == "unable_to_create") {
-					    let output = "Unable to create table: " +  msg.reason
-					    log(output, "message");	
+					} else if (msg.msg_type == "error") {
+					    log(msg.error + ": " + msg.reason, "message");	
 					} else {
 						log("We are not handling this message properly!", "message");
 					}
