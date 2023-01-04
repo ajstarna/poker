@@ -15,7 +15,7 @@ pub enum MetaAction {
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String),
-    Admin(AdminCommand),
+    Admin(Uuid, AdminCommand),
 }
 
 /// these admin commands can be taken by the owner of a PRIVATE game.
@@ -23,13 +23,13 @@ pub enum MetaAction {
 /// The Uuid of the player attemping an admin command must actually be the game.admin to work
 #[derive(Debug)]
 pub enum AdminCommand {
-    SmallBlind(Uuid, u32),
-    BigBlind(Uuid, u32),
-    BuyIn(Uuid, u32),
-    Password(Uuid, String),
-    AddBot(Uuid),
-    RemoveBot(Uuid),
-    // NewAdmin(Uuid, Uuid), // todo? would they give the name of the player or what?
+    SmallBlind(u32),
+    BigBlind(u32),
+    BuyIn(u32),
+    Password(String),
+    AddBot,
+    RemoveBot,
+    // NewAdmin(Uuid), // todo? would they give the name of the player or what?
 }
 
 #[derive(Message)]

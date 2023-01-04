@@ -211,7 +211,7 @@ pub struct Game {
     big_blind: u32,
     buy_in: u32,
     password: Option<String>,
-    admin_id: Option<Uuid>,
+    admin_id: Uuid,
 }
 
 /// useful for unit tests, for example
@@ -225,11 +225,11 @@ impl Default for Game {
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players: 9,
             button_idx: 0,
-            small_blind: 4,
-            big_blind: 8,
+            small_blind: 5,
+            big_blind: 10,
             buy_in: 1000,
             password: None,
-	    admin_id: None,
+	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
         }
     }
 }
@@ -265,7 +265,7 @@ impl Game {
             big_blind,
             buy_in,
             password,
-	    admin_id: Some(admin_id),
+	    admin_id,
         }
     }
 
@@ -519,13 +519,95 @@ impl Game {
                         }
                     }
                 }
-		MetaAction::Admin(admin_command) => {
-		    todo!();
+		MetaAction::Admin(id, admin_command) => {
+		    self.handle_admin_command(id, admin_command);
 		}
             }
         }
     }
-    
+
+    fn handle_admin_command(&mut self, id: Uuid, admin_command: AdminCommand) {
+	if self.admin_id != id {
+	    // the player who entered the admin command is not the game's admin!
+	    let message = object! {
+		msg_type: "error".to_owned(),
+		error: "not_admin".to_owned(),
+                reason: "You cannot change a game that you are not the admin for.".to_owned(),
+	    };
+	    PlayerConfig::send_specific_message(
+		&message.dump(),
+		id,
+		&self.player_ids_to_configs,
+	    );
+	    return;
+	}
+	
+	let message = match admin_command {
+	    AdminCommand::SmallBlind(new) => {
+		self.small_blind = new;
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: format!("The small blind has been changed to {}", new),
+		};
+		message
+	    },
+	    AdminCommand::BigBlind(new) => {
+		self.small_blind = new;
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: format!("The small blind has been changed to {}", new),
+		};
+		message
+		
+	    }		
+	    AdminCommand::BuyIn(new) => {
+		self.small_blind = new;
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: format!("The small blind has been changed to {}", new),
+		};
+		message
+		
+	    }		
+	    AdminCommand::Password(new) => {
+		self.password = Some(new.clone());
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: format!("The small blind has been changed to {}", new),
+		};
+		message
+		
+	    }
+	    AdminCommand::AddBot => {
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: "A bot has been added.".to_owned(),
+		};
+		message
+		
+	    }		
+	    AdminCommand::RemoveBot => {
+		let message = object! {
+		    msg_type: "admin_change".to_owned(),
+		    change: "small_blind".to_owned(),
+                    text: "A bot has been removed.".to_owned(),		    
+		};
+		message
+		
+	    }
+	};
+	PlayerConfig::send_specific_message(
+            &message.dump(),
+            id,
+            &self.player_ids_to_configs,
+	);
+    }
+	
     fn transition(&mut self, gamehand: &mut GameHand) {
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -3011,7 +3093,7 @@ mod tests {
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::SmallBlind(id, new_blind)));
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
 
 	
         game.handle_meta_actions(&cloned_meta_actions);
@@ -3031,12 +3113,12 @@ mod tests {
 	
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
-	game.admin_id = Some(id); // set the game's admin
+	game.admin_id = id; // set the game's admin
 	
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::SmallBlind(id, new_blind)));
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
         game.handle_meta_actions(&cloned_meta_actions);
 	assert_eq!(game.small_blind, new_blind);	       
     }
@@ -3054,12 +3136,12 @@ mod tests {
 	
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
-	game.admin_id = Some(id); // set the game's admin
+	game.admin_id = id; // set the game's admin
 	
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::BigBlind(id, new_blind)));
+            .push_back(MetaAction::Admin(id, AdminCommand::BigBlind(new_blind)));
         game.handle_meta_actions(&cloned_meta_actions);
 	assert_eq!(game.big_blind, new_blind);	       
     }
@@ -3077,12 +3159,12 @@ mod tests {
 	
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
-	game.admin_id = Some(id); // set the game's admin
+	game.admin_id = id; // set the game's admin
 	
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::BuyIn(id, new_buy_in)));
+            .push_back(MetaAction::Admin(id, AdminCommand::BuyIn(new_buy_in)));
         game.handle_meta_actions(&cloned_meta_actions);
 	assert_eq!(game.buy_in, new_buy_in);	       
     }
@@ -3100,12 +3182,12 @@ mod tests {
 	
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
-	game.admin_id = Some(id); // set the game's admin
+	game.admin_id = id; // set the game's admin
 	
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::Password(id, new_password.clone())));
+            .push_back(MetaAction::Admin(id, AdminCommand::Password(new_password.clone())));
         game.handle_meta_actions(&cloned_meta_actions);
 	assert_eq!(game.password, Some(new_password));	
     }
@@ -3128,20 +3210,20 @@ mod tests {
 
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
-	game.admin_id = Some(id); // set the game's admin
+	game.admin_id = id; // set the game's admin
 	
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
         game.handle_meta_actions(&cloned_meta_actions);
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 3); // 3 players
@@ -3153,7 +3235,7 @@ mod tests {
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(AdminCommand::RemoveBot(id)));
+            .push_back(MetaAction::Admin(id, AdminCommand::RemoveBot));
         game.handle_meta_actions(&cloned_meta_actions);
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2); // 2 players remain
