@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{JoinGameError, MetaAction, Returned, ReturnedReason};
+use crate::messages::{AdminCommand, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -211,6 +211,7 @@ pub struct Game {
     big_blind: u32,
     buy_in: u32,
     password: Option<String>,
+    admin_id: Option<Uuid>,
 }
 
 /// useful for unit tests, for example
@@ -228,6 +229,7 @@ impl Default for Game {
             big_blind: 8,
             buy_in: 1000,
             password: None,
+	    admin_id: None,
         }
     }
 }
@@ -244,6 +246,7 @@ impl Game {
         big_blind: u32,
         buy_in: u32,
         password: Option<String>,
+	admin_id: Uuid,
     ) -> Self {
         let deck = if deck_opt.is_some() {
             deck_opt.unwrap()
@@ -262,6 +265,7 @@ impl Game {
             big_blind,
             buy_in,
             password,
+	    admin_id: Some(admin_id),
         }
     }
 
@@ -515,6 +519,9 @@ impl Game {
                         }
                     }
                 }
+		MetaAction::Admin(admin_command) => {
+		    todo!();
+		}
             }
         }
     }
@@ -2984,6 +2991,173 @@ mod tests {
         // check that the money changed hands
         assert!(game.players[0].is_none()); // the spot is empty now
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
+    }
+
+
+    /// if someone who is not the admin attempts an admin command, it does not work
+    #[test]
+    fn not_admin() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+	// but we do not set the game's admin
+        let id = uuid::Uuid::new_v4();
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::SmallBlind(id, new_blind)));
+
+	
+        game.handle_meta_actions(&cloned_meta_actions);
+	assert_eq!(game.small_blind, new_blind - 1); // nothing changed	
+    }
+    
+    /// test that the admin can change the small blind with a meta action
+    #[test]
+    fn admin_small_blind() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = Some(id); // set the game's admin
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::SmallBlind(id, new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions);
+	assert_eq!(game.small_blind, new_blind);	       
+    }
+
+    /// test that the admin can change the big blind with a meta action
+    #[test]
+    fn admin_big_blind() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.big_blind + 1;
+	assert_eq!(game.big_blind, new_blind - 1);	       
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = Some(id); // set the game's admin
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::BigBlind(id, new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions);
+	assert_eq!(game.big_blind, new_blind);	       
+    }
+
+    /// test that the admin can change the buy in with a meta action
+    #[test]
+    fn admin_buy_in() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_buy_in = game.buy_in + 1;
+	assert_eq!(game.buy_in, new_buy_in - 1);	       
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = Some(id); // set the game's admin
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::BuyIn(id, new_buy_in)));
+        game.handle_meta_actions(&cloned_meta_actions);
+	assert_eq!(game.buy_in, new_buy_in);	       
+    }
+
+    /// test that the admin can change the password in with a meta action
+    #[test]
+    fn admin_password() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_password = "new_password".to_string();
+	assert_ne!(game.password, Some(new_password.clone()));
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = Some(id); // set the game's admin
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::Password(id, new_password.clone())));
+        game.handle_meta_actions(&cloned_meta_actions);
+	assert_eq!(game.password, Some(new_password));	
+    }
+
+    /// test that the admin can add and remove bots with a meta action
+    /// in this test, we add three bots, then remove one.
+    /// the empty seat is at index 0
+    #[test]
+    fn admin_bots() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_buy_in = game.buy_in + 1;
+	assert_eq!(game.buy_in, new_buy_in - 1);	       
+
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // no players	
+
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = Some(id); // set the game's admin
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::AddBot(id)));
+        game.handle_meta_actions(&cloned_meta_actions);
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 3); // 3 players
+	for i in 0..3 {
+            assert!(!game.players[i].as_ref().unwrap().human_controlled); // a bot
+	}
+
+	// now remove a bot
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(AdminCommand::RemoveBot(id)));
+        game.handle_meta_actions(&cloned_meta_actions);
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 2); // 2 players remain
+        assert!(game.players[0].is_none()); // the bot at index 0 was removed
     }
     
 }

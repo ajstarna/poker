@@ -373,6 +373,7 @@ impl Handler<Create> for GameHub {
                 big_blind,
                 buy_in,
                 password.clone(),
+		id, // the creator is the admin
             );
 
             for i in 0..num_bots {

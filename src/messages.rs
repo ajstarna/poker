@@ -4,7 +4,6 @@ use serde_json::Value;
 use std::fmt;
 use uuid::Uuid;
 
-/// Game server sends this messages to session
 
 /// this enum represents higher level commands that the hub will relay
 /// to the running games Player name change. player join/leave
@@ -16,6 +15,21 @@ pub enum MetaAction {
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String),
+    Admin(AdminCommand),
+}
+
+/// these admin commands can be taken by the owner of a PRIVATE game.
+/// commands to change the blinds, buy in, password, and to add or remove bots
+/// The Uuid of the player attemping an admin command must actually be the game.admin to work
+#[derive(Debug)]
+pub enum AdminCommand {
+    SmallBlind(Uuid, u32),
+    BigBlind(Uuid, u32),
+    BuyIn(Uuid, u32),
+    Password(Uuid, String),
+    AddBot(Uuid),
+    RemoveBot(Uuid),
+    // NewAdmin(Uuid, Uuid), // todo? would they give the name of the player or what?
 }
 
 #[derive(Message)]
