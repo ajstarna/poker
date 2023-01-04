@@ -225,8 +225,8 @@ impl Default for Game {
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players: 9,
             button_idx: 0,
-            small_blind: 5,
-            big_blind: 10,
+            small_blind: 4,
+            big_blind: 8,
             buy_in: 1000,
             password: None,
 	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
@@ -390,7 +390,8 @@ impl Game {
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
             self.play_one_hand(&incoming_actions, &incoming_meta_actions);
-            self.handle_meta_actions(&incoming_meta_actions);
+	    let between_hands = true;
+            self.handle_meta_actions(&incoming_meta_actions, between_hands);
             // attempt to set the next button
             self.button_idx = self
                 .find_next_button()
@@ -425,7 +426,11 @@ impl Game {
         Err("could not find a valid button")
     }
 
-    fn handle_meta_actions(&mut self, incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>) {
+    fn handle_meta_actions(
+	&mut self,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	between_hands: bool,
+    ) {
         let mut meta_actions = incoming_meta_actions.lock().unwrap();
         for _ in 0..meta_actions.len() {
             match meta_actions.pop_front().unwrap() {
@@ -520,7 +525,12 @@ impl Game {
                     }
                 }
 		MetaAction::Admin(id, admin_command) => {
-		    self.handle_admin_command(id, admin_command);
+		    if !between_hands {
+			// put it back on the meta actions queue to be handled only between hands
+			meta_actions.push_back(MetaAction::Admin(id, admin_command));
+		    } else {
+			self.handle_admin_command(id, admin_command);
+		    }
 		}
             }
         }
@@ -553,7 +563,7 @@ impl Game {
 		message
 	    },
 	    AdminCommand::BigBlind(new) => {
-		self.small_blind = new;
+		self.big_blind = new;
 		let message = object! {
 		    msg_type: "admin_change".to_owned(),
 		    change: "small_blind".to_owned(),
@@ -563,11 +573,11 @@ impl Game {
 		
 	    }		
 	    AdminCommand::BuyIn(new) => {
-		self.small_blind = new;
+		self.buy_in = new;
 		let message = object! {
 		    msg_type: "admin_change".to_owned(),
-		    change: "small_blind".to_owned(),
-                    text: format!("The small blind has been changed to {}", new),
+		    change: "buy_in".to_owned(),
+                    text: format!("The buy in has been changed to {}", new),
 		};
 		message
 		
@@ -576,25 +586,45 @@ impl Game {
 		self.password = Some(new.clone());
 		let message = object! {
 		    msg_type: "admin_change".to_owned(),
-		    change: "small_blind".to_owned(),
-                    text: format!("The small blind has been changed to {}", new),
+		    change: "password".to_owned(),
+                    text: format!("The password has been changed to {}", new),
 		};
 		message
-		
 	    }
 	    AdminCommand::AddBot => {
-		let message = object! {
-		    msg_type: "admin_change".to_owned(),
-		    change: "small_blind".to_owned(),
-                    text: "A bot has been added.".to_owned(),
+		let message = match self.add_bot("Bot".to_string()) {
+		    Ok(_) => {
+			let message = object! {
+			    msg_type: "admin_change".to_owned(),
+			    change: "bot_added".to_owned(),
+			    text: "A bot has been added.".to_owned(),
+			};
+			message
+		    }
+		    Err(_) => {
+			let message = object! {
+			    msg_type: "error".to_owned(),
+			    error: "unable_to_add_bot".to_owned(),
+			    reason: "Unable to add bot to the game.".to_owned(),
+			};
+			message
+		    }
 		};
-		message
-		
-	    }		
+		message		
+	    },	
 	    AdminCommand::RemoveBot => {
+		for player in self.players.iter_mut().flatten() {
+		    if !player.human_controlled {
+			// first bot we found
+			self
+			    .player_ids_to_configs
+			    .remove(&player.id)
+			    .expect("how was the bot a player but not a config");
+		    }
+		}
 		let message = object! {
 		    msg_type: "admin_change".to_owned(),
-		    change: "small_blind".to_owned(),
+		    change: "bot_removed".to_owned(),
                     text: "A bot has been removed.".to_owned(),		    
 		};
 		message
@@ -1019,8 +1049,6 @@ impl Game {
         }
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
-        //let (left, right) = players.split_at_mut(starting_idx);
-        //for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
             /*
             println!(
@@ -1298,11 +1326,12 @@ impl Game {
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
+	let between_hands = false;
         while attempts < 10000 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions(&incoming_meta_actions);
+            self.handle_meta_actions(&incoming_meta_actions, between_hands);
 
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -1506,7 +1535,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some(password)));
 
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -1533,7 +1562,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some("345".to_string())));
 
-        game.handle_meta_actions(&incoming_meta_actions);
+        game.handle_meta_actions(&incoming_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -1559,7 +1588,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, None)); // no password passed in
 
-        game.handle_meta_actions(&incoming_meta_actions);
+        game.handle_meta_actions(&incoming_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -3096,7 +3125,7 @@ mod tests {
             .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
 
 	
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 	assert_eq!(game.small_blind, new_blind - 1); // nothing changed	
     }
     
@@ -3119,7 +3148,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 	assert_eq!(game.small_blind, new_blind);	       
     }
 
@@ -3142,7 +3171,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::BigBlind(new_blind)));
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 	assert_eq!(game.big_blind, new_blind);	       
     }
 
@@ -3165,7 +3194,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::BuyIn(new_buy_in)));
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 	assert_eq!(game.buy_in, new_buy_in);	       
     }
 
@@ -3188,7 +3217,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::Password(new_password.clone())));
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 	assert_eq!(game.password, Some(new_password));	
     }
 
@@ -3205,8 +3234,7 @@ mod tests {
 	let new_buy_in = game.buy_in + 1;
 	assert_eq!(game.buy_in, new_buy_in - 1);	       
 
-        let some_players = game.players.iter().flatten().count();
-        assert_eq!(some_players, 0); // no players	
+        assert_eq!(game.player_ids_to_configs.len(), 0); // no players	
 
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
@@ -3224,9 +3252,8 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
-        game.handle_meta_actions(&cloned_meta_actions);
-        let some_players = game.players.iter().flatten().count();
-        assert_eq!(some_players, 3); // 3 players
+        game.handle_meta_actions(&cloned_meta_actions, true);
+        assert_eq!(game.player_ids_to_configs.len(), 3); // 3 players		
 	for i in 0..3 {
             assert!(!game.players[i].as_ref().unwrap().human_controlled); // a bot
 	}
@@ -3236,10 +3263,11 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::RemoveBot));
-        game.handle_meta_actions(&cloned_meta_actions);
-        let some_players = game.players.iter().flatten().count();
-        assert_eq!(some_players, 2); // 2 players remain
-        assert!(game.players[0].is_none()); // the bot at index 0 was removed
+        game.handle_meta_actions(&cloned_meta_actions, true);
+        assert_eq!(game.player_ids_to_configs.len(), 3); // 3 players
+	// the player_ids_to_configs mapping no longer contains the id for the bot at index 0
+	// Note: the bot player struct will be removed after the next hand
+        assert!(!game.player_ids_to_configs.contains_key(&game.players[0].as_ref().unwrap().id));
     }
     
 }
