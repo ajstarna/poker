@@ -282,6 +282,7 @@ impl Handler<Create> for GameHub {
             return Err(CreateGameError::NameNotSet);
         }
 
+	// TODO: can this be better handled via serde??
         if let (
             Some(max_players),
             Some(small_blind),

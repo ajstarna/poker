@@ -189,6 +189,9 @@ impl WsGameSession {
                 "create" => {
                     self.handle_create_table(object, ctx);
                 }
+                "update" => {
+                    self.handle_update_table(object, ctx);
+                }
                 "leave" => {
                     self.hub_addr.do_send(messages::MetaActionMessage {
                         id: self.id,
@@ -256,7 +259,7 @@ impl WsGameSession {
         // so actor wont receive any new messages until it get list
         // of tables back
     }
-
+    
     fn handle_list_tables(&self, ctx: &mut <WsGameSession as Actor>::Context) {
         // Send ListTables message to game server and wait for
         // response
@@ -376,4 +379,79 @@ impl WsGameSession {
             ctx.text("!!! chat_message is required");
         }
     }
+
+    // {"msg_type": "update", "": "big_blind", "value": 24}
+    fn handle_update_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+        if let Some(Value::String(field)) = object.get("field") {
+            if let Some(Value::String(amount)) = object.get(field) {
+                let amount = amount.to_string();
+                self.hub_addr.do_send(messages::PlayerActionMessage {
+                    id: self.id,
+                    player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
+                });
+                //ctx.text(format!("placing bet of: {:?}", v[1]));
+            } else {
+                ctx.text("!!!You much specify how much to bet!");
+            }
+	    
+            match field.as_str() {
+                "small_blind" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Check,
+                    });
+                }
+                "big_blind" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Fold,
+                    });
+                }
+                "add_bot" => {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::Call,
+                    });
+                }
+                "remove_bot" => {
+                }
+                other => {
+                    ctx.text(format!(
+                        "invalid action set for type:player_action: {:?}",
+                        other
+                    ));
+                }
+            }
+		
+	    }
+
+
+
+
+
+
+
+
+
+
+
+	    
+            let password = if password.is_string() {
+                Some(password.to_string())
+            } else {
+                None
+            };
+
+            self.hub_addr.do_send(messages::Join {
+                id: self.id,
+                table_name,
+                password,
+            });
+        } else {
+            println!("missing table name or password!");
+            ctx.text("!!! table_name and password (possibly null) are required");
+            return;
+        }
+    }
+    
 }
