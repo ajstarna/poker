@@ -692,9 +692,9 @@
 			msg["num_bots"] = parseInt($botNumberSlider.value);
 			msg["small_blind"] = parseInt($smallBlindValue.value);
 			msg["big_blind"] = parseInt($bigBlindValue.value);
-			msg["buy_in"] = parseInt($startingStackValue.value);
+		        msg["buy_in"] = parseInt($startingStackValue.value);
 			msg["is_private"] = false;
-			msg["password"] = "123";
+		    msg["password"] = null;
 			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}

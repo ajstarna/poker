@@ -11,7 +11,7 @@ use std::{
 
 use crate::logic::{Game, PlayerAction, PlayerConfig};
 use crate::messages::{
-    Connect, Create, CreateGameError, Join, ListTables, MetaAction, MetaActionMessage,
+    Connect, Create, CreateFields, CreateGameError, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -239,7 +239,8 @@ impl Handler<Returned> for GameHub {
                     message["msg_type"] = "left_game".into();
                 }
                 ReturnedReason::FailureToJoin(err) => {
-                    message["msg_type"] = "unable_to_join".into();
+		    message["msg_type"] = "error".into();
+                    message["error"] = "unable_to_join".into();		    
                     message["reason"] = err.to_string().into();
                 }
             }
@@ -282,135 +283,100 @@ impl Handler<Create> for GameHub {
             return Err(CreateGameError::NameNotSet);
         }
 
-	// TODO: can this be better handled via serde??
-        if let (
-            Some(max_players),
-            Some(small_blind),
-            Some(big_blind),
-            Some(buy_in),
-            Some(num_bots),
-            Some(is_private),
-            Some(password),
-        ) = (
-            create_msg.get("max_players"),
-            create_msg.get("small_blind"),
-            create_msg.get("big_blind"),
-            create_msg.get("buy_in"),
-            create_msg.get("num_bots"),
-            create_msg.get("is_private"),
-            create_msg.get("password"),
-        ) {
-            let max_players = max_players
-                .to_string()
-                .parse::<u8>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("max_players".to_owned()))?;
-            let small_blind = small_blind
-                .to_string()
-                .parse::<u32>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("small_blind".to_owned()))?;
-            let big_blind = big_blind
-                .to_string()
-                .parse::<u32>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("big_blind".to_owned()))?;
-            let buy_in = buy_in
-                .to_string()
-                .parse::<u32>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("buy_in".to_owned()))?;
-            let num_bots = num_bots
-                .to_string()
-                .parse::<u8>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("num_bots".to_owned()))?;
-            let is_private = is_private
-                .to_string()
-                .parse::<bool>()
-                .map_err(|_| CreateGameError::InvalidFieldValue("is_private".to_owned()))?;
-
-            println!("password in create game = {:?}", password);
-
-            let password = if password.is_string() {
-                Some(password.to_string())
-            } else {
-                None
-            };
-
-	    if num_bots >= max_players {
-		self.main_lobby_connections.insert(player_config.id, player_config);
-		return Err(CreateGameError::TooManyBots);
-	    }
-
-	    if big_blind > buy_in || small_blind > buy_in {
-		self.main_lobby_connections.insert(player_config.id, player_config);
-		return Err(CreateGameError::TooLargeBlinds);		
-	    }
-	    
-            let mut rng = rand::thread_rng();
-            let table_name = loop {
-                // create a new 4-char unique name for the table
-                let genned_name: String = (0..GAME_NAME_LEN)
-                    .map(|_| {
-                        let idx = rng.gen_range(0..CHAR_SET.len());
-                        CHAR_SET[idx] as char
-                    })
-                    .collect();
-                if self.tables_to_actions.contains_key(&genned_name) {
-                    // unlikely, but we already have a table with this exact name
-                    continue;
-                }
-                // we genned a name that is new
-                break genned_name;
-            };
-
-            let actions = Arc::new(Mutex::new(HashMap::new()));
-            let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
-            let cloned_actions = actions.clone();
-            let cloned_meta_actions = meta_actions.clone();
-
-            let mut game = Game::new(
-                ctx.address(),
-                table_name.clone(),
-                None, // no deck needed to pass in
-                max_players,
-                small_blind,
-                big_blind,
-                buy_in,
-                password.clone(),
-		id, // the creator is the admin
-            );
-
-            for i in 0..num_bots {
-                let name = format!("Mr {}", i);
-                game.add_bot(name)
-                    .expect("error adding bot on freshly created game");
+	match serde_json::from_str(&create_msg) {
+	    Ok(create_fields) => {
+		let CreateFields {
+		    max_players,
+		    small_blind,
+		    big_blind,
+		    buy_in,
+		    num_bots,
+		    is_private,
+		    password,
+		} = create_fields;
+		println!("password in create game = {:?}", password);
+		
+		if num_bots >= max_players {
+		    self.main_lobby_connections.insert(player_config.id, player_config);
+		    return Err(CreateGameError::TooManyBots);
+		}
+		
+		if big_blind > buy_in || small_blind > buy_in {
+		    self.main_lobby_connections.insert(player_config.id, player_config);
+		    return Err(CreateGameError::TooLargeBlinds);		
+		}
+		
+		let mut rng = rand::thread_rng();
+		let table_name = loop {
+                    // create a new 4-char unique name for the table
+                    let genned_name: String = (0..GAME_NAME_LEN)
+			.map(|_| {
+                            let idx = rng.gen_range(0..CHAR_SET.len());
+                            CHAR_SET[idx] as char
+			})
+			.collect();
+                    if self.tables_to_actions.contains_key(&genned_name) {
+			// unlikely, but we already have a table with this exact name
+			continue;
+                    }
+                    // we genned a name that is new
+                    break genned_name;
+		};
+		
+		let actions = Arc::new(Mutex::new(HashMap::new()));
+		let meta_actions = Arc::new(Mutex::new(VecDeque::new()));
+		let cloned_actions = actions.clone();
+		let cloned_meta_actions = meta_actions.clone();
+		
+		let mut game = Game::new(
+                    ctx.address(),
+                    table_name.clone(),
+                    None, // no deck needed to pass in
+                    max_players,
+                    small_blind,
+                    big_blind,
+                    buy_in,
+                    password.clone(),
+		    id, // the creator is the admin
+		);
+		
+		for i in 0..num_bots {
+                    let name = format!("Mr {}", i);
+                    game.add_bot(name)
+			.expect("error adding bot on freshly created game");
+		}
+		
+		if is_private {
+                    self.private_tables.insert(table_name.clone());
+		}
+		
+		// update the mapping to find the player at a table
+		self.players_to_table.insert(id, table_name.clone());
+		
+		game.add_user(player_config, password)
+                    .expect("error joining freshly created game");
+		
+		std::thread::spawn(move || {
+                    // Note: I tried having the actions and meta actions as part of the game struct,
+                    // but this led to lifetime concerns.
+                    // Then I changed to using scoped threads, and this sort of "solved" it,
+                    // but it did not play nicely with actix async (i.e. the tests worked but the app did not)
+                    // TLDR keep the actions as something passed in to play()
+                    game.play(&cloned_actions, &cloned_meta_actions, None);
+		});
+		
+		self.tables_to_actions.insert(table_name.clone(), actions);
+		self.tables_to_meta_actions
+                    .insert(table_name.clone(), meta_actions);
+		Ok(table_name) // return the table name
             }
-
-            if is_private {
-                self.private_tables.insert(table_name.clone());
+	    Err(e) => {
+		println!("create message unable to deserialize");
+		println!("{:?}", e);
+		self.main_lobby_connections.insert(player_config.id, player_config);	    
+		return Err(CreateGameError::UnableToParseJson(e.to_string()));
             }
-
-            // update the mapping to find the player at a table
-            self.players_to_table.insert(id, table_name.clone());
-
-            game.add_user(player_config, password)
-                .expect("error joining freshly created game");
-
-            std::thread::spawn(move || {
-                // Note: I tried having the actions and meta actions as part of the game struct,
-                // but this led to lifetime concerns.
-                // Then I changed to using scoped threads, and this sort of "solved" it,
-                // but it did not play nicely with actix async (i.e. the tests worked but the app did not)
-                // TLDR keep the actions as something passed in to play()
-                game.play(&cloned_actions, &cloned_meta_actions, None);
-            });
-
-            self.tables_to_actions.insert(table_name.clone(), actions);
-            self.tables_to_meta_actions
-                .insert(table_name.clone(), meta_actions);
-            Ok(table_name) // return the table name
-        } else {
-            println!("create message missing one or more required fields!");
-	    self.main_lobby_connections.insert(player_config.id, player_config);	    
-            return Err(CreateGameError::MissingField);
-        }
+	}
     }
 }
 

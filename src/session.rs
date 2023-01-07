@@ -144,7 +144,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
 
                 if let Ok(object) = serde_json::from_str(m) {
                     println!("parsed: {}", object);
-                    self.handle_client_command(object, ctx);
+                    self.handle_client_command(object, m, ctx);
                 } else {
                     println!("message unable to parse as json: {}", m);
                 };
@@ -166,6 +166,7 @@ impl WsGameSession {
     fn handle_client_command(
         &mut self,
         object: Value,
+	m: &str, // the original string in case we want to use it to parse
         ctx: &mut <WsGameSession as Actor>::Context,
     ) {
         println!("Entered handle_client_command {:?}", object);
@@ -187,7 +188,7 @@ impl WsGameSession {
                     self.handle_join_table(object, ctx);
                 }
                 "create" => {
-                    self.handle_create_table(object, ctx);
+                    self.handle_create_table(m, ctx);
                 }
                 "update" => {
                     self.handle_update_table(object, ctx);
@@ -222,11 +223,11 @@ impl WsGameSession {
         }
     }
 
-    fn handle_create_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_create_table(&self, msg: &str, ctx: &mut <WsGameSession as Actor>::Context) {
         self.hub_addr
             .send(messages::Create {
                 id: self.id,
-                create_msg: object,
+                create_msg: msg.into(),
             })
             .into_actor(self)
             .then(|res, _, ctx| {
@@ -423,35 +424,9 @@ impl WsGameSession {
                 }
             }
 		
-	    }
-
-
-
-
-
-
-
-
-
-
-
-	    
-            let password = if password.is_string() {
-                Some(password.to_string())
-            } else {
-                None
-            };
-
-            self.hub_addr.do_send(messages::Join {
-                id: self.id,
-                table_name,
-                password,
-            });
-        } else {
-            println!("missing table name or password!");
-            ctx.text("!!! table_name and password (possibly null) are required");
-            return;
-        }
+	}
     }
+
+
     
 }
