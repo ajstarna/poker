@@ -190,8 +190,8 @@ impl WsGameSession {
                 "create" => {
                     self.handle_create_table(m, ctx);
                 }
-                "update" => {
-                    self.handle_update_table(object, ctx);
+                "admin_command" => {
+                    self.handle_admin_command(object, ctx);
                 }
                 "leave" => {
                     self.hub_addr.do_send(messages::MetaActionMessage {
@@ -381,44 +381,88 @@ impl WsGameSession {
         }
     }
 
-    // {"msg_type": "update", "": "big_blind", "value": 24}
-    fn handle_update_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
-        if let Some(Value::String(field)) = object.get("field") {
-            if let Some(Value::String(amount)) = object.get(field) {
-                let amount = amount.to_string();
-                self.hub_addr.do_send(messages::PlayerActionMessage {
-                    id: self.id,
-                    player_action: PlayerAction::Bet(amount.parse::<u32>().unwrap()),
-                });
-                //ctx.text(format!("placing bet of: {:?}", v[1]));
-            } else {
-                ctx.text("!!!You much specify how much to bet!");
-            }
-	    
-            match field.as_str() {
+    // {"msg_type": "admin_command", "admin_command": "big_blind", "value": 24}
+    fn handle_admin_command(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+        if let Some(Value::String(admin_command)) = object.get("admin_command") {
+            match admin_command.as_str() {
                 "small_blind" => {
-                    self.hub_addr.do_send(messages::PlayerActionMessage {
-                        id: self.id,
-                        player_action: PlayerAction::Check,
-                    });
+		    if let Some(Value::String(amount)) = object.get("small_blind") {
+			let amount = amount.to_string();
+			self.hub_addr.do_send(messages::MetaActionMessage {
+			    id: self.id,
+			    meta_action: messages::MetaAction::Admin(
+				self.id,				
+				messages::AdminCommand::SmallBlind(amount.parse::<u32>().unwrap()),
+			    )
+			});
+		    } else {
+			// TODO this is an ill-formed json command
+		    };
                 }
                 "big_blind" => {
-                    self.hub_addr.do_send(messages::PlayerActionMessage {
-                        id: self.id,
-                        player_action: PlayerAction::Fold,
-                    });
+		    if let Some(Value::String(amount)) = object.get("big_blind") {
+			let amount = amount.to_string();
+			self.hub_addr.do_send(messages::MetaActionMessage {
+			    id: self.id,
+			    meta_action: messages::MetaAction::Admin(
+				self.id,				
+				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
+			    )
+			});
+		    } else {
+			// TODO this is an ill-formed json command
+		    };
                 }
+                "buy_in" => {
+		    if let Some(Value::String(amount)) = object.get("buy_in") {
+			let amount = amount.to_string();
+			self.hub_addr.do_send(messages::MetaActionMessage {
+			    id: self.id,
+			    meta_action: messages::MetaAction::Admin(
+				self.id,				
+				messages::AdminCommand::BuyIn(amount.parse::<u32>().unwrap()),
+			    )
+			});
+		    } else {
+			// TODO this is an ill-formed json command
+		    };		    
+                }
+		
+                "password" => {
+		    todo!();
+		    if let Some(Value::String(amount)) = object.get("big_blind") {
+			let amount = amount.to_string();
+			self.hub_addr.do_send(messages::MetaActionMessage {
+			    id: self.id,
+			    meta_action: messages::MetaAction::Admin(
+				self.id,				
+				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
+			    )
+			});
+		    } else {
+			// TODO this is an ill-formed json command
+		    };
+                }
+
                 "add_bot" => {
-                    self.hub_addr.do_send(messages::PlayerActionMessage {
-                        id: self.id,
-                        player_action: PlayerAction::Call,
+		    self.hub_addr.do_send(messages::MetaActionMessage {
+			id: self.id,
+			meta_action: messages::MetaAction::Admin(
+			    self.id,				
+			    messages::AdminCommand::AddBot),
                     });
-                }
+		}
                 "remove_bot" => {
+		    self.hub_addr.do_send(messages::MetaActionMessage {
+			id: self.id,
+			meta_action: messages::MetaAction::Admin(
+			    self.id,				
+			    messages::AdminCommand::RemoveBot),
+                    });
                 }
                 other => {
                     ctx.text(format!(
-                        "invalid action set for type:player_action: {:?}",
+                        "invalid admin_command: {:?}",
                         other
                     ));
                 }

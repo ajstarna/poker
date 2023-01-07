@@ -556,7 +556,7 @@ impl Game {
 	    AdminCommand::SmallBlind(new) => {
 		self.small_blind = new;
 		object! {
-		    msg_type: "update_success".to_owned(),
+		    msg_type: "admin_success".to_owned(),
 		    updated: "small_blind".to_owned(),
                     text: format!("The small blind has been changed to {}", new),
 		}
@@ -564,7 +564,7 @@ impl Game {
 	    AdminCommand::BigBlind(new) => {
 		self.big_blind = new;
 		object! {
-		    msg_type: "update_success".to_owned(),
+		    msg_type: "admin_success".to_owned(),
 		    updated: "small_blind".to_owned(),
                     text: format!("The small blind has been changed to {}", new),
 		}
@@ -572,7 +572,7 @@ impl Game {
 	    AdminCommand::BuyIn(new) => {
 		self.buy_in = new;
 		object! {
-		    msg_type: "update_success".to_owned(),
+		    msg_type: "admin_success".to_owned(),
 		    updated: "buy_in".to_owned(),
                     text: format!("The buy in has been changed to {}", new),
 		}
@@ -580,7 +580,7 @@ impl Game {
 	    AdminCommand::Password(new) => {
 		self.password = Some(new.clone());
 		object! {
-		    msg_type: "update_success".to_owned(),
+		    msg_type: "admin_success".to_owned(),
 		    updated: "password".to_owned(),
                     text: format!("The password has been changed to {}", new),
 		}
@@ -589,7 +589,7 @@ impl Game {
 		match self.add_bot("Bot".to_string()) {
 		    Ok(_) => {
 			object! {
-			    msg_type: "update_success".to_owned(),
+			    msg_type: "admin_success".to_owned(),
 			    updated: "bot_added".to_owned(),
 			    text: "A bot has been added.".to_owned(),
 			}
@@ -621,7 +621,7 @@ impl Game {
 		}
 		if found {
 		    object! {
-			msg_type: "update_success".to_owned(),
+			msg_type: "admin_success".to_owned(),
 			updated: "bot_removed".to_owned(),
 			text: "A bot has been removed.".to_owned(),		    
 		    }
