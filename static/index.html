@@ -663,8 +663,6 @@
 			var msg = {}; // build the json to send
 			msg["msg_type"] = "name";
 			msg["player_name"] = $playerName.value;
-
-			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -673,15 +671,12 @@
 			msg["msg_type"] = "join";
 			msg["table_name"] = $tableId.value;
 			msg["password"] = "123";
-			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
 		function listPublicTable() {
 			var msg = {}; // build the json to send
 			msg["msg_type"] = "list";
-
-			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
 
@@ -693,7 +688,6 @@
 			msg["small_blind"] = parseInt($smallBlindValue.value);
 			msg["big_blind"] = parseInt($bigBlindValue.value);
 		        msg["buy_in"] = parseInt($startingStackValue.value);
-			msg["is_private"] = false;
 		    msg["password"] = null;
 			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
@@ -724,14 +718,49 @@
 		function sendMessage() {
 			var msg = {}; // build the json to send
 
+		    // first check if it starts with an admin command attempt
+		    if ($input.value.startsWith("/small_blind")) {
+			msg["msg_type"] = "admin_command";
+			const [_, value] = $input.value.split(" ");
+			msg["admin_command"] = "small_blind";
+			msg["small_blind"] = value;
+			
+		    }
+		    else if ($input.value.startsWith("/big_blind")) {
+			msg["msg_type"] = "admin_command";
+			const [_, value] = $input.value.split(" ");
+			msg["admin_command"] = "big_blind";
+			msg["big_blind"] = value;
+			
+		    }
+		    else if ($input.value.startsWith("/buy_in")) {
+			msg["msg_type"] = "admin_command";
+			msg["admin_command"] = "buy_in";
+			msg["buy_in"] = value;
+		    }
+		    else if ($input.value.startsWith("/password")) {
+			msg["msg_type"] = "admin_command";
+			const [_, value] = $input.value.split(" ");
+			msg["admin_command"] = "password";
+			msg["password"] = value;
+		    }
+		    else if ($input.value.startsWith("/add_bot")) {
+			msg["msg_type"] = "admin_command";
+			msg["admin_command"] = "add_bot";
+		    }
+		    else if ($input.value.startsWith("/remove_bot")) {
+			msg["msg_type"] = "admin_command";
+			msg["admin_command"] = "remove_bot";			
+		    }
+		    else {
 			msg["msg_type"] = "chat";
 			msg["text"] = $input.value;
-
-			log("Sending: " + JSON.stringify(msg));
-			socket.send(JSON.stringify(msg));
-
-			$input.value = "";
-			$input.focus();
+		    }
+		    log("Sending: " + JSON.stringify(msg));
+		    socket.send(JSON.stringify(msg));
+		    
+		    $input.value = "";
+		    $input.focus();
 		}
 
 		$form.addEventListener("submit", (ev) => {

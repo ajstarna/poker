@@ -542,7 +542,22 @@ impl Game {
 	    let message = object! {
 		msg_type: "error".to_owned(),
 		error: "not_admin".to_owned(),
-                reason: "You cannot change a game that you are not the admin for.".to_owned(),
+                reason: "You cannot update a game that you are not the admin for.".to_owned(),
+	    };
+	    PlayerConfig::send_specific_message(
+		&message.dump(),
+		id,
+		&self.player_ids_to_configs,
+	    );
+	    return;
+	}
+	
+	if self.password.is_none() {
+	    // only private (i.e. password-protected) games can be updated
+	    let message = object! {
+		msg_type: "error".to_owned(),
+		error: "not_private".to_owned(),
+                reason: "You cannot update a game that is not private.".to_owned(),
 	    };
 	    PlayerConfig::send_specific_message(
 		&message.dump(),
@@ -3122,6 +3137,10 @@ mod tests {
         // need the id for the admin command
 	// but we do not set the game's admin
         let id = uuid::Uuid::new_v4();
+	
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
         incoming_meta_actions
             .lock()
             .unwrap()
@@ -3146,6 +3165,9 @@ mod tests {
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
 	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
 	
         incoming_meta_actions
             .lock()
@@ -3155,6 +3177,29 @@ mod tests {
 	assert_eq!(game.small_blind, new_blind);	       
     }
 
+    /// test that admin commands do not work for a game that is private (i.e. has a password)
+    #[test]
+    fn admin_no_password() {
+        let mut game = Game::default();
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	assert!(game.password.is_none()); // make sure no password is set
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.small_blind, new_blind - 1); // still
+    }
+    
     /// test that the admin can change the big blind with a meta action
     #[test]
     fn admin_big_blind() {
@@ -3169,6 +3214,9 @@ mod tests {
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
 	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
 	
         incoming_meta_actions
             .lock()
@@ -3192,7 +3240,10 @@ mod tests {
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
 	game.admin_id = id; // set the game's admin
-	
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+
         incoming_meta_actions
             .lock()
             .unwrap()
@@ -3215,6 +3266,9 @@ mod tests {
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
 	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
 	
         incoming_meta_actions
             .lock()
@@ -3244,6 +3298,9 @@ mod tests {
         // need the id for the admin command
         let id = uuid::Uuid::new_v4();
 	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
 	
         incoming_meta_actions
             .lock()

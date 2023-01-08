@@ -291,7 +291,6 @@ impl Handler<Create> for GameHub {
 		    big_blind,
 		    buy_in,
 		    num_bots,
-		    is_private,
 		    password,
 		} = create_fields;
 		println!("password in create game = {:?}", password);
@@ -346,7 +345,8 @@ impl Handler<Create> for GameHub {
 			.expect("error adding bot on freshly created game");
 		}
 		
-		if is_private {
+		if password.is_some() {
+		    // a game with a password does not show up as a public game
                     self.private_tables.insert(table_name.clone());
 		}
 		

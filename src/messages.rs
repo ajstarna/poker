@@ -158,7 +158,6 @@ pub struct CreateFields {
     pub big_blind: u32,
     pub buy_in: u32,
     pub num_bots: u8,
-    pub is_private: bool,
     pub password: Option<String>,
 }
 

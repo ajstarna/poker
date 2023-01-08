@@ -381,12 +381,12 @@ impl WsGameSession {
         }
     }
 
-    // {"msg_type": "admin_command", "admin_command": "big_blind", "value": 24}
+    // e.g. {"msg_type": "admin_command", "admin_command": "big_blind", "big_blind": 24}
     fn handle_admin_command(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
         if let Some(Value::String(admin_command)) = object.get("admin_command") {
-            match admin_command.as_str() {
+            let invalid_json =  match admin_command.as_str() {
                 "small_blind" => {
-		    if let Some(Value::String(amount)) = object.get("small_blind") {
+		    if let Some(Value::String(amount)) = object.get("small__blind") {
 			let amount = amount.to_string();
 			self.hub_addr.do_send(messages::MetaActionMessage {
 			    id: self.id,
@@ -395,9 +395,11 @@ impl WsGameSession {
 				messages::AdminCommand::SmallBlind(amount.parse::<u32>().unwrap()),
 			    )
 			});
+			false
 		    } else {
-			// TODO this is an ill-formed json command
-		    };
+			// invalid_json
+			true
+		    }
                 }
                 "big_blind" => {
 		    if let Some(Value::String(amount)) = object.get("big_blind") {
@@ -409,9 +411,11 @@ impl WsGameSession {
 				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
 			    )
 			});
+			false
 		    } else {
-			// TODO this is an ill-formed json command
-		    };
+			// invalid_json			
+			true
+		    }
                 }
                 "buy_in" => {
 		    if let Some(Value::String(amount)) = object.get("buy_in") {
@@ -423,14 +427,14 @@ impl WsGameSession {
 				messages::AdminCommand::BuyIn(amount.parse::<u32>().unwrap()),
 			    )
 			});
+			false
 		    } else {
-			// TODO this is an ill-formed json command
-		    };		    
-                }
-		
+			// invalid json
+			true
+		    }		    
+                }		
                 "password" => {
-		    todo!();
-		    if let Some(Value::String(amount)) = object.get("big_blind") {
+		    if let Some(Value::String(amount)) = object.get("password") {
 			let amount = amount.to_string();
 			self.hub_addr.do_send(messages::MetaActionMessage {
 			    id: self.id,
@@ -439,9 +443,11 @@ impl WsGameSession {
 				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
 			    )
 			});
+			false
 		    } else {
-			// TODO this is an ill-formed json command
-		    };
+			// invalid json
+			true
+		    }
                 }
 
                 "add_bot" => {
@@ -451,6 +457,7 @@ impl WsGameSession {
 			    self.id,				
 			    messages::AdminCommand::AddBot),
                     });
+		    false
 		}
                 "remove_bot" => {
 		    self.hub_addr.do_send(messages::MetaActionMessage {
@@ -459,18 +466,25 @@ impl WsGameSession {
 			    self.id,				
 			    messages::AdminCommand::RemoveBot),
                     });
+		    false
                 }
-                other => {
-                    ctx.text(format!(
-                        "invalid admin_command: {:?}",
-                        other
-                    ));
+                _ => {
+		    // invalid command
+		    true 
                 }
-            }
+            };
+	    if invalid_json {
+                let message = json::object! {
+                    msg_type: "error".to_owned(),
+		    error: "invalid_admin_command".to_owned(),
+                    reason: "this admin_command was invalid.".to_owned(),
+                };
+                ctx.text(message.dump());
 		
+	    }
 	}
     }
-
+    
 
     
 }
