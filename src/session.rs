@@ -386,16 +386,19 @@ impl WsGameSession {
         if let Some(Value::String(admin_command)) = object.get("admin_command") {
             let invalid_json =  match admin_command.as_str() {
                 "small_blind" => {
-		    if let Some(Value::String(amount)) = object.get("small__blind") {
-			let amount = amount.to_string();
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::Admin(
-				self.id,				
-				messages::AdminCommand::SmallBlind(amount.parse::<u32>().unwrap()),
-			    )
-			});
-			false
+		    if let Some(Value::String(amount)) = object.get("small_blind") {
+			if let Ok(amount) = amount.to_string().parse::<u32>() {
+			    self.hub_addr.do_send(messages::MetaActionMessage {
+				id: self.id,
+				meta_action: messages::MetaAction::Admin(
+				    self.id,				
+				    messages::AdminCommand::SmallBlind(amount),
+				)
+			    });
+			    false
+			} else {
+			    true
+			}
 		    } else {
 			// invalid_json
 			true
@@ -403,15 +406,18 @@ impl WsGameSession {
                 }
                 "big_blind" => {
 		    if let Some(Value::String(amount)) = object.get("big_blind") {
-			let amount = amount.to_string();
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::Admin(
-				self.id,				
-				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
-			    )
-			});
-			false
+			if let Ok(amount) = amount.to_string().parse::<u32>() {			
+			    self.hub_addr.do_send(messages::MetaActionMessage {
+				id: self.id,
+				meta_action: messages::MetaAction::Admin(
+				    self.id,				
+				    messages::AdminCommand::BigBlind(amount),
+				)
+			    });
+			    false			    
+			} else {
+			    true
+			}
 		    } else {
 			// invalid_json			
 			true
@@ -419,15 +425,18 @@ impl WsGameSession {
                 }
                 "buy_in" => {
 		    if let Some(Value::String(amount)) = object.get("buy_in") {
-			let amount = amount.to_string();
-			self.hub_addr.do_send(messages::MetaActionMessage {
-			    id: self.id,
-			    meta_action: messages::MetaAction::Admin(
-				self.id,				
-				messages::AdminCommand::BuyIn(amount.parse::<u32>().unwrap()),
-			    )
-			});
-			false
+			if let Ok(amount) = amount.to_string().parse::<u32>() {	
+			    self.hub_addr.do_send(messages::MetaActionMessage {
+				id: self.id,
+				meta_action: messages::MetaAction::Admin(
+				    self.id,				
+				    messages::AdminCommand::BuyIn(amount),
+				)
+			    });
+			    false
+			} else {
+			    true
+			}
 		    } else {
 			// invalid json
 			true
@@ -440,7 +449,7 @@ impl WsGameSession {
 			    id: self.id,
 			    meta_action: messages::MetaAction::Admin(
 				self.id,				
-				messages::AdminCommand::BigBlind(amount.parse::<u32>().unwrap()),
+				messages::AdminCommand::Password(amount),
 			    )
 			});
 			false

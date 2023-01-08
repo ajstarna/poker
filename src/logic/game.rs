@@ -527,6 +527,7 @@ impl Game {
 		MetaAction::Admin(id, admin_command) => {
 		    if !between_hands {
 			// put it back on the meta actions queue to be handled only between hands
+			println!("put the admin_command back on the queue to handle between hands");
 			meta_actions.push_back(MetaAction::Admin(id, admin_command));
 		    } else {
 			self.handle_admin_command(id, admin_command);
@@ -537,6 +538,7 @@ impl Game {
     }
 
     fn handle_admin_command(&mut self, id: Uuid, admin_command: AdminCommand) {
+	println!("handling admin_command in game: {:?}", admin_command);
 	if self.admin_id != id {
 	    // the player who entered the admin command is not the game's admin!
 	    let message = object! {
@@ -580,8 +582,8 @@ impl Game {
 		self.big_blind = new;
 		object! {
 		    msg_type: "admin_success".to_owned(),
-		    updated: "small_blind".to_owned(),
-                    text: format!("The small blind has been changed to {}", new),
+		    updated: "big_blind".to_owned(),
+                    text: format!("The big blind has been changed to {}", new),
 		}
 	    }		
 	    AdminCommand::BuyIn(new) => {
@@ -609,11 +611,11 @@ impl Game {
 			    text: "A bot has been added.".to_owned(),
 			}
 		    }
-		    Err(_) => {
+		    Err(err) => {
 			object! {
 			    msg_type: "error".to_owned(),
 			    error: "unable_to_add_bot".to_owned(),
-			    reason: "Unable to add bot to the game.".to_owned(),
+			    reason: err.to_string(),
 			}
 		    }
 		}

@@ -614,6 +614,8 @@
 						log(ev.data, "message");
 					} else if (msg.msg_type == "error") {
 					    log(msg.error + ": " + msg.reason, "message");	
+					} else if (msg.msg_type == "admin_success") {
+					    log(msg.msg_type + ": " + msg.text, "message");	
 					} else {
 						log("We are not handling this message properly!", "message");
 					}
@@ -688,7 +690,7 @@
 			msg["small_blind"] = parseInt($smallBlindValue.value);
 			msg["big_blind"] = parseInt($bigBlindValue.value);
 		        msg["buy_in"] = parseInt($startingStackValue.value);
-		    msg["password"] = null;
+		    msg["password"] = "123";
 			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
@@ -756,7 +758,11 @@
 			msg["msg_type"] = "chat";
 			msg["text"] = $input.value;
 		    }
+
 		    log("Sending: " + JSON.stringify(msg));
+		    if (msg["msg_type"] == "admin_command") {
+			log("admin commands are handled at the end of the current hand");
+		    }
 		    socket.send(JSON.stringify(msg));
 		    
 		    $input.value = "";
