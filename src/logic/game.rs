@@ -198,6 +198,9 @@ impl GameHand {
     }
 }
 
+// any game that runs for too long without a human will end, rather than looping indefinitely
+const NON_HUMAN_HANDS_LIMIT: u32 = 10;
+
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
@@ -206,11 +209,12 @@ pub struct Game {
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
     max_players: u8,   // how many will we let in the game
-    button_idx: usize, // index of the player with the button
     small_blind: u32,
     big_blind: u32,
     buy_in: u32,
     password: Option<String>,
+    button_idx: usize, // index of the player with the button
+    hands_played: u32, // keeps track of how many hands were played
 }
 
 /// useful for unit tests, for example
@@ -223,11 +227,12 @@ impl Default for Game {
             players: Default::default(),
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players: 9,
-            button_idx: 0,
             small_blind: 4,
             big_blind: 8,
             buy_in: 1000,
             password: None,
+            button_idx: 0,
+	    hands_played: 0,
         }
     }
 }
@@ -257,11 +262,12 @@ impl Game {
             players: Default::default(),
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players,
-            button_idx: 0,
             small_blind,
             big_blind,
             buy_in,
             password,
+            button_idx: 0,
+	    hands_played: 0,
         }
     }
 
@@ -365,23 +371,41 @@ impl Game {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         hand_limit: Option<u32>, // how many hands total should be play? None == no limit
     ) {
-        let mut hand_count = 0;
+	let mut non_human_hands = 0; // we only allow a certain number of hands without a human before ending
         loop {
-            hand_count += 1;
+            self.hands_played += 1;
             if let Some(limit) = hand_limit {
-                if hand_count > limit {
+                if self.hands_played > limit {
                     println!("hand limit has been reached");
                     break;
                 }
             }
             println!(
                 "\n\n\nPlaying hand {}, button_idx = {}",
-                hand_count, self.button_idx
+                self.hands_played, self.button_idx
             );
+            let num_human_players = self.players
+		.iter()
+		.flatten()
+		.filter(|player| player.human_controlled)
+		.count();
+	    if num_human_players == 0 {
+		println!("num human players == {:?}", num_human_players);
+		println!("non human hands == {:?}", non_human_hands);	    		
+		non_human_hands += 1;
+	    }
+	    if non_human_hands > NON_HUMAN_HANDS_LIMIT {
+		// the game ends no matter what if we haven't had a human after too many turns
+		break;
+	    }
+	    if self.player_ids_to_configs.len() <= 1 {
+		// no use playing a hand, so we just wait for a bit and try again
+		continue;
+	    }
             let message = object! {
-            msg_type: "new_hand".to_owned(),
-            hand_num: hand_count,
-            button_index: self.button_idx,
+		msg_type: "new_hand".to_owned(),
+		hand_num: self.hands_played,
+		button_index: self.button_idx,
             };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
@@ -622,7 +646,10 @@ impl Game {
         // pause for a second for dramatic effect heh
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
-
+	if self.player_ids_to_configs.len() < 1 {
+	    // the game is currently empty, so there is nothing to finish
+	    return;
+	}
         let hand_results: HashMap<Uuid, Option<HandResult>> = self
             .players
             .iter()
@@ -2575,6 +2602,31 @@ mod tests {
         assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
         assert_eq!(game.players[1].as_ref().unwrap().money, 1000);
     }
+    /// the game should end after N hands if there are no human players in the game
+    /// even if there is no hand limit or a high hand limit
+    /// Note: in this test there are no players period, but the game will still count each check
+    /// as a hand "plsyed", so we can check that the game ends with the proper count
+    #[test]
+    fn end_early() {
+        let mut game = Game::default();
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        let handler = std::thread::spawn(move || {
+	    // we start the game with None hand limit!
+            game.play(&cloned_actions, &cloned_meta_actions, None);
+            game // return the game back
+        });
+	
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+        // check that the game ended with 1 more than the limit turns "played"
+        assert_eq!(game.hands_played, NON_HUMAN_HANDS_LIMIT + 1);
+    }
+    
 
     /// check that the button moves around properly
     /// we play 4 hands with 3 players with everyone folding whenever it gets to them,
