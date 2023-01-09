@@ -11,7 +11,7 @@ use std::{
 
 use crate::logic::{Game, PlayerAction, PlayerConfig};
 use crate::messages::{
-    Connect, Create, CreateGameError, Join, ListTables, MetaAction, MetaActionMessage,
+    Connect, Create, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -434,6 +434,26 @@ impl Handler<PlayerActionMessage> for GameHub {
                 println!("blah blah mp actioms queue!");
             }
         }
+    }
+}
+
+/// the game tells us that it has ended (no more human players),
+/// so lets remove it from our hub records
+impl Handler<GameOver> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: GameOver, _: &mut Context<Self>) {
+        let GameOver { table_name } = msg;
+        println!("Handling game over in the hub for table name: {:?}", table_name);
+	if self.tables_to_actions.remove(&table_name).is_some() {
+	    println!("removed properly from tables_to_actions");
+	}
+	if self.tables_to_meta_actions.remove(&table_name).is_some() {
+	    println!("removed properly from tables_to_meta_actions");
+	}
+	if self.private_tables.remove(&table_name) {
+	    println!("removed properly from private_tables");
+	}	
     }
 }
 

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{JoinGameError, MetaAction, Returned, ReturnedReason};
+use crate::messages::{GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -199,7 +199,7 @@ impl GameHand {
 }
 
 // any game that runs for too long without a human will end, rather than looping indefinitely
-const NON_HUMAN_HANDS_LIMIT: u32 = 10;
+const NON_HUMAN_HANDS_LIMIT: u32 = 3;
 
 #[derive(Debug)]
 pub struct Game {
@@ -390,9 +390,9 @@ impl Game {
 		.filter(|player| player.human_controlled)
 		.count();
 	    if num_human_players == 0 {
+		non_human_hands += 1;		
 		println!("num human players == {:?}", num_human_players);
 		println!("non human hands == {:?}", non_human_hands);	    		
-		non_human_hands += 1;
 	    }
 	    if non_human_hands > NON_HUMAN_HANDS_LIMIT {
 		// the game ends no matter what if we haven't had a human after too many turns
@@ -416,6 +416,14 @@ impl Game {
                 .find_next_button()
                 .expect("we could not find a valid button index!");
         }
+	println!("about to send the gameover signal to the hub");
+	// the game is ending, so tell that to the hub
+        if let Some(hub_addr) = &self.hub_addr {
+            // tell the hub that we left
+            hub_addr.do_send(GameOver {
+                table_name: self.name.clone(),
+            });
+        }
     }
 
     /// move the button to the next Player who is not sitting out
@@ -424,7 +432,6 @@ impl Game {
         for i in (self.button_idx + 1..9).chain(0..self.button_idx + 1) {
             //self.button_idx += 1;
             //self.button_idx %= 9; // loop back to 0 if we reach the end
-            println!("checking for next button at index {}", i);
             let button_spot = &mut self.players[i];
             if let Some(button_player) = button_spot {
                 if button_player.is_sitting_out {
@@ -642,7 +649,7 @@ impl Game {
         gamehand.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self, gamehand: &mut GameHand) {
+    fn finish_hand(&mut self, gamehand: &mut GameHand) {
         // pause for a second for dramatic effect heh
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -887,7 +894,7 @@ impl Game {
             }
         }
         // now we finish up and pay the pot to the winner
-        self.finish(&mut gamehand);
+        self.finish_hand(&mut gamehand);
     }
 
     fn get_starting_idx(&self) -> usize {

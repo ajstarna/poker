@@ -163,6 +163,13 @@ pub struct PlayerActionMessage {
     pub player_action: PlayerAction,
 }
 
+/// the hub learns that a game has ended
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct GameOver {
+    pub table_name: String,
+}
+
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct MetaActionMessage {
