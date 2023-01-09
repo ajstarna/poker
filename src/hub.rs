@@ -409,7 +409,7 @@ impl Handler<Create> for GameHub {
             println!("create message missing one or more required fields!");
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
-            return Err(CreateGameError::MissingField);
+            Err(CreateGameError::MissingField)
         }
     }
 }

@@ -302,7 +302,6 @@ impl WsGameSession {
         } else {
             println!("missing table name or password!");
             ctx.text("!!! table_name and password (possibly null) are required");
-            return;
         }
     }
 

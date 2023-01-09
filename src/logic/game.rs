@@ -250,8 +250,8 @@ impl Game {
         buy_in: u32,
         password: Option<String>,
     ) -> Self {
-        let deck = if deck_opt.is_some() {
-            deck_opt.unwrap()
+        let deck = if let Some(deck) = deck_opt {
+	    deck
         } else {
             Box::new(StandardDeck::new())
         };
@@ -409,8 +409,8 @@ impl Game {
                 };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
-            self.handle_meta_actions(&incoming_meta_actions);
+            self.play_one_hand(incoming_actions, incoming_meta_actions);
+            self.handle_meta_actions(incoming_meta_actions);
             // attempt to set the next button
             self.button_idx = self
                 .find_next_button()
@@ -653,7 +653,7 @@ impl Game {
         // pause for a second for dramatic effect heh
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
-        if self.player_ids_to_configs.len() < 1 {
+        if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
             return;
         }
@@ -661,7 +661,7 @@ impl Game {
             .players
             .iter()
             .flatten()
-            .map(|player| return (player.id, self.determine_best_hand(player, gamehand)))
+            .map(|player| (player.id, self.determine_best_hand(player, gamehand)))
             .collect();
 
         let is_showdown = gamehand.street == Street::ShowDown;
@@ -679,7 +679,7 @@ impl Game {
                 let mut best_ids = HashSet::<Uuid>::new();
                 let mut best_hand: Option<&HandResult> = None;
                 for (id, current_opt) in hand_results.iter() {
-                    if pot.contributions.get(&id).is_none() {
+                    if pot.contributions.get(id).is_none() {
                         println!("player id {} did not contribute to this pot!", id);
                         continue;
                     }
@@ -881,7 +881,7 @@ impl Game {
             let pause_duration = time::Duration::from_secs(2);
             thread::sleep(pause_duration);
             let finished =
-                self.play_street(&incoming_actions, &incoming_meta_actions, &mut gamehand);
+                self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -902,7 +902,7 @@ impl Game {
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
         let mut starting_idx = self.button_idx + 1;
-        if starting_idx as usize >= self.players.len() {
+        if starting_idx >= self.players.len() {
             starting_idx = 0;
         }
         starting_idx
@@ -1022,8 +1022,8 @@ impl Game {
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
             let action = self.get_and_validate_action(
-                &incoming_actions,
-                &incoming_meta_actions,
+                incoming_actions,
+                incoming_meta_actions,
                 &player,
                 current_bet,
                 player_cumulative,
@@ -1190,7 +1190,7 @@ impl Game {
                         // just go all in if we are at 10% starting
                         player.money
                     } else {
-                        rand::thread_rng().gen_range(1..player.money / 2 as u32)
+                        rand::thread_rng().gen_range(1..player.money / 2_u32)
                     };
                     Some(PlayerAction::Bet(amount))
                 }
@@ -1246,7 +1246,7 @@ impl Game {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions(&incoming_meta_actions);
+            self.handle_meta_actions(incoming_meta_actions);
 
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -1267,7 +1267,7 @@ impl Game {
             }
 
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match self.get_action_from_player(&incoming_actions, player) {
+            match self.get_action_from_player(incoming_actions, player) {
                 None => {
                     // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
@@ -1388,8 +1388,8 @@ impl Game {
         }
         // if we got a valid action, then we can return it,
         // otherwise, we just return Fold
-        if action.is_some() {
-            action.unwrap()
+        if let Some(action) = action {
+	    action
         } else {
             PlayerAction::Fold
         }
