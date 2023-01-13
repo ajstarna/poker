@@ -7,7 +7,8 @@ use std::sync::Mutex;
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
+
+use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -213,6 +214,7 @@ pub struct Game {
     big_blind: u32,
     buy_in: u32,
     password: Option<String>,
+    admin_id: Uuid,
     button_idx: usize, // index of the player with the button
     hands_played: u32, // keeps track of how many hands were played
 }
@@ -231,6 +233,7 @@ impl Default for Game {
             big_blind: 8,
             buy_in: 1000,
             password: None,
+	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
             button_idx: 0,
             hands_played: 0,
         }
@@ -249,6 +252,7 @@ impl Game {
         big_blind: u32,
         buy_in: u32,
         password: Option<String>,
+	admin_id: Uuid,
     ) -> Self {
         let deck = if let Some(deck) = deck_opt {
 	    deck
@@ -266,6 +270,7 @@ impl Game {
             big_blind,
             buy_in,
             password,
+	    admin_id,
             button_idx: 0,
             hands_played: 0,
         }
@@ -409,8 +414,9 @@ impl Game {
                 };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-            self.play_one_hand(incoming_actions, incoming_meta_actions);
-            self.handle_meta_actions(incoming_meta_actions);
+            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+	    let between_hands = true;
+            self.handle_meta_actions(&incoming_meta_actions, between_hands);
             // attempt to set the next button
             self.button_idx = self
                 .find_next_button()
@@ -452,7 +458,11 @@ impl Game {
         Err("could not find a valid button")
     }
 
-    fn handle_meta_actions(&mut self, incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>) {
+    fn handle_meta_actions(
+	&mut self,
+	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
+	between_hands: bool,
+    ) {
         let mut meta_actions = incoming_meta_actions.lock().unwrap();
         for _ in 0..meta_actions.len() {
             match meta_actions.pop_front().unwrap() {
@@ -546,10 +556,140 @@ impl Game {
                         }
                     }
                 }
+		MetaAction::Admin(id, admin_command) => {
+		    if !between_hands {
+			// put it back on the meta actions queue to be handled only between hands
+			println!("put the admin_command back on the queue to handle between hands");
+			meta_actions.push_back(MetaAction::Admin(id, admin_command));
+		    } else {
+			self.handle_admin_command(id, admin_command);
+		    }
+		}
             }
         }
     }
 
+    fn handle_admin_command(&mut self, id: Uuid, admin_command: AdminCommand) {
+	println!("handling admin_command in game: {:?}", admin_command);
+	if self.admin_id != id {
+	    // the player who entered the admin command is not the game's admin!
+	    let message = object! {
+		msg_type: "error".to_owned(),
+		error: "not_admin".to_owned(),
+                reason: "You cannot update a game that you are not the admin for.".to_owned(),
+	    };
+	    PlayerConfig::send_specific_message(
+		&message.dump(),
+		id,
+		&self.player_ids_to_configs,
+	    );
+	    return;
+	}
+	
+	if self.password.is_none() {
+	    // only private (i.e. password-protected) games can be updated
+	    let message = object! {
+		msg_type: "error".to_owned(),
+		error: "not_private".to_owned(),
+                reason: "You cannot update a game that is not private.".to_owned(),
+	    };
+	    PlayerConfig::send_specific_message(
+		&message.dump(),
+		id,
+		&self.player_ids_to_configs,
+	    );
+	    return;
+	}
+	
+	let message = match admin_command {
+	    AdminCommand::SmallBlind(new) => {
+		self.small_blind = new;
+		object! {
+		    msg_type: "admin_success".to_owned(),
+		    updated: "small_blind".to_owned(),
+                    text: format!("The small blind has been changed to {}", new),
+		}
+	    },
+	    AdminCommand::BigBlind(new) => {
+		self.big_blind = new;
+		object! {
+		    msg_type: "admin_success".to_owned(),
+		    updated: "big_blind".to_owned(),
+                    text: format!("The big blind has been changed to {}", new),
+		}
+	    }		
+	    AdminCommand::BuyIn(new) => {
+		self.buy_in = new;
+		object! {
+		    msg_type: "admin_success".to_owned(),
+		    updated: "buy_in".to_owned(),
+                    text: format!("The buy in has been changed to {}", new),
+		}
+	    }		
+	    AdminCommand::Password(new) => {
+		self.password = Some(new.clone());
+		object! {
+		    msg_type: "admin_success".to_owned(),
+		    updated: "password".to_owned(),
+                    text: format!("The password has been changed to {}", new),
+		}
+	    }
+	    AdminCommand::AddBot => {
+		match self.add_bot("Bot".to_string()) {
+		    Ok(_) => {
+			object! {
+			    msg_type: "admin_success".to_owned(),
+			    updated: "bot_added".to_owned(),
+			    text: "A bot has been added.".to_owned(),
+			}
+		    }
+		    Err(err) => {
+			object! {
+			    msg_type: "error".to_owned(),
+			    error: "unable_to_add_bot".to_owned(),
+			    reason: err.to_string(),
+			}
+		    }
+		}
+	    },	
+	    AdminCommand::RemoveBot => {
+		let mut found = false;
+		for player_spot in self.players.iter_mut() {
+		    if let Some(player) = player_spot {
+			if !player.human_controlled {
+			    println!("remove the bot!");
+			    self
+				.player_ids_to_configs
+				.remove(&player.id)
+				.expect("how was the bot a player but not a config");
+			    *player_spot = None;
+			    found = true;
+			    break;
+			}
+		    }
+		}
+		if found {
+		    object! {
+			msg_type: "admin_success".to_owned(),
+			updated: "bot_removed".to_owned(),
+			text: "A bot has been removed.".to_owned(),		    
+		    }
+		} else {
+		    object! {
+			msg_type: "error".to_owned(),
+			error: "unable_to_remove_bot".to_owned(),
+			reason: "Unable to remove a bot from the game.".to_owned(),
+		    }
+		}
+	    }
+	};
+	PlayerConfig::send_specific_message(
+            &message.dump(),
+            id,
+            &self.player_ids_to_configs,
+	);
+    }
+	
     fn transition(&mut self, gamehand: &mut GameHand) {
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
@@ -964,8 +1104,6 @@ impl Game {
         }
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
-        //let (left, right) = players.split_at_mut(starting_idx);
-        //for (i, mut player) in right.iter_mut().chain(left.iter_mut()).flatten().enumerate() {
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
             /*
             println!(
@@ -1242,12 +1380,12 @@ impl Game {
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
+	let between_hands = false;
         while attempts < 10000 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions(incoming_meta_actions);
-
+            self.handle_meta_actions(&incoming_meta_actions, between_hands);
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
                 // TODO: the computer can give a better than random guess at a move
@@ -1450,7 +1588,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some(password)));
 
-        game.handle_meta_actions(&cloned_meta_actions);
+        game.handle_meta_actions(&cloned_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -1477,7 +1615,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some("345".to_string())));
 
-        game.handle_meta_actions(&incoming_meta_actions);
+        game.handle_meta_actions(&incoming_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -1503,7 +1641,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, None)); // no password passed in
 
-        game.handle_meta_actions(&incoming_meta_actions);
+        game.handle_meta_actions(&incoming_meta_actions, true);
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -2610,7 +2748,7 @@ mod tests {
     /// the game should end after N hands if there are no human players in the game
     /// even if there is no hand limit or a high hand limit
     /// Note: in this test there are no players period, but the game will still count each check
-    /// as a hand "plsyed", so we can check that the game ends with the proper count
+    /// as a hand "played", so we can check that the game ends with the proper count
     #[test]
     fn end_early() {
         let mut game = Game::default();
@@ -3041,4 +3179,215 @@ mod tests {
         assert!(game.players[0].is_none()); // the spot is empty now
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
     }
+
+    /// if someone who is not the admin attempts an admin command, it does not work
+    #[test]
+    fn not_admin() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+	// but we do not set the game's admin
+        let id = uuid::Uuid::new_v4();
+	
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
+
+	
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.small_blind, new_blind - 1); // nothing changed	
+    }
+    
+    /// test that the admin can change the small blind with a meta action
+    #[test]
+    fn admin_small_blind() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.small_blind, new_blind);	       
+    }
+
+    /// test that admin commands do not work for a game that is private (i.e. has a password)
+    #[test]
+    fn admin_no_password() {
+        let mut game = Game::default();
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.small_blind + 1;
+	assert_eq!(game.small_blind, new_blind - 1); // duh
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	assert!(game.password.is_none()); // make sure no password is set
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.small_blind, new_blind - 1); // still
+    }
+    
+    /// test that the admin can change the big blind with a meta action
+    #[test]
+    fn admin_big_blind() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_blind = game.big_blind + 1;
+	assert_eq!(game.big_blind, new_blind - 1);	       
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::BigBlind(new_blind)));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.big_blind, new_blind);	       
+    }
+
+    /// test that the admin can change the buy in with a meta action
+    #[test]
+    fn admin_buy_in() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_buy_in = game.buy_in + 1;
+	assert_eq!(game.buy_in, new_buy_in - 1);	       
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::BuyIn(new_buy_in)));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.buy_in, new_buy_in);	       
+    }
+
+    /// test that the admin can change the password in with a meta action
+    #[test]
+    fn admin_password() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_password = "new_password".to_string();
+	assert_ne!(game.password, Some(new_password.clone()));
+	
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::Password(new_password.clone())));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	assert_eq!(game.password, Some(new_password));	
+    }
+
+    /// test that the admin can add and remove bots with a meta action
+    /// in this test, we add three bots, then remove one.
+    /// the empty seat is at index 0
+    #[test]
+    fn admin_bots() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+	let new_buy_in = game.buy_in + 1;
+	assert_eq!(game.buy_in, new_buy_in - 1);	       
+
+        assert_eq!(game.player_ids_to_configs.len(), 0); // no player configs
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 0); // no players
+
+        // need the id for the admin command
+        let id = uuid::Uuid::new_v4();
+	game.admin_id = id; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
+        game.handle_meta_actions(&cloned_meta_actions, true);
+        assert_eq!(game.player_ids_to_configs.len(), 3); // 3 player configs
+        let some_players = game.players.iter().flatten().count();
+        assert_eq!(some_players, 3); // 3 players
+	
+	for i in 0..3 {
+            assert!(!game.players[i].as_ref().unwrap().human_controlled); // a bot
+	}
+
+	// now remove a bot
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id, AdminCommand::RemoveBot));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+        assert_eq!(game.player_ids_to_configs.len(), 2); // 2 player configs
+	// the player_ids_to_configs mapping no longer contains the id for the bot at index 0
+	assert!(game.players[0].as_ref().is_none());
+    }    
 }

@@ -1,10 +1,8 @@
 use crate::logic::{player::PlayerAction, PlayerConfig};
 use actix::prelude::{Message, Recipient};
-use serde_json::Value;
 use std::fmt;
 use uuid::Uuid;
-
-/// Game server sends this messages to session
+use serde::{Deserialize, Serialize};
 
 /// this enum represents higher level commands that the hub will relay
 /// to the running games Player name change. player join/leave
@@ -16,6 +14,21 @@ pub enum MetaAction {
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String),
+    Admin(Uuid, AdminCommand),
+}
+
+/// these admin commands can be taken by the owner of a PRIVATE game.
+/// commands to change the blinds, buy in, password, and to add or remove bots
+/// The Uuid of the player attemping an admin command must actually be the game.admin to work
+#[derive(Debug)]
+pub enum AdminCommand {
+    SmallBlind(u32),
+    BigBlind(u32),
+    BuyIn(u32),
+    Password(String),
+    AddBot,
+    RemoveBot,
+    // NewAdmin(Uuid), // todo? would they give the name of the player or what?
 }
 
 #[derive(Message)]
@@ -99,7 +112,7 @@ pub struct PlayerName {
 
 pub enum CreateGameError {
     NameNotSet,
-    MissingField,
+    UnableToParseJson(String),
     InvalidFieldValue(String), // contains the invalid field
     AlreadyAtTable(String),    // contains the table name
     TooManyBots,
@@ -112,16 +125,9 @@ impl fmt::Display for CreateGameError {
             CreateGameError::NameNotSet => {
                 write!(f, "You have not set your name")
             }
-            CreateGameError::MissingField => {
-                write!(f, "Missing field(s)")
-                /*
-                write!(f, "Unable to create a game since command is missing fields:")?;
-                for field in missing_fields {
-                    write!(f, format!("{:?}", field))?;
-                }
-                Ok(())
-                 */
-            }
+            CreateGameError::UnableToParseJson(error_msg) => {
+                write!(f, "Unable to parse json: {:?}", error_msg)
+	    }
             CreateGameError::AlreadyAtTable(table_name) => {
                 write!(f, "You are already at the table {}", table_name)
             }
@@ -138,13 +144,23 @@ impl fmt::Display for CreateGameError {
     }
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct CreateFields {
+    pub max_players: u8,
+    pub small_blind: u32,
+    pub big_blind: u32,
+    pub buy_in: u32,
+    pub num_bots: u8,
+    pub password: Option<String>,
+}
+
 /// Session wants to create a game
 #[derive(Message)]
 #[rtype(result = "Result<String, CreateGameError>")]
 pub struct Create {
     /// Client ID
     pub id: Uuid,
-    pub create_msg: Value,
+    pub create_msg: String,
 }
 
 #[derive(Message)]
