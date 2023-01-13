@@ -240,10 +240,10 @@ impl WsGameSession {
                         Err(e) => {
                             println!("{}", e);
                             let message = json::object! {
-                                msg_type: "error".to_owned(),
-				error: "unable_to_create".to_owned(),
-                                reason: e.to_string(),
-                            };
+                                            msg_type: "error".to_owned(),
+                            error: "unable_to_create".to_owned(),
+                                            reason: e.to_string(),
+                                        };
                             ctx.text(message.dump());
                         }
                     },
@@ -302,7 +302,6 @@ impl WsGameSession {
         } else {
             println!("missing table name or password!");
             ctx.text("!!! table_name and password (possibly null) are required");
-            return;
         }
     }
 

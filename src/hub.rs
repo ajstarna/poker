@@ -11,7 +11,7 @@ use std::{
 
 use crate::logic::{Game, PlayerAction, PlayerConfig};
 use crate::messages::{
-    Connect, Create, CreateGameError, Join, ListTables, MetaAction, MetaActionMessage,
+    Connect, Create, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -172,16 +172,15 @@ impl Handler<Join> for GameHub {
         if player_config.name.is_none() {
             // they are not allowed to join a game without a Name set
             let message = json::object! {
-                msg_type: "error".to_owned(),
-		error: "unable_to_join".to_owned(),
-                reason: "You cannot join a game until you set your name!"
-            };
+                    msg_type: "error".to_owned(),
+            error: "unable_to_join".to_owned(),
+                    reason: "You cannot join a game until you set your name!"
+                };
             player_config
                 .player_addr
                 .as_ref()
                 .unwrap()
-                .do_send(WsMessage(message.dump()                    
-                ));
+                .do_send(WsMessage(message.dump()));
             // put them back in the lobby
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
@@ -201,10 +200,10 @@ impl Handler<Join> for GameHub {
                 .push_back(MetaAction::Join(player_config, password));
         } else {
             let message = json::object! {
-                msg_type: "error".to_owned(),
-		error: "unable_to_join".to_owned(),
-                reason: format!("no table named {} exisits", table_name),
-            };
+                    msg_type: "error".to_owned(),
+            error: "unable_to_join".to_owned(),
+                    reason: format!("no table named {} exisits", table_name),
+                };
             player_config
                 .player_addr
                 .as_ref()
@@ -332,16 +331,18 @@ impl Handler<Create> for GameHub {
                 None
             };
 
-	    if num_bots >= max_players {
-		self.main_lobby_connections.insert(player_config.id, player_config);
-		return Err(CreateGameError::TooManyBots);
-	    }
+            if num_bots >= max_players {
+                self.main_lobby_connections
+                    .insert(player_config.id, player_config);
+                return Err(CreateGameError::TooManyBots);
+            }
 
-	    if big_blind > buy_in || small_blind > buy_in {
-		self.main_lobby_connections.insert(player_config.id, player_config);
-		return Err(CreateGameError::TooLargeBlinds);		
-	    }
-	    
+            if big_blind > buy_in || small_blind > buy_in {
+                self.main_lobby_connections
+                    .insert(player_config.id, player_config);
+                return Err(CreateGameError::TooLargeBlinds);
+            }
+
             let mut rng = rand::thread_rng();
             let table_name = loop {
                 // create a new 4-char unique name for the table
@@ -406,8 +407,9 @@ impl Handler<Create> for GameHub {
             Ok(table_name) // return the table name
         } else {
             println!("create message missing one or more required fields!");
-	    self.main_lobby_connections.insert(player_config.id, player_config);	    
-            return Err(CreateGameError::MissingField);
+            self.main_lobby_connections
+                .insert(player_config.id, player_config);
+            Err(CreateGameError::MissingField)
         }
     }
 }
@@ -433,6 +435,29 @@ impl Handler<PlayerActionMessage> for GameHub {
                 // have no record of it in tables_to_game
                 println!("blah blah mp actioms queue!");
             }
+        }
+    }
+}
+
+/// the game tells us that it has ended (no more human players),
+/// so lets remove it from our hub records
+impl Handler<GameOver> for GameHub {
+    type Result = ();
+
+    fn handle(&mut self, msg: GameOver, _: &mut Context<Self>) {
+        let GameOver { table_name } = msg;
+        println!(
+            "Handling game over in the hub for table name: {:?}",
+            table_name
+        );
+        if self.tables_to_actions.remove(&table_name).is_some() {
+            println!("removed properly from tables_to_actions");
+        }
+        if self.tables_to_meta_actions.remove(&table_name).is_some() {
+            println!("removed properly from tables_to_meta_actions");
+        }
+        if self.private_tables.remove(&table_name) {
+            println!("removed properly from private_tables");
         }
     }
 }
