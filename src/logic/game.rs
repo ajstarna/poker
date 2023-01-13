@@ -2748,7 +2748,7 @@ mod tests {
     /// the game should end after N hands if there are no human players in the game
     /// even if there is no hand limit or a high hand limit
     /// Note: in this test there are no players period, but the game will still count each check
-    /// as a hand "plsyed", so we can check that the game ends with the proper count
+    /// as a hand "played", so we can check that the game ends with the proper count
     #[test]
     fn end_early() {
         let mut game = Game::default();
