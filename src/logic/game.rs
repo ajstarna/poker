@@ -1385,12 +1385,7 @@ impl Game {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-<<<<<<< HEAD
             self.handle_meta_actions(&incoming_meta_actions, between_hands);
-=======
-            self.handle_meta_actions(incoming_meta_actions);
->>>>>>> main
-
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
                 // TODO: the computer can give a better than random guess at a move
@@ -3184,8 +3179,6 @@ mod tests {
         assert!(game.players[0].is_none()); // the spot is empty now
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
     }
-<<<<<<< HEAD
-
 
     /// if someone who is not the admin attempts an admin command, it does not work
     #[test]
@@ -3396,8 +3389,5 @@ mod tests {
         assert_eq!(game.player_ids_to_configs.len(), 2); // 2 player configs
 	// the player_ids_to_configs mapping no longer contains the id for the bot at index 0
 	assert!(game.players[0].as_ref().is_none());
-    }
-    
-=======
->>>>>>> main
+    }    
 }
