@@ -21,13 +21,13 @@ mod session;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-   /// ip address
-   #[arg(short, long, default_value_t = ("localhost".to_string()))]
-   ip: String,
+    /// ip address
+    #[arg(short, long, default_value_t = ("localhost".to_string()))]
+    ip: String,
 
-   /// port
-   #[arg(short, long, default_value_t = 8080)]
-   port: u16,
+    /// port
+    #[arg(short, long, default_value_t = 8080)]
+    port: u16,
 }
 
 async fn index() -> impl Responder {

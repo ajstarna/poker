@@ -123,10 +123,7 @@ impl fmt::Display for CreateGameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             CreateGameError::NameNotSet => {
-                write!(
-                    f,
-                    "You have not set your name"
-                )
+                write!(f, "You have not set your name")
             }
             CreateGameError::UnableToParseJson(error_msg) => {
                 write!(f, "Unable to parse json: {:?}", error_msg)
@@ -135,11 +132,7 @@ impl fmt::Display for CreateGameError {
                 write!(f, "You are already at the table {}", table_name)
             }
             CreateGameError::InvalidFieldValue(invalid_field) => {
-                write!(
-                    f,
-                    "Invalid field value: {}",
-                    invalid_field
-                )
+                write!(f, "Invalid field value: {}", invalid_field)
             }
             CreateGameError::TooManyBots => {
                 write!(f, "Too many bots selected")
@@ -177,6 +170,13 @@ pub struct PlayerActionMessage {
     pub id: Uuid,
 
     pub player_action: PlayerAction,
+}
+
+/// the hub learns that a game has ended
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct GameOver {
+    pub table_name: String,
 }
 
 #[derive(Message)]

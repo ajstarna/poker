@@ -7,7 +7,8 @@ use std::sync::Mutex;
 use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
-use crate::messages::{AdminCommand, JoinGameError, MetaAction, Returned, ReturnedReason};
+
+use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -73,8 +74,8 @@ impl PotManager {
             player_id, amount, all_in
         );
         let mut to_contribute = amount;
-	// insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
-	// and the new cap for the pot at that index
+        // insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
+        // and the new cap for the pot at that index
         let mut insert_pot: Option<(usize, u32)> = None;
         for (i, pot) in self.pots.iter_mut().enumerate() {
             let so_far = pot.contributions.entry(player_id).or_insert(0);
@@ -121,8 +122,8 @@ impl PotManager {
                 *so_far += to_contribute;
                 pot.money += to_contribute;
                 if all_in {
-                    //pot.cap = Some(pot.contributions[&player_id]);		    
-		    insert_pot = Some((i, pot.contributions[&player_id]));		    
+                    //pot.cap = Some(pot.contributions[&player_id]);
+                    insert_pot = Some((i, pot.contributions[&player_id]));
                 }
                 break;
             }
@@ -166,12 +167,12 @@ impl PotManager {
         new_pot.money = transfers.values().sum();
         new_pot.contributions = transfers;
 
-	if let Some(prev_cap) = prev_cap_opt {
+        if let Some(prev_cap) = prev_cap_opt {
             // if the old pot had a cap already, then the new pot is capped at the difference.
             // e.g. if someone was all-in with 750, then someone calls to go all-in with 500,
             // the the prev_pot is NOW capped at 500, and the next pot is capped at 250
             new_pot.cap = Some(prev_cap - new_cap);
-	}
+        }
     }
 }
 
@@ -198,6 +199,9 @@ impl GameHand {
     }
 }
 
+// any game that runs for too long without a human will end, rather than looping indefinitely
+const NON_HUMAN_HANDS_LIMIT: u32 = 3;
+
 #[derive(Debug)]
 pub struct Game {
     hub_addr: Option<Addr<GameHub>>, // needs to be able to communicate back to the hub sometimes
@@ -205,13 +209,14 @@ pub struct Game {
     deck: Box<dyn Deck>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
-    max_players: u8,   // how many will we let in the game
-    button_idx: usize, // index of the player with the button
+    max_players: u8, // how many will we let in the game
     small_blind: u32,
     big_blind: u32,
     buy_in: u32,
     password: Option<String>,
     admin_id: Uuid,
+    button_idx: usize, // index of the player with the button
+    hands_played: u32, // keeps track of how many hands were played
 }
 
 /// useful for unit tests, for example
@@ -224,12 +229,13 @@ impl Default for Game {
             players: Default::default(),
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players: 9,
-            button_idx: 0,
             small_blind: 4,
             big_blind: 8,
             buy_in: 1000,
             password: None,
 	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
+            button_idx: 0,
+            hands_played: 0,
         }
     }
 }
@@ -248,8 +254,8 @@ impl Game {
         password: Option<String>,
 	admin_id: Uuid,
     ) -> Self {
-        let deck = if deck_opt.is_some() {
-            deck_opt.unwrap()
+        let deck = if let Some(deck) = deck_opt {
+	    deck
         } else {
             Box::new(StandardDeck::new())
         };
@@ -260,12 +266,13 @@ impl Game {
             players: Default::default(),
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players,
-            button_idx: 0,
             small_blind,
             big_blind,
             buy_in,
             password,
 	    admin_id,
+            button_idx: 0,
+            hands_played: 0,
         }
     }
 
@@ -331,26 +338,25 @@ impl Game {
         player_config: PlayerConfig,
         player: Player,
     ) -> Result<usize, JoinGameError> {
-
-	// Kinda weird, but first check if the player is already at the table
-	// Could happen if their Leave wasn't completed yet
-	// TODO: verify this can actually happen. Unit testable even?
+        // Kinda weird, but first check if the player is already at the table
+        // Could happen if their Leave wasn't completed yet
+        // TODO: verify this can actually happen. Unit testable even?
         for (i, player_spot) in self.players.iter_mut().enumerate() {
-	    if let Some(existing) = player_spot {
-		if existing.id == player.id {
-		    println!("the player was ALREADY at the table!");
+            if let Some(existing) = player_spot {
+                if existing.id == player.id {
+                    println!("the player was ALREADY at the table!");
                     self.player_ids_to_configs
-			.insert(player_config.id, player_config);
-		    return Ok(i);
-		}
-	    }
-	}
-	
+                        .insert(player_config.id, player_config);
+                    return Ok(i);
+                }
+            }
+        }
+
         if self.players.iter().flatten().count() >= self.max_players.into() {
             // we already have as many as we can fit in the game
             return Err(JoinGameError::GameIsFull);
         }
-	    
+
         for (i, player_spot) in self.players.iter_mut().enumerate() {
             if player_spot.is_none() {
                 *player_spot = Some(player);
@@ -369,24 +375,43 @@ impl Game {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         hand_limit: Option<u32>, // how many hands total should be play? None == no limit
     ) {
-        let mut hand_count = 0;
+        let mut non_human_hands = 0; // we only allow a certain number of hands without a human before ending
         loop {
-            hand_count += 1;
+            self.hands_played += 1;
             if let Some(limit) = hand_limit {
-                if hand_count > limit {
+                if self.hands_played > limit {
                     println!("hand limit has been reached");
                     break;
                 }
             }
             println!(
                 "\n\n\nPlaying hand {}, button_idx = {}",
-                hand_count, self.button_idx
+                self.hands_played, self.button_idx
             );
+            let num_human_players = self
+                .players
+                .iter()
+                .flatten()
+                .filter(|player| player.human_controlled)
+                .count();
+            if num_human_players == 0 {
+                non_human_hands += 1;
+                println!("num human players == {:?}", num_human_players);
+                println!("non human hands == {:?}", non_human_hands);
+            }
+            if non_human_hands > NON_HUMAN_HANDS_LIMIT {
+                // the game ends no matter what if we haven't had a human after too many turns
+                break;
+            }
+            if self.player_ids_to_configs.len() <= 1 {
+                // no use playing a hand, so we just wait for a bit and try again
+                continue;
+            }
             let message = object! {
             msg_type: "new_hand".to_owned(),
-            hand_num: hand_count,
+            hand_num: self.hands_played,
             button_index: self.button_idx,
-            };
+                };
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
             self.play_one_hand(&incoming_actions, &incoming_meta_actions);
@@ -397,6 +422,14 @@ impl Game {
                 .find_next_button()
                 .expect("we could not find a valid button index!");
         }
+        println!("about to send the gameover signal to the hub");
+        // the game is ending, so tell that to the hub
+        if let Some(hub_addr) = &self.hub_addr {
+            // tell the hub that we left
+            hub_addr.do_send(GameOver {
+                table_name: self.name.clone(),
+            });
+        }
     }
 
     /// move the button to the next Player who is not sitting out
@@ -405,7 +438,6 @@ impl Game {
         for i in (self.button_idx + 1..9).chain(0..self.button_idx + 1) {
             //self.button_idx += 1;
             //self.button_idx %= 9; // loop back to 0 if we reach the end
-            println!("checking for next button at index {}", i);
             let button_spot = &mut self.players[i];
             if let Some(button_player) = button_spot {
                 if button_player.is_sitting_out {
@@ -477,33 +509,33 @@ impl Game {
                         "handling leave meta action for {:?} inside game = {:?}",
                         id, &self.name
                     );
-                    if let Some(config) = self.player_ids_to_configs.remove(&id){			
-			// note: we don't remove  the player from self.players quite yet,
-			// we use the lack of the config to indicate to the game during a street
-			// that a player has left. If they were active at the time, this information
-			// needs to be taken into account					
-			let message = object! {
-			    msg_type: "player_left".to_owned(),
-			    name: config.name.clone(),
-			};
-			PlayerConfig::send_specific_message(
+                    if let Some(config) = self.player_ids_to_configs.remove(&id) {
+                        // note: we don't remove  the player from self.players quite yet,
+                        // we use the lack of the config to indicate to the game during a street
+                        // that a player has left. If they were active at the time, this information
+                        // needs to be taken into account
+                        let message = object! {
+                            msg_type: "player_left".to_owned(),
+                            name: config.name.clone(),
+                        };
+                        PlayerConfig::send_specific_message(
                             &message.dump(),
                             id,
                             &self.player_ids_to_configs,
-			);
-			
-			if let Some(hub_addr) = &self.hub_addr {
+                        );
+
+                        if let Some(hub_addr) = &self.hub_addr {
                             // tell the hub that we left
                             hub_addr.do_send(Returned {
-				config,
-				reason: ReturnedReason::Left,
+                                config,
+                                reason: ReturnedReason::Left,
                             });
-			}
-		    } else {
-			// should not normally happen, but check for Some() to be safe
-			// Perhaps if the client sent many leave messages before them being responded to
-			println!("\n\nA leave message was received for a player that no longer has a config!")
-		    }
+                        }
+                    } else {
+                        // should not normally happen, but check for Some() to be safe
+                        // Perhaps if the client sent many leave messages before them being responded to
+                        println!("\n\nA leave message was received for a player that no longer has a config!")
+                    }
                 }
                 MetaAction::PlayerName(id, new_name) => {
                     PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
@@ -757,16 +789,19 @@ impl Game {
         gamehand.river = self.deck.draw_card();
     }
 
-    fn finish(&mut self, gamehand: &mut GameHand) {
+    fn finish_hand(&mut self, gamehand: &mut GameHand) {
         // pause for a second for dramatic effect heh
         let pause_duration = time::Duration::from_secs(2);
         thread::sleep(pause_duration);
-
+        if self.player_ids_to_configs.is_empty() {
+            // the game is currently empty, so there is nothing to finish
+            return;
+        }
         let hand_results: HashMap<Uuid, Option<HandResult>> = self
             .players
             .iter()
             .flatten()
-            .map(|player| return (player.id, self.determine_best_hand(player, gamehand)))
+            .map(|player| (player.id, self.determine_best_hand(player, gamehand)))
             .collect();
 
         let is_showdown = gamehand.street == Street::ShowDown;
@@ -784,7 +819,7 @@ impl Game {
                 let mut best_ids = HashSet::<Uuid>::new();
                 let mut best_hand: Option<&HandResult> = None;
                 for (id, current_opt) in hand_results.iter() {
-                    if pot.contributions.get(&id).is_none() {
+                    if pot.contributions.get(id).is_none() {
                         println!("player id {} did not contribute to this pot!", id);
                         continue;
                     }
@@ -986,7 +1021,7 @@ impl Game {
             let pause_duration = time::Duration::from_secs(2);
             thread::sleep(pause_duration);
             let finished =
-                self.play_street(&incoming_actions, &incoming_meta_actions, &mut gamehand);
+                self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -999,7 +1034,7 @@ impl Game {
             }
         }
         // now we finish up and pay the pot to the winner
-        self.finish(&mut gamehand);
+        self.finish_hand(&mut gamehand);
     }
 
     fn get_starting_idx(&self) -> usize {
@@ -1007,7 +1042,7 @@ impl Game {
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
         let mut starting_idx = self.button_idx + 1;
-        if starting_idx as usize >= self.players.len() {
+        if starting_idx >= self.players.len() {
             starting_idx = 0;
         }
         starting_idx
@@ -1125,8 +1160,8 @@ impl Game {
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
             let action = self.get_and_validate_action(
-                &incoming_actions,
-                &incoming_meta_actions,
+                incoming_actions,
+                incoming_meta_actions,
                 &player,
                 current_bet,
                 player_cumulative,
@@ -1244,24 +1279,23 @@ impl Game {
             println!("{}", message.dump());
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
-	    // double check at the end of the loop if any players left as a meta-action during the current
-	    // player's turn. They should no longer be considered as active or all_in
-	    for player_spot in self.players.iter_mut() {
-		if let Some(player) = player_spot {
-		    if !self.player_ids_to_configs.contains_key(&player.id) {
-			println!("player is no longer in the config at the end of the loop");
-			if player.is_all_in() {
-			    num_all_in -= 1;			    
-			}
-			if player.is_active {
-			    player.deactivate(); // technically redundant I guess since setting to None later
-			    num_active -= 1;
-			}
-			*player_spot = None;
-		    }
-		}
-	    }
-	    
+            // double check at the end of the loop if any players left as a meta-action during the current
+            // player's turn. They should no longer be considered as active or all_in
+            for player_spot in self.players.iter_mut() {
+                if let Some(player) = player_spot {
+                    if !self.player_ids_to_configs.contains_key(&player.id) {
+                        println!("player is no longer in the config at the end of the loop");
+                        if player.is_all_in() {
+                            num_all_in -= 1;
+                        }
+                        if player.is_active {
+                            player.deactivate(); // technically redundant I guess since setting to None later
+                            num_active -= 1;
+                        }
+                        *player_spot = None;
+                    }
+                }
+            }
         }
         true // we can't actually get to this line
     }
@@ -1294,7 +1328,7 @@ impl Game {
                         // just go all in if we are at 10% starting
                         player.money
                     } else {
-                        rand::thread_rng().gen_range(1..player.money / 2 as u32)
+                        rand::thread_rng().gen_range(1..player.money / 2_u32)
                     };
                     Some(PlayerAction::Bet(amount))
                 }
@@ -1351,7 +1385,11 @@ impl Game {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
+<<<<<<< HEAD
             self.handle_meta_actions(&incoming_meta_actions, between_hands);
+=======
+            self.handle_meta_actions(incoming_meta_actions);
+>>>>>>> main
 
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
@@ -1372,7 +1410,7 @@ impl Game {
             }
 
             println!("Attempting to get player action on attempt {:?}", attempts);
-            match self.get_action_from_player(&incoming_actions, player) {
+            match self.get_action_from_player(incoming_actions, player) {
                 None => {
                     // println!("No action is set for the player {:?}", player.id);
                     // we give the user a second to place their action
@@ -1384,11 +1422,11 @@ impl Game {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
-			    let message = json::object! {
-				msg_type: "error".to_owned(),
-				error: "invalid_action".to_owned(),
-				reason: "You said fold but we will let you check!".to_owned(),
-			    };
+                            let message = json::object! {
+                            msg_type: "error".to_owned(),
+                            error: "invalid_action".to_owned(),
+                            reason: "You said fold but we will let you check!".to_owned(),
+                            };
                             PlayerConfig::send_specific_message(
                                 &message.dump(),
                                 player.id,
@@ -1405,11 +1443,11 @@ impl Game {
                     if current_bet > player_cumulative {
                         // if the current bet is higher than this player's bet
                         if player.human_controlled {
-			    let message = json::object! {
-				msg_type: "error".to_owned(),
-				error: "invalid_action".to_owned(),
-				reason: "You can't check since there is a bet!!".to_owned(),
-			    };
+                            let message = json::object! {
+                            msg_type: "error".to_owned(),
+                            error: "invalid_action".to_owned(),
+                            reason: "You can't check since there is a bet!!".to_owned(),
+                            };
                             PlayerConfig::send_specific_message(
                                 &message.dump(),
                                 player.id,
@@ -1426,19 +1464,19 @@ impl Game {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
-			let message = json::object! {
-			    msg_type: "error".to_owned(),
-			    error: "invalid_action".to_owned(),
-			    reason: "There is nothing for you to call!".to_owned()
-			};
+                        let message = json::object! {
+                            msg_type: "error".to_owned(),
+                            error: "invalid_action".to_owned(),
+                            reason: "There is nothing for you to call!".to_owned()
+                        };
                         PlayerConfig::send_specific_message(
                             &message.dump(),
                             player.id,
                             &self.player_ids_to_configs,
                         );
-			// we COULD let them check, but better to wait for a better action
-			continue;
-                    } 
+                        // we COULD let them check, but better to wait for a better action
+                        continue;
+                    }
                     action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
@@ -1458,11 +1496,11 @@ impl Game {
                     // NOTE ---> I changed it now
                     if new_bet > player.money + player_cumulative {
                         println!("cant bet more than you have");
-			let message = json::object! {
-			    msg_type: "error".to_owned(),
-			    error: "invalid_action".to_owned(),
-			    reason:"You can't bet more than you have!!".to_owned(),
-			};
+                        let message = json::object! {
+                            msg_type: "error".to_owned(),
+                            error: "invalid_action".to_owned(),
+                            reason:"You can't bet more than you have!!".to_owned(),
+                        };
                         PlayerConfig::send_specific_message(
                             &message.dump(),
                             player.id,
@@ -1472,11 +1510,11 @@ impl Game {
                     }
                     if new_bet <= current_bet {
                         println!("new bet must be larger than current");
-			let message = json::object! {
-			    msg_type: "error".to_owned(),
-			    error: "invalid_action".to_owned(),
-			    reason: "the new bet must be larger than the current bet!".to_owned(),
-			};
+                        let message = json::object! {
+                            msg_type: "error".to_owned(),
+                            error: "invalid_action".to_owned(),
+                            reason: "the new bet must be larger than the current bet!".to_owned(),
+                        };
                         PlayerConfig::send_specific_message(
                             &message.dump(),
                             player.id,
@@ -1493,8 +1531,8 @@ impl Game {
         }
         // if we got a valid action, then we can return it,
         // otherwise, we just return Fold
-        if action.is_some() {
-            action.unwrap()
+        if let Some(action) = action {
+	    action
         } else {
             PlayerAction::Fold
         }
@@ -1848,10 +1886,10 @@ mod tests {
             rank: Rank::Queen,
             suit: Suit::Club,
         });
-	
+
         let mut game = Game::default();
         game.deck = Box::new(deck);
-	
+
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
         let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
         let cloned_actions = incoming_actions.clone();
@@ -1863,7 +1901,7 @@ mod tests {
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
         game.add_user(settings1, None).unwrap();
         game.players[0].as_mut().unwrap().money = 3; // set the player to have less than the norm 8 BB
-	
+
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
@@ -1879,13 +1917,12 @@ mod tests {
         });
 
         // set the action that player (small blind) bets,
-	// even though player1 is already all-in, so the BB can only 3 win bucks
+        // even though player1 is already all-in, so the BB can only 3 win bucks
         incoming_actions
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Bet(22));
 
-	
         // get the game back from the thread
         let game = handler.join().unwrap();
 
@@ -1893,7 +1930,7 @@ mod tests {
         assert_eq!(game.players[0].as_ref().unwrap().money, 6);
         assert_eq!(game.players[1].as_ref().unwrap().money, 997);
     }
-    
+
     /// the small blind bets, the big blind calls
     /// the small blind bets on the flop, and the big blind folds
     #[test]
@@ -2713,6 +2750,30 @@ mod tests {
         assert_eq!(game.players[0].as_ref().unwrap().money, 1000);
         assert_eq!(game.players[1].as_ref().unwrap().money, 1000);
     }
+    /// the game should end after N hands if there are no human players in the game
+    /// even if there is no hand limit or a high hand limit
+    /// Note: in this test there are no players period, but the game will still count each check
+    /// as a hand "plsyed", so we can check that the game ends with the proper count
+    #[test]
+    fn end_early() {
+        let mut game = Game::default();
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        let handler = std::thread::spawn(move || {
+            // we start the game with None hand limit!
+            game.play(&cloned_actions, &cloned_meta_actions, None);
+            game // return the game back
+        });
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+        // check that the game ended with 1 more than the limit turns "played"
+        assert_eq!(game.hands_played, NON_HUMAN_HANDS_LIMIT + 1);
+    }
 
     /// check that the button moves around properly
     /// we play 4 hands with 3 players with everyone folding whenever it gets to them,
@@ -3092,7 +3153,7 @@ mod tests {
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
         assert!(game.players[0].as_ref().unwrap().human_controlled);
-	
+
         let handler = std::thread::spawn(move || {
             game.play_one_hand(&cloned_actions, &cloned_meta_actions);
             game // return the game back
@@ -3109,20 +3170,21 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Leave(id1));
-	
+
         // get the game back from the thread
         let game = handler.join().unwrap();
 
         // flatten to get all the Some() players
-	// now there are only one
+        // now there are only one
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 1);
-	assert_eq!(game.player_ids_to_configs.len(), 1);
-	
+        assert_eq!(game.player_ids_to_configs.len(), 1);
+
         // check that the money changed hands
         assert!(game.players[0].is_none()); // the spot is empty now
         assert_eq!(game.players[1].as_ref().unwrap().money, 1008);
     }
+<<<<<<< HEAD
 
 
     /// if someone who is not the admin attempts an admin command, it does not work
@@ -3336,4 +3398,6 @@ mod tests {
 	assert!(game.players[0].as_ref().is_none());
     }
     
+=======
+>>>>>>> main
 }
