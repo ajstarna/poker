@@ -754,6 +754,10 @@
 			msg["msg_type"] = "admin_command";
 			msg["admin_command"] = "remove_bot";			
 		    }
+		    else if ($input.value.startsWith("/restart")) {
+			msg["msg_type"] = "admin_command";
+			msg["admin_command"] = "restart";			
+		    }
 		    else {
 			msg["msg_type"] = "chat";
 			msg["text"] = $input.value;

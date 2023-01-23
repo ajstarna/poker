@@ -8,7 +8,7 @@ use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 
-use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
+use crate::messages::{get_help_message, AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -403,24 +403,22 @@ impl Game {
                 // the game ends no matter what if we haven't had a human after too many turns
                 break;
             }
-            if self.player_ids_to_configs.len() <= 1 {
-                // no use playing a hand, so we just wait for a bit and try again
-                continue;
-            }
-            let message = object! {
-            msg_type: "new_hand".to_owned(),
-            hand_num: self.hands_played,
-            button_index: self.button_idx,
+            if self.player_ids_to_configs.len() > 1 {
+		// only bother playing a hand if there are more than 1 players.
+		let message = object! {
+		    msg_type: "new_hand".to_owned(),
+		    hand_num: self.hands_played,
+		    button_index: self.button_idx,
                 };
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
-            self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+		PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+		self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+		// attempt to set the next button
+		self.button_idx = self
+                    .find_next_button()
+                    .expect("we could not find a valid button index!");
+            }
 	    let between_hands = true;
             self.handle_meta_actions(&incoming_meta_actions, between_hands);
-            // attempt to set the next button
-            self.button_idx = self
-                .find_next_button()
-                .expect("we could not find a valid button index!");
         }
         println!("about to send the gameover signal to the hub");
         // the game is ending, so tell that to the hub
@@ -480,6 +478,15 @@ impl Game {
 
                     PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
                 }
+                MetaAction::Help(id) => {
+                    // send the help message to the player who requested it
+                    let message = object! {
+			msg_type: "help".to_owned(),
+			text: get_help_message(),
+                    };
+                    PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
+                }
+		
                 MetaAction::Join(player_config, password) => {
                     // add a new player to the game
                     let cloned_config = player_config.clone(); // clone in case we need to send back
@@ -680,6 +687,20 @@ impl Game {
 			error: "unable_to_remove_bot".to_owned(),
 			reason: "Unable to remove a bot from the game.".to_owned(),
 		    }
+		}
+	    }
+	    AdminCommand::Restart => {
+		// set every player to have the buy_in amount of money
+		println!("inside restart");
+		for player_spot in self.players.iter_mut() {
+		    if let Some(player) = player_spot {
+			player.money = self.buy_in;
+		    }
+		}
+		object! {
+		    msg_type: "admin_success".to_owned(),
+		    error: "game_restarted".to_owned(),
+		    text: "The game has been restarted to its original state.".to_owned(),
 		}
 	    }
 	};
@@ -3389,5 +3410,45 @@ mod tests {
         assert_eq!(game.player_ids_to_configs.len(), 2); // 2 player configs
 	// the player_ids_to_configs mapping no longer contains the id for the bot at index 0
 	assert!(game.players[0].as_ref().is_none());
-    }    
+    }
+
+    /// test that the admin can restart the game. this brings all players to the buy_in amount of money
+    #[test]
+    fn admin_restart() {
+        let mut game = Game::default();
+        //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        //let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_user(settings1, None).unwrap();
+        game.players[0].as_mut().unwrap().money = 500;
+
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_user(settings2, None).unwrap();
+	
+        // need the id for the admin command
+	game.admin_id = id1; // set the game's admin
+
+	// only game's with a password (private) can be updated
+	game.password = Some("arbitrary".to_string());
+	
+	let new_buy_in = 4321; // arbitrary
+	game.buy_in = new_buy_in;
+	
+        incoming_meta_actions
+            .lock()
+            .unwrap()
+            .push_back(MetaAction::Admin(id1, AdminCommand::Restart));
+        game.handle_meta_actions(&cloned_meta_actions, true);
+	// check that the players have the new_buy_in amount of money
+	assert_eq!(game.players[0].as_mut().unwrap().money, new_buy_in);
+	assert_eq!(game.players[1].as_mut().unwrap().money, new_buy_in);	
+    }
+    
 }

@@ -14,6 +14,7 @@ pub enum MetaAction {
     SitOut(Uuid),
     PlayerName(Uuid, String),
     Chat(Uuid, String),
+    Help(Uuid),
     Admin(Uuid, AdminCommand),
 }
 
@@ -28,7 +29,13 @@ pub enum AdminCommand {
     Password(String),
     AddBot,
     RemoveBot,
+    Restart,
     // NewAdmin(Uuid), // todo? would they give the name of the player or what?
+}
+
+    
+pub fn get_help_message() -> String {
+    "/small_blind X\n/big_blind X\n/buy_in X\n/password X\n/add_bot\n/remove_bot".to_string()
 }
 
 #[derive(Message)]
