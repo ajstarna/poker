@@ -8,7 +8,7 @@ use super::card::{Card, Deck, HandResult, StandardDeck};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 
-use crate::messages::{get_help_message, AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
+use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
 use std::{cmp, iter, sync::Arc, thread, time};
 
@@ -477,16 +477,7 @@ impl Game {
                             };
 
                     PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-                }
-                MetaAction::Help(id) => {
-                    // send the help message to the player who requested it
-                    let message = object! {
-			msg_type: "help".to_owned(),
-			text: get_help_message(),
-                    };
-                    PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
-                }
-		
+                }		
                 MetaAction::Join(player_config, password) => {
                     // add a new player to the game
                     let cloned_config = player_config.clone(); // clone in case we need to send back
@@ -1126,11 +1117,6 @@ impl Game {
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
-            /*
-            println!(
-                "start loop index = {}: num_active = {}, num_settled = {}, num_all_in = {}",
-                i, num_active, num_settled, num_all_in
-            );*/
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
