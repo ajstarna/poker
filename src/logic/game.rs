@@ -419,6 +419,11 @@ impl Game {
             }
 	    let between_hands = true;
             self.handle_meta_actions(&incoming_meta_actions, between_hands);
+            // wait for next hand
+	    // this is especially needed when there is only one player in the game
+            let wait_duration = time::Duration::from_secs(1);
+            thread::sleep(wait_duration);
+	    
         }
         println!("about to send the gameover signal to the hub");
         // the game is ending, so tell that to the hub
