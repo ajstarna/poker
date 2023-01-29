@@ -614,6 +614,11 @@
 						log(ev.data, "message");
 					} else if (msg.msg_type == "error") {
 					    log(msg.error + ": " + msg.reason, "message");	
+					} else if (msg.msg_type == "help_message") {
+					    log("Available admin commands:", "message");
+					    for (const cmd of msg.commands) {
+						log(cmd, "message");
+					    }
 					} else if (msg.msg_type == "admin_success") {
 					    log(msg.msg_type + ": " + msg.text, "message");	
 					} else {
@@ -753,6 +758,13 @@
 		    else if ($input.value.startsWith("/remove_bot")) {
 			msg["msg_type"] = "admin_command";
 			msg["admin_command"] = "remove_bot";			
+		    }
+		    else if ($input.value.startsWith("/restart")) {
+			msg["msg_type"] = "admin_command";
+			msg["admin_command"] = "restart";			
+		    }
+		    else if ($input.value.startsWith("/help")) {
+			msg["msg_type"] = "help";
 		    }
 		    else {
 			msg["msg_type"] = "chat";

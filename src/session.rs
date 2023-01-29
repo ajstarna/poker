@@ -18,6 +18,15 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// How long before lack of client response causes a timeout
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
+pub fn get_help_message() -> Vec<String> {
+    vec!["/small_blind X".to_string(),
+	 "/big_blind X".to_string(),
+	 "/buy_in X".to_string(),
+	 "/password X".to_string(),
+	 "/add_bot".to_string(),
+	 "/remove_bot".to_string()]
+}
+
 #[derive(Debug)]
 pub struct WsGameSession {
     /// unique session id
@@ -217,6 +226,13 @@ impl WsGameSession {
                 "chat" => {
                     self.handle_chat(object, ctx);
                 }
+		"help" => {
+                    let message = json::object! {
+			msg_type: "help_message".to_owned(),
+			commands: get_help_message(),
+                    };
+                    ctx.text(message.dump());
+		}
                 _ => ctx.text(format!("!!! unknown command: {:?}", object)),
             },
             _ => ctx.text(format!("!!! improper msg_type in: {:?}", object)),
@@ -473,6 +489,15 @@ impl WsGameSession {
 			meta_action: messages::MetaAction::Admin(
 			    self.id,				
 			    messages::AdminCommand::RemoveBot),
+                    });
+		    false
+                }
+                "restart" => {
+		    self.hub_addr.do_send(messages::MetaActionMessage {
+			id: self.id,
+			meta_action: messages::MetaAction::Admin(
+			    self.id,				
+			    messages::AdminCommand::Restart),
                     });
 		    false
                 }

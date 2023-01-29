@@ -28,6 +28,7 @@ pub enum AdminCommand {
     Password(String),
     AddBot,
     RemoveBot,
+    Restart,
     // NewAdmin(Uuid), // todo? would they give the name of the player or what?
 }
 
