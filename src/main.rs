@@ -69,6 +69,10 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("starting HTTP server at http://{}:{}", args.ip, args.port);
 
+    let paths = std::fs::read_dir("./").unwrap();
+    for path in paths {
+        log::info!("Name: {}", path.unwrap().path().display());
+    }
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))

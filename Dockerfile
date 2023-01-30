@@ -1,4 +1,4 @@
-FROM rust:1 AS chef
+FROM rust:1.67.0 AS chef
 # cargo-chef lets us build the the dependencies as a docker layer
 # We only pay the installation cost once, 
 # it will be cached from the second build onwards
@@ -15,10 +15,12 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
 COPY . .
-RUN cargo build --release --bin app
+RUN cargo build --release --bin poker
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:buster-slim AS runtime
 WORKDIR app
-COPY --from=builder /app/target/release/app /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/app"]
+COPY --from=builder /app/target/release/poker .
+# need the front end files
+COPY ./static ./static 
+ENTRYPOINT ["./poker"]
