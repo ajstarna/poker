@@ -106,7 +106,19 @@
 								<input type="text" value="1000" id="starting_stack_value" />
 							</td>
 						</tr>
+						<tr>
+							<td style="padding-right: 20px;">
+								Password:
+							</td>
+							<td>
+								<input type="password" id="password" />
+							</td>
+						</tr>
 					</table>
+
+					<div style="margin-bottom: 20px;">
+						Leave password blank if you want the game to be public.
+					</div>
 
 					<button class="button" onclick="createTable()">Create Table</button>
 				</div>
@@ -192,6 +204,7 @@
 		const $smallBlindValue = document.getElementById("small_blind_value");
 		const $bigBlindValue = document.getElementById("big_blind_value");
 		const $startingStackValue = document.getElementById("starting_stack_value");
+		const $password = document.getElementById("password");
 
 		const $publicTableList = document.getElementById("publicTableList");
 
@@ -203,8 +216,8 @@
 		const $playerName = document.getElementById("playerName");
 		const $tableId = document.getElementById("tableId");
 		const $tableName = document.getElementById("table_name");
-	  const $tableControls = document.getElementById("table_controls");
-	  $tableControls.style.display = "block";	  
+		const $tableControls = document.getElementById("table_controls");
+		$tableControls.style.display = "block";
 		const $betSlider = document.getElementById("betSizeSlider");
 		const $betSize = document.getElementById("betSize");
 
@@ -613,14 +626,14 @@
 						$publicTableList.innerHTML = tables;
 						log(ev.data, "message");
 					} else if (msg.msg_type == "error") {
-					    log(msg.error + ": " + msg.reason, "message");	
+						log(msg.error + ": " + msg.reason, "message");
 					} else if (msg.msg_type == "help_message") {
-					    log("Available admin commands:", "message");
-					    for (const cmd of msg.commands) {
-						log(cmd, "message");
-					    }
+						log("Available admin commands:", "message");
+						for (const cmd of msg.commands) {
+							log(cmd, "message");
+						}
 					} else if (msg.msg_type == "admin_success") {
-					    log(msg.msg_type + ": " + msg.text, "message");	
+						log(msg.msg_type + ": " + msg.text, "message");
 					} else {
 						log("We are not handling this message properly!", "message");
 					}
@@ -694,8 +707,11 @@
 			msg["num_bots"] = parseInt($botNumberSlider.value);
 			msg["small_blind"] = parseInt($smallBlindValue.value);
 			msg["big_blind"] = parseInt($bigBlindValue.value);
-		        msg["buy_in"] = parseInt($startingStackValue.value);
-		    msg["password"] = "123";
+			msg["buy_in"] = parseInt($startingStackValue.value);
+
+			if ($password.value.length > 0) {
+				msg["password"] = $password.value;
+			}
 			//log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		}
@@ -725,60 +741,60 @@
 		function sendMessage() {
 			var msg = {}; // build the json to send
 
-		    // first check if it starts with an admin command attempt
-		    if ($input.value.startsWith("/small_blind")) {
-			msg["msg_type"] = "admin_command";
-			const [_, value] = $input.value.split(" ");
-			msg["admin_command"] = "small_blind";
-			msg["small_blind"] = value;
-			
-		    }
-		    else if ($input.value.startsWith("/big_blind")) {
-			msg["msg_type"] = "admin_command";
-			const [_, value] = $input.value.split(" ");
-			msg["admin_command"] = "big_blind";
-			msg["big_blind"] = value;
-			
-		    }
-		    else if ($input.value.startsWith("/buy_in")) {
-			msg["msg_type"] = "admin_command";
-			msg["admin_command"] = "buy_in";
-			msg["buy_in"] = value;
-		    }
-		    else if ($input.value.startsWith("/password")) {
-			msg["msg_type"] = "admin_command";
-			const [_, value] = $input.value.split(" ");
-			msg["admin_command"] = "password";
-			msg["password"] = value;
-		    }
-		    else if ($input.value.startsWith("/add_bot")) {
-			msg["msg_type"] = "admin_command";
-			msg["admin_command"] = "add_bot";
-		    }
-		    else if ($input.value.startsWith("/remove_bot")) {
-			msg["msg_type"] = "admin_command";
-			msg["admin_command"] = "remove_bot";			
-		    }
-		    else if ($input.value.startsWith("/restart")) {
-			msg["msg_type"] = "admin_command";
-			msg["admin_command"] = "restart";			
-		    }
-		    else if ($input.value.startsWith("/help")) {
-			msg["msg_type"] = "help";
-		    }
-		    else {
-			msg["msg_type"] = "chat";
-			msg["text"] = $input.value;
-		    }
+			// first check if it starts with an admin command attempt
+			if ($input.value.startsWith("/small_blind")) {
+				msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");
+				msg["admin_command"] = "small_blind";
+				msg["small_blind"] = value;
 
-		    log("Sending: " + JSON.stringify(msg));
-		    if (msg["msg_type"] == "admin_command") {
-			log("admin commands are handled at the end of the current hand");
-		    }
-		    socket.send(JSON.stringify(msg));
-		    
-		    $input.value = "";
-		    $input.focus();
+			}
+			else if ($input.value.startsWith("/big_blind")) {
+				msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");
+				msg["admin_command"] = "big_blind";
+				msg["big_blind"] = value;
+
+			}
+			else if ($input.value.startsWith("/buy_in")) {
+				msg["msg_type"] = "admin_command";
+				msg["admin_command"] = "buy_in";
+				msg["buy_in"] = value;
+			}
+			else if ($input.value.startsWith("/password")) {
+				msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");
+				msg["admin_command"] = "password";
+				msg["password"] = value;
+			}
+			else if ($input.value.startsWith("/add_bot")) {
+				msg["msg_type"] = "admin_command";
+				msg["admin_command"] = "add_bot";
+			}
+			else if ($input.value.startsWith("/remove_bot")) {
+				msg["msg_type"] = "admin_command";
+				msg["admin_command"] = "remove_bot";
+			}
+			else if ($input.value.startsWith("/restart")) {
+				msg["msg_type"] = "admin_command";
+				msg["admin_command"] = "restart";
+			}
+			else if ($input.value.startsWith("/help")) {
+				msg["msg_type"] = "help";
+			}
+			else {
+				msg["msg_type"] = "chat";
+				msg["text"] = $input.value;
+			}
+
+			log("Sending: " + JSON.stringify(msg));
+			if (msg["msg_type"] == "admin_command") {
+				log("admin commands are handled at the end of the current hand");
+			}
+			socket.send(JSON.stringify(msg));
+
+			$input.value = "";
+			$input.focus();
 		}
 
 		$form.addEventListener("submit", (ev) => {
