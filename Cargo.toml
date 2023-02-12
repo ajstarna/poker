@@ -5,7 +5,7 @@ authors = ["Adam St Arnaud <ajstarna@ualberta.ca>"]
 edition = "2018"
 
 [[bin]]
-name = "server"
+name = "poker"
 path = "src/main.rs"
 
 [dependencies]
