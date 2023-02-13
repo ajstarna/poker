@@ -276,6 +276,41 @@ impl Game {
         }
     }
 
+    /// returns the game state as a json-String, for sending to the front-end
+    fn get_game_state_json(&self) -> String {
+        let mut state_message = object! {
+            msg_type: "game_state".to_owned(),
+            name: self.name.to_owned(),
+            max_players: self.max_players,
+            small_blind: self.small_blind,
+            big_blind: self.big_blind,
+            buy_in: self.buy_in,
+            password: self.password.to_owned(),
+            button_idx: self.button_idx,
+            hands_played: self.hands_played,
+	};
+	// TODO add players list
+	let mut player_infos = vec![];
+        for (i, player_spot) in self.players.iter().enumerate() {
+            // display the play positions for the front end to consume
+            if let Some(player) = player_spot {
+                let mut player_info = object! {
+                    index: i,
+                };
+                let config = self.player_ids_to_configs.get(&player.id).unwrap();
+                let name = config.name.as_ref().unwrap().clone();
+                player_info["player_name"] = name.into();
+                player_info["money"] = player.money.into();
+                player_info["is_active"] = player.is_active.into();
+		player_infos.push(Some(player_info));
+            } else {
+		player_infos.push(None);
+	    }
+        }
+	state_message["players"] = player_infos.into();
+	state_message.dump()
+    }
+	
     /// add a given playerconfig to an empty seat
     /// if the game requires a password, then a matching password must be provided for the user to be added
     /// TODO: eventually we wanmt the player to select an open seat I guess
@@ -302,27 +337,15 @@ impl Game {
         if let Ok(index) = result {
             // note: I tried moving this message to either the hub or in handling meta actions,
             // but this messed up the front end, so I am just moving it back here rather than refactor the front
+	    // TODO maybe we can now that we are refactoring!
             let message = object! {
-            msg_type: "joined_game".to_owned(),
-            index: index,
-            table_name: self.name.clone(),
+		msg_type: "joined_game".to_owned(),
+		index: index,
             };
             PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
-            for (i, player_spot) in self.players.iter().enumerate() {
-                // display the play positions for the front end to consume
-                if let Some(player) = player_spot {
-                    let mut message = object! {
-                    msg_type: "player_info".to_owned(),
-                    index: i,
-                    };
-                    let config = self.player_ids_to_configs.get(&player.id).unwrap();
-                    let name = config.name.as_ref().unwrap().clone();
-                    message["player_name"] = name.into();
-                    message["money"] = player.money.into();
-                    message["is_active"] = player.is_active.into();
-                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-                }
-            }
+	    
+	    let state_msg = self.get_game_state_json();
+            PlayerConfig::send_specific_message(&state_msg, id, &self.player_ids_to_configs);
         }
         result
     }
