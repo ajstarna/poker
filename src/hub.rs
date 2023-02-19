@@ -351,10 +351,7 @@ impl Handler<Create> for GameHub {
 		
 		// update the mapping to find the player at a table
 		self.players_to_table.insert(id, table_name.clone());
-		
-		game.add_user(player_config, password)
-                    .expect("error joining freshly created game");
-		
+				
 		std::thread::spawn(move || {
                     // Note: I tried having the actions and meta actions as part of the game struct,
                     // but this led to lifetime concerns.
@@ -363,6 +360,16 @@ impl Handler<Create> for GameHub {
                     // TLDR keep the actions as something passed in to play()
                     game.play(&cloned_actions, &cloned_meta_actions, None);
 		});
+
+		meta_actions
+                    .lock()
+                    .unwrap()
+                    .push_back(MetaAction::Join(player_config, password));
+
+		/*
+		game.add_human(player_config, password)
+                    .expect("error joining freshly created game");
+		 */
 		
 		self.tables_to_actions.insert(table_name.clone(), actions);
 		self.tables_to_meta_actions

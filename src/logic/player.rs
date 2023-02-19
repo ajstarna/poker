@@ -3,6 +3,7 @@ use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;
 use uuid::Uuid;
+use std::fmt;
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
@@ -14,6 +15,21 @@ pub enum PlayerAction {
     Call,
     //Raise(u32), // i guess a raise is just a bet really?
 }
+impl fmt::Display for PlayerAction {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	let output = match self {
+	    Self::PostSmallBlind(amount) => format!("small_blind:{}", amount),
+	    Self::PostBigBlind(amount) => format!("big_blind:{}", amount),
+	    Self::Fold => "fold".to_owned(),
+	    Self::Check => "check".to_owned(),
+	    Self::Bet(amount) => format!("bet:{}", amount),
+	    Self::Call => "call".to_owned(),
+	};
+        write!(f, "{}", output)
+    }
+}
+
 /// this struct holds the player name and recipient address
 #[derive(Debug, Clone)]
 pub struct PlayerConfig {
@@ -77,6 +93,7 @@ pub struct Player {
     pub is_active: bool,      // is still playing the current hand
     pub is_sitting_out: bool, // if sitting out, then they are not active for any future hand
     pub hole_cards: Vec<Card>,
+    pub last_action: Option<PlayerAction>, // the last thing they did (or None)
 }
 
 impl Player {
@@ -88,6 +105,7 @@ impl Player {
             is_active: false, // a branch new player is not active in a hand
             is_sitting_out: false,
             hole_cards: Vec::<Card>::with_capacity(2),
+	    last_action: None,
         }
     }
 
