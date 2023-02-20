@@ -23,4 +23,4 @@ WORKDIR app
 COPY --from=builder /app/target/release/poker .
 # need the front end files
 COPY ./static ./static 
-ENTRYPOINT ["./poker"]
+ENTRYPOINT ["./poker", "--ip", "0.0.0.0"]
