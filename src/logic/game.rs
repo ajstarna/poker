@@ -276,8 +276,34 @@ impl Game {
         }
     }
 
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>) {
+	let mut state_message = self.get_game_state_json(gamehand_opt);
+	// go through each player, and update the personal information for their message
+	// (i.e. hole cards, player index)
+        for (i, player_spot) in self.players.iter().enumerate() {
+            if let Some(player) = player_spot {
+		state_message["your_index"] = i.into();
+		if player.hole_cards.len() == 2 {
+		    state_message["hole_cards"] = format!("{}{}",
+							  player.hole_cards[0],
+							  player.hole_cards[1])
+			.into();
+		} else {
+		    state_message["hole_cards"] = json::Null;
+		}
+		
+		PlayerConfig::send_specific_message(
+		    &state_message.dump(),
+		    player.id,
+                    &self.player_ids_to_configs,
+        );
+		
+            }
+	}
+    }
+    
     /// returns the game state as a json-String, for sending to the front-end
-    fn get_game_state_json(&self, gamehand_opt: Option<&GameHand>) -> String {
+    fn get_game_state_json(&self, gamehand_opt: Option<&GameHand>) -> json::JsonValue {
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
             name: self.name.to_owned(),
@@ -332,7 +358,7 @@ impl Game {
 
             state_message["pots"] = gamehand.pot_manager.simple_repr().into();	    
 	}
-	state_message.dump()
+	state_message
     }
 	
     /// add a given playerconfig to an empty seat
@@ -528,15 +554,7 @@ impl Game {
                     match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining game at index: {}", index);
-			    let message = object! {
-				msg_type: "joined_game".to_owned(),
-				index: index,
-			    };
-			    PlayerConfig::send_specific_message(&message.dump(), cloned_config.id,
-								&self.player_ids_to_configs);
-			    
-			    let state_msg = self.get_game_state_json(gamehand);
-			    PlayerConfig::send_group_message(&state_msg, &self.player_ids_to_configs);
+			    self.send_game_state(gamehand);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -787,8 +805,7 @@ impl Game {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
-	let state_msg = self.get_game_state_json(Some(gamehand));
-        PlayerConfig::send_group_message(&state_msg, &self.player_ids_to_configs);	
+	self.send_game_state(Some(gamehand));	
     }
 
     fn deal_hands(&mut self) {
@@ -801,15 +818,6 @@ impl Game {
                         panic!("The deck is out of cards somehow?");
                     }
                 }
-                let message = object! {
-                    msg_type: "hole_cards".to_owned(),
-                    hole_cards: format!("{}{}", player.hole_cards[0], player.hole_cards[1]),
-                };
-                PlayerConfig::send_specific_message(
-                    &message.dump(),
-                    player.id,
-                    &self.player_ids_to_configs,
-                );
             }
         }
     }
@@ -1039,10 +1047,9 @@ impl Game {
             } else {
                 player.is_active = true;
             }
-        }	
-	let state_msg = self.get_game_state_json(Some(&gamehand));
-	PlayerConfig::send_group_message(&state_msg, &self.player_ids_to_configs);
-	
+        }
+
+	self.send_game_state(Some(&gamehand));	
         self.deck.shuffle();
         self.deal_hands();
 
@@ -1050,15 +1057,17 @@ impl Game {
 
         while gamehand.street != Street::ShowDown {
             // pause for a second for dramatic effect heh
-            let pause_duration = time::Duration::from_secs(2);
+            let pause_duration = time::Duration::from_secs(1);
             thread::sleep(pause_duration);
             let finished =
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
+	    // after each street, set the player's last action to None again
+            for player in self.players.iter_mut().flatten() {
+		player.last_action = None;
+            }
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
-                // TODO is a msg here needed?
-                //PlayerConfig::send_group_message("\nGame is ending before showdown!", player_ids_to_configs);
                 break;
             } else {
                 // otherwise we move to the next street
@@ -1317,8 +1326,7 @@ impl Game {
                     }
                 }
             }
-	    let state_msg = self.get_game_state_json(Some(&gamehand));
-	    PlayerConfig::send_group_message(&state_msg, &self.player_ids_to_configs);
+	    self.send_game_state(Some(&gamehand));		    
         }
         true // we can't actually get to this line
     }
@@ -1332,7 +1340,6 @@ impl Game {
     ) -> Option<PlayerAction> {
         if player.human_controlled {
             let mut actions = incoming_actions.lock().unwrap();
-            println!("incoming_actions = {:?}", actions);
             if let Some(action) = actions.get_mut(&player.id) {
                 println!("Player: {:?} has action {:?}", player.id, action);
                 let value = *action;
