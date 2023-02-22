@@ -10,7 +10,7 @@ You can also use ```cargo run -- --help``` for more settings.
 
 Example:
 
-```cargo run -- --ip 127.0.0.1 --port 8081```
+```cargo run -- --ip 127.0.0.1 --port 8080```
 
 You can also run it inside a docker container via:
 
@@ -18,6 +18,6 @@ You can also run it inside a docker container via:
 
 and then
 
-```docker run -p 8080:8080 poker --ip 0.0.0.0```
+```docker run -p 8080:8080 poker```
 
 Note: in this case, you must go to your actual ip address in the browser, since localhost won't work with the docker container.
