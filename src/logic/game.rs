@@ -10,11 +10,11 @@ use crate::hub::GameHub;
 
 use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{cmp, iter, sync::Arc, thread, time};
+use std::{cmp, fmt, iter, sync::Arc, thread, time};
 
 use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 enum Street {
     Preflop,
     Flop,
@@ -23,6 +23,21 @@ enum Street {
     ShowDown,
 }
 
+impl fmt::Display for Street {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	let output = match self {
+	    Street::Preflop => "preflop".to_owned(),
+	    Street::Flop => "flop".to_owned(),
+	    Street::Turn => "turn".to_owned(),
+	    Street::River => "river".to_owned(),
+	    Street::ShowDown => "showdown".to_owned(),
+	};
+        write!(f, "{}", output)
+    }
+}
+
+			
 /// A pot keeps track of the total money, and which player (indices) contributed
 /// A game hand can have multiple pots, when players go all-in, and betting continues
 #[derive(Debug)]
@@ -180,7 +195,8 @@ impl PotManager {
 struct GameHand {
     street: Street,
     pot_manager: PotManager,
-    total_contributions: [u32; 9], // how much a player contributed to the pot during the whole hand
+    street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
+    current_bet: u32, // the current street bet at any moment
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -191,7 +207,8 @@ impl GameHand {
         GameHand {
             street: Street::Preflop,
             pot_manager: PotManager::new(),
-            total_contributions: [0; 9],
+            street_contributions: HashMap::new(),
+	    current_bet: 0,
             flop: None,
             turn: None,
             river: None,
@@ -276,8 +293,8 @@ impl Game {
         }
     }
 
-    fn send_game_state(&self, gamehand_opt: Option<&GameHand>) {
-	let mut state_message = self.get_game_state_json(gamehand_opt);
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, index_to_act_opt: Option<usize>) {
+	let mut state_message = self.get_game_state_json(gamehand_opt, index_to_act_opt);
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
@@ -303,7 +320,11 @@ impl Game {
     }
     
     /// returns the game state as a json-String, for sending to the front-end
-    fn get_game_state_json(&self, gamehand_opt: Option<&GameHand>) -> json::JsonValue {
+    fn get_game_state_json(
+	&self,
+	gamehand_opt: Option<&GameHand>,
+	index_to_act_opt: Option<usize>,
+    ) -> json::JsonValue {
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
             name: self.name.to_owned(),
@@ -332,6 +353,17 @@ impl Game {
 		if let Some(last_action) = player.last_action {
                     player_info["last_action"] = last_action.to_string().into();
 		}
+		if let Some(gamehand) = gamehand_opt {
+		    for (street, contributions) in gamehand.street_contributions.iter() {
+			match street {			    
+			    Street::Preflop => {player_info["preflop_cont"] = contributions[i].into()}
+			    Street::Flop => {player_info["flop_cont"] = contributions[i].into()}
+			    Street::Turn => {player_info["turn_cont"] = contributions[i].into()}
+			    Street::River => {player_info["river_cont"] = contributions[i].into()}
+			    Street::ShowDown => (),
+			}
+		    }
+		}
 		player_infos.push(Some(player_info));
             } else {
 		player_infos.push(None);
@@ -340,6 +372,9 @@ impl Game {
 	state_message["players"] = player_infos.into();
 
 	if let Some(gamehand) = gamehand_opt {
+	    state_message["street"] = gamehand.street.to_string().into();
+	    state_message["current_bet"] = gamehand.current_bet.into();
+	    
 	    if let Some(flop) = &gamehand.flop {
 		state_message["flop"] = format!(
 		    "{}{}{}",
@@ -357,6 +392,10 @@ impl Game {
             }
 
             state_message["pots"] = gamehand.pot_manager.simple_repr().into();	    
+	}
+
+	if let Some(index_to_act) = index_to_act_opt {
+	    state_message["index_to_act"] = index_to_act.into();
 	}
 	state_message
     }
@@ -437,6 +476,9 @@ impl Game {
     ) {
         let mut non_human_hands = 0; // we only allow a certain number of hands without a human before ending
         loop {
+	    let between_hands = true;
+            self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
+	    
             self.hands_played += 1;
             if let Some(limit) = hand_limit {
                 if self.hands_played > limit {
@@ -477,8 +519,6 @@ impl Game {
                     .find_next_button()
                     .expect("we could not find a valid button index!");
             }
-	    let between_hands = true;
-            self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
             // wait for next hand
 	    // this is especially needed when there is only one player in the game
             let wait_duration = time::Duration::from_secs(1);
@@ -554,7 +594,7 @@ impl Game {
                     match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining game at index: {}", index);
-			    self.send_game_state(gamehand);
+			    self.send_game_state(gamehand, None);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -770,8 +810,9 @@ impl Game {
     }
 	
     fn transition(&mut self, gamehand: &mut GameHand) {
-        let pause_duration = time::Duration::from_secs(2);
+        let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
+	gamehand.current_bet = 0;
         match gamehand.street {
             Street::Preflop => {
                 gamehand.street = Street::Flop;
@@ -805,7 +846,7 @@ impl Game {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
-	self.send_game_state(Some(gamehand));	
+	self.send_game_state(Some(gamehand), None);	
     }
 
     fn deal_hands(&mut self) {
@@ -1049,7 +1090,7 @@ impl Game {
             }
         }
 
-	self.send_game_state(Some(&gamehand));	
+	self.send_game_state(Some(&gamehand), None);	
         self.deck.shuffle();
         self.deal_hands();
 
@@ -1096,12 +1137,6 @@ impl Game {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         gamehand: &mut GameHand,
     ) -> bool {
-        let mut current_bet: u32 = 0;
-        // each index keeps track of that players' contribution this street
-        let mut cumulative_bets = vec![0; self.players.len()];
-
-        let starting_idx = self.get_starting_idx(); // which player starts the betting
-
         // if a player is still active but has no remaining money (i.e. is all-in),
         let mut num_all_in = self
             .players
@@ -1131,11 +1166,9 @@ impl Game {
 
         // once every player is either all-in or settled, then we move to the next street
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
-
         println!("num active players = {}", num_active);
-        //PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
-        println!("player at index {} starts the betting", starting_idx);
+        //println!("player at index {} starts the betting", starting_idx);
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
             PlayerConfig::send_group_message(
@@ -1143,13 +1176,25 @@ impl Game {
                 &self.player_ids_to_configs,
             );
         }
+
+        // each index keeps track of that players' contribution this street
+        //let mut cumulative_bets = [0; 9];
+	// attach the cumulative bets from this street to the game hand map
+	//gamehand.street_contributions.insert(gamehand.street, cumulative_bets);	
+	
+        let starting_idx = self.get_starting_idx(); // which player starts the betting
+
+        gamehand.street_contributions.insert(gamehand.street, [0;9]);
+	
+	let mut hand_over = false;	
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
-                return true;
+		hand_over = true;
+                break;
             }
             if num_settled + num_all_in == num_active {
                 println!(
@@ -1157,7 +1202,7 @@ impl Game {
                     num_settled
                 );
                 // end the street and indicate to the caller that the hand is going to the next street
-                return false;
+                break;
             }
 
             if self.players[i].is_none() {
@@ -1165,17 +1210,18 @@ impl Game {
                 continue;
             }
 
+	    self.send_game_state(Some(&gamehand), Some(i));
+	    
             // we clone() the current player so that we can use its information
             // while also possibly updating players (if a player leaves or joins the game in handle_meta_actions)
             // if we handle_meta_actions BEFORE accessing the current player, then we will have to wait
             // a long time between user messages, which is a worse user experience
             // the Player struct is not super heavy to clone.
-            let player = self.players[i].clone().unwrap();
-            let player_cumulative = cumulative_bets[i];
-            println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+            let player = self.players[i].clone().unwrap();	   
+	    
+            println!("Current pot = {:?}, Current size of the bet = {:?}",
 		     gamehand.pot_manager,
-		     current_bet,
-		     player_cumulative);
+		     gamehand.current_bet);
             println!("Player = {:?}, i = {}", player.id, i);
             if !(player.is_active && player.money > 0) {
                 continue;
@@ -1187,19 +1233,14 @@ impl Game {
                 "Player who left".to_string()
             };
 
-            let message = object! {
-            msg_type: "player_to_act".to_owned(),
-            index: i,
-            player_name: name.clone(),
-            };
-
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
+            let player_cumulative = gamehand
+		.street_contributions
+		.get(&gamehand.street).unwrap()[i];
+	    
             let action = self.get_and_validate_action(
                 incoming_actions,
                 incoming_meta_actions,
                 &player,
-                current_bet,
                 player_cumulative,
                 gamehand,
             );
@@ -1210,6 +1251,8 @@ impl Game {
             player_name: name
             };
 
+	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
+	    
             // now that we have gotten the current player's action and handled
             // any meta actions, we are free to respond and mutate the player
             // so we re-borrow it as mutable
@@ -1219,11 +1262,10 @@ impl Game {
                 PlayerAction::PostSmallBlind(amount) => {
                     message["action"] = "small blind".into();
                     message["amount"] = amount.into();
-                    cumulative_bets[i] += amount;
-                    gamehand.total_contributions[i] += amount;
+                    current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
-                    current_bet = self.small_blind;
+                    gamehand.current_bet = self.small_blind;
                     let all_in = if player.is_all_in() {
                         num_all_in += 1;
                         true
@@ -1235,11 +1277,10 @@ impl Game {
                 PlayerAction::PostBigBlind(amount) => {
                     message["action"] = "big blind".into();
                     message["amount"] = amount.into();
-                    cumulative_bets[i] += amount;
-                    gamehand.total_contributions[i] += amount;
+                    current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
-                    current_bet = self.big_blind;
+                    gamehand.current_bet = self.big_blind;
                     let all_in = if player.is_all_in() {
                         num_all_in += 1;
                         true
@@ -1261,7 +1302,7 @@ impl Game {
                 }
                 PlayerAction::Call => {
                     message["action"] = "call".into();
-                    let difference = current_bet - player_cumulative;
+                    let difference = gamehand.current_bet - player_cumulative;
                     let (amount, all_in) = if difference >= player.money {
                         println!("you have to put in the rest of your chips");
                         num_all_in += 1;
@@ -1274,8 +1315,7 @@ impl Game {
                     gamehand
                         .pot_manager
                         .contribute(player.id, amount, all_in);
-                    cumulative_bets[i] += amount;
-                    gamehand.total_contributions[i] += amount;
+                    current_contributions[i] += amount;
                     player.money -= amount;
 		    
                 }
@@ -1283,10 +1323,9 @@ impl Game {
                     let difference = new_bet - player_cumulative;
                     println!("difference = {}", difference);
                     player.money -= difference;
-                    current_bet = new_bet;
-                    cumulative_bets[i] += difference;
+                    gamehand.current_bet = new_bet;
+                    current_contributions[i] += difference;
                     println!("sup {:?}", player);
-                    gamehand.total_contributions[i] += difference;
                     let all_in = if player.is_all_in() {
                         println!("Just bet the rest of our money!");
                         num_all_in += 1;
@@ -1303,9 +1342,6 @@ impl Game {
                     message["amount"] = new_bet.into();
                 }
             }
-            message["street_contributions"] = cumulative_bets[i].into();
-            message["current_bet"] = current_bet.into();
-
             println!("{}", message.dump());
             PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
 
@@ -1326,9 +1362,8 @@ impl Game {
                     }
                 }
             }
-	    self.send_game_state(Some(&gamehand));		    
-        }
-        true // we can't actually get to this line
+        };
+	hand_over
     }
 
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
@@ -1372,9 +1407,8 @@ impl Game {
         incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         player: &Player,
-        current_bet: u32,
         player_cumulative: u32,
-        gamehand: &mut GameHand,
+        gamehand: &GameHand,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -1384,18 +1418,18 @@ impl Game {
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
 
-        if gamehand.street == Street::Preflop && current_bet == 0 {
+        if gamehand.street == Street::Preflop && gamehand.current_bet == 0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));
-        } else if gamehand.street == Street::Preflop && current_bet == self.small_blind {
+        } else if gamehand.street == Street::Preflop && gamehand.current_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
         }
-        let prompt = if current_bet > player_cumulative {
-            let diff = current_bet - player_cumulative;
+        let prompt = if gamehand.current_bet > player_cumulative {
+            let diff = gamehand.current_bet - player_cumulative;
             format!("Enter action ({} to call): ", diff)
         } else {
-            format!("Enter action (current bet = {}): ", current_bet)
+            format!("Enter action (current bet = {}): ", gamehand.current_bet)
         };
         let message = object! {
             msg_type: "prompt".to_owned(),
@@ -1411,7 +1445,7 @@ impl Game {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;
-        while attempts < 10000 && action.is_none() {
+        while attempts < 60 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
@@ -1443,7 +1477,7 @@ impl Game {
                 }
 
                 Some(PlayerAction::Fold) => {
-                    if current_bet <= player_cumulative {
+                    if gamehand.current_bet <= player_cumulative {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
@@ -1465,7 +1499,7 @@ impl Game {
                 }
                 Some(PlayerAction::Check) => {
                     //println!("Player checks!");
-                    if current_bet > player_cumulative {
+                    if gamehand.current_bet > player_cumulative {
                         // if the current bet is higher than this player's bet
                         if player.human_controlled {
                             let message = json::object! {
@@ -1484,8 +1518,8 @@ impl Game {
                     action = Some(PlayerAction::Check);
                 }
                 Some(PlayerAction::Call) => {
-                    if current_bet <= player_cumulative {
-                        if current_bet != 0 {
+                    if gamehand.current_bet <= player_cumulative {
+                        if gamehand.current_bet != 0 {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
@@ -1505,7 +1539,7 @@ impl Game {
                     action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
-                    if current_bet < player_cumulative {
+                    if gamehand.current_bet < player_cumulative {
                         // will this case happen?
                         println!("this should not happen!");
                         continue;
@@ -1533,7 +1567,7 @@ impl Game {
                         );
                         continue;
                     }
-                    if new_bet <= current_bet {
+                    if new_bet <= gamehand.current_bet {
                         println!("new bet must be larger than current");
                         let message = json::object! {
                             msg_type: "error".to_owned(),
