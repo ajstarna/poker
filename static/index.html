@@ -264,34 +264,57 @@
 			8: [width - 360, height - 180],
 		};
 
+		function updateBetSlider(gameState) {
+			let yourIndex = gameState.your_index;
+			let player = gameState.players[yourIndex];
 
-		function drawEverything(game_state) {
+			let minBet = 0;
+			let maxBet = 0;
+
+			if (player) {
+				maxBet = player.money;
+			}
+
+			if (gameState.street == "preflop") {
+				minBet = 2 * gameState.big_blind;
+			} else {
+				minBet = gameState.current_bet;
+			}
+
+			$betSlider.min = minBet;
+			$betSlider.value = minBet;
+			$betSlider.max = maxBet;
+
+			$betSize.value = minBet;
+		}
+
+		function drawEverything(gameState) {
 			// this is called after every change of state to re-render the entire UI.
 			drawTable(context, width, height); // Draws the background and the table
 
-			for (let i = 0; i < game_state.max_players; i++) {
-				let playerState = game_state.players[i];
+			for (let i = 0; i < gameState.max_players; i++) {
+				let playerState = gameState.players[i];
 
 				if (playerState == null) {
 					continue;
 				}
 
-				let mapped_index = (playerState.index - game_state.your_index + 9) % 9;
+				let mapped_index = (playerState.index - gameState.your_index + 9) % 9;
 				// Get player position (x, y)
 				let position = mappedIndexToPlayerPosition[mapped_index];
 				let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
 				// Draw player
-				let is_players_turn_to_act = game_state.index_to_act == playerState.index;
+				let is_players_turn_to_act = gameState.index_to_act == playerState.index;
 
 				let street_contributions = 0;
 
-				if (game_state.street == "preflop") {
+				if (gameState.street == "preflop") {
 					street_contributions = playerState.preflop_cont;
-				} else if (game_state.street == "flop") {
+				} else if (gameState.street == "flop") {
 					street_contributions = playerState.flop_cont;
-				} else if (game_state.street == "turn") {
+				} else if (gameState.street == "turn") {
 					street_contributions = playerState.turn_cont;
-				} else if (game_state.street == "river") {
+				} else if (gameState.street == "river") {
 					street_contributions = playerState.river_cont;
 				}
 
@@ -306,10 +329,10 @@
 				});
 
 				// If this is the player then show the player their cards
-				if ("hole_cards" in game_state &&
-					game_state.hole_cards != null &&
-					playerState.index == game_state.your_index) {
-					let cards = game_state.hole_cards;
+				if ("hole_cards" in gameState &&
+					gameState.hole_cards != null &&
+					playerState.index == gameState.your_index) {
+					let cards = gameState.hole_cards;
 
 					var chars = cards.split("");
 					player.giveCards(
@@ -322,7 +345,7 @@
 				// Draw player chips
 				player.drawChips(context, chip_position);
 
-				if (game_state.button_idx == playerState.index) {
+				if (gameState.button_idx == playerState.index) {
 					// Draw Button
 					let btn_position = mappedIndexToButtonPosition[mapped_index];
 					context.fillStyle = "white";
@@ -355,8 +378,8 @@
 			}
 
 			// table cards
-			if ("flop" in game_state) {
-				const chars = game_state.flop.split("");
+			if ("flop" in gameState) {
+				const chars = gameState.flop.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 50,
@@ -379,8 +402,8 @@
 					chars[5]
 				);
 			}
-			if ("turn" in game_state) {
-				const chars = game_state.turn.split("");
+			if ("turn" in gameState) {
+				const chars = gameState.turn.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 230,
@@ -389,8 +412,8 @@
 					chars[1]
 				);
 			}
-			if ("river" in game_state) {
-				const chars = game_state.river.split("");
+			if ("river" in gameState) {
+				const chars = gameState.river.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 290,
@@ -401,19 +424,19 @@
 			}
 
 			// Draw pots
-			if ("pots" in game_state) {
+			if ("pots" in gameState) {
 				context.font = "bold 18px arial";
 				context.textAlign = "start";
 				context.fillStyle = "white";
-				context.fillText("Pot(s): " + game_state.pots, width / 2 - 40, height / 2 + 80);
+				context.fillText("Pot(s): " + gameState.pots, width / 2 - 40, height / 2 + 80);
 			}
 
-			if ("current_bet" in game_state) {
+			if ("current_bet" in gameState) {
 				context.font = "bold 18px arial";
 				context.textAlign = "start";
 				context.fillStyle = "white";
 				context.fillText(
-					"Current bet: " + game_state.current_bet,
+					"Current bet: " + gameState.current_bet,
 					width / 2 - 40,
 					height / 2 + 110
 				);
@@ -467,6 +490,7 @@
 					console.log("hello: " + JSON.stringify(msg));
 					if (msg.msg_type == "game_state") {
 						lastGameState = msg;
+						updateBetSlider(msg);
 						drawEverything(msg);
 					} else if (msg.msg_type == "joined_game") {
 						showTable();
