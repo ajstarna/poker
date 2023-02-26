@@ -194,6 +194,8 @@
 		var width = canvas.width;
 		var height = canvas.height;
 
+		let lastGameState = null;
+
 		const $status = document.querySelector("#status");
 		const $lobbyMenu = document.getElementById("lobby_menu");
 
@@ -218,11 +220,11 @@
 		const $tableId = document.getElementById("tableId");
 		const $tableName = document.getElementById("table_name");
 		const $tableControls = document.getElementById("table_controls");
-		$tableControls.style.display = "block";
 		const $betSlider = document.getElementById("betSizeSlider");
 		const $betSize = document.getElementById("betSize");
 
 		$betSize.value = $betSlider.value;
+
 
 		// this gives us the position of UI for a given MAPPED index
 		// (e.g. the main player always maps to index 0)
@@ -436,6 +438,8 @@
 			$gameMenu.style.display = "none";
 			$tableControls.style.display = "none";
 			$lobbyMenu.style.display = "block";
+
+			lastGameState = null;
 		}
 
 		function connect() {
@@ -462,6 +466,7 @@
 				if (msg != null) {
 					console.log("hello: " + JSON.stringify(msg));
 					if (msg.msg_type == "game_state") {
+						lastGameState = msg;
 						drawEverything(msg);
 					} else if (msg.msg_type == "joined_game") {
 						showTable();
@@ -508,7 +513,7 @@
 						showTable();
 						log(ev.data, "message");
 					} else if (msg.msg_type == "name_changed") {
-						let output = "You have changed your name to " + msg.new_name
+						let output = "You have changed your name to " + msg.new_name;
 						log(output, "message");
 					} else if (msg.msg_type == "chat") {
 						let output = msg.player_name + ": " + msg.text
@@ -521,6 +526,7 @@
 						$publicTableList.innerHTML = tables;
 						log(ev.data, "message");
 					} else if (msg.msg_type == "error") {
+						alert(msg.error + ": " + msg.reason);
 						log(msg.error + ": " + msg.reason, "message");
 					} else if (msg.msg_type == "help_message") {
 						log("Available admin commands:", "message");
@@ -717,6 +723,27 @@
 			log("Sending: " + JSON.stringify(msg));
 			socket.send(JSON.stringify(msg));
 		};
+
+		window.onresize = function (event) {
+			let newWidth = window.innerWidth;
+			let newHeight = window.innerHeight - 250;
+
+			let ratio = 2.3;
+			let newRatio = newWidth / newHeight;
+
+			if (newRatio > ratio) {
+				canvas.style = 'height: ' + (window.innerHeight - 250).toString() + 'px';
+			} else {
+				canvas.style = 'width: 100%';
+			}
+
+			if (lastGameState) {
+				drawEverything(lastGameState);
+			} else {
+				drawTable(context, width, height);
+			}
+		}
+
 
 		connect();
 		updateConnectionStatus();
