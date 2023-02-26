@@ -196,6 +196,7 @@
 
 		const $status = document.querySelector("#status");
 		const $lobbyMenu = document.getElementById("lobby_menu");
+
 		// Create Game
 		const $playerLimitSlider = document.getElementById("player_limit_slider");
 		const $playerLimitValue = document.getElementById("player_limit_value");
@@ -222,24 +223,6 @@
 		const $betSize = document.getElementById("betSize");
 
 		$betSize.value = $betSlider.value;
-
-		var hole = "";
-		var flop = "";
-		var turn = "";
-		var river = "";
-		var pots = null;
-		var currentBet = null;
-		var bigBlind = null;
-
-		var buttonIdx = 0; // this will move around
-		var yourIdx; // the position of players on the UI depends on your index
-		var toActIdx; // whose turn is it to act?
-		var playerToAct = "";
-
-		var playerAtTable = false;
-
-		// from mappedIndex to the latest action info for that player
-		var playerStates = {};
 
 		// this gives us the position of UI for a given MAPPED index
 		// (e.g. the main player always maps to index 0)
@@ -279,75 +262,65 @@
 			8: [width - 360, height - 180],
 		};
 
-		function init() {
-			hole = "";
-			flop = "";
-			turn = "";
-			river = "";
-			pots = null;
-			currentBet = null;
-			bigBlind = null;
 
-			buttonIdx = 0;
-			yourIdx = 0;
-			toActIdx = 0;
-			playerToAct = "";
-
-			playerAtTable = false;
-
-			playerStates = {};
-		}
-
-		function drawPots(ctx) {
-			// eventually we might want to draw something visual here?
-			if (pots != null) {
-				ctx.font = "bold 18px arial";
-				ctx.textAlign = "start";
-				ctx.fillStyle = "white";
-				ctx.fillText("Pot(s): " + pots, width / 2 - 40, height / 2 + 80);
-			}
-			if (currentBet != null) {
-				ctx.font = "bold 18px arial";
-				ctx.textAlign = "start";
-				ctx.fillStyle = "white";
-				ctx.fillText(
-					"Current bet: " + currentBet,
-					width / 2 - 40,
-					height / 2 + 110
-				);
-			}
-		}
-
-		function drawToAct(ctx) {
-			if (playerToAct != "") {
-				ctx.font = "bold 18px arial";
-				ctx.textAlign = "start";
-				ctx.fillStyle = "white";
-				ctx.fillText(
-					playerToAct + "'s turn to act!",
-					width / 2 - 40,
-					height / 2 + 140
-				);
-			}
-		}
-
-		function drawEverything() {
+		function drawEverything(game_state) {
 			// this is called after every change of state to re-render the entire UI.
 			drawTable(context, width, height); // Draws the background and the table
-			for (var mapped_index in playerStates) {
-				// Get player object
-				let player = playerStates[mapped_index];
+
+			for (let i = 0; i < game_state.max_players; i++) {
+				let playerState = game_state.players[i];
+
+				if (playerState == null) {
+					continue;
+				}
+
+				let mapped_index = (playerState.index - game_state.your_index + 9) % 9;
 				// Get player position (x, y)
 				let position = mappedIndexToPlayerPosition[mapped_index];
 				let chip_position = mappedIndexToPlayerChipPosition[mapped_index];
 				// Draw player
-				let is_players_turn_to_act = toActIdx == player.index;
-				player.is_players_turn_to_act = is_players_turn_to_act;
+				let is_players_turn_to_act = game_state.index_to_act == playerState.index;
+
+				let street_contributions = 0;
+
+				if (game_state.street == "preflop") {
+					street_contributions = playerState.preflop_cont;
+				} else if (game_state.street == "flop") {
+					street_contributions = playerState.flop_cont;
+				} else if (game_state.street == "turn") {
+					street_contributions = playerState.turn_cont;
+				} else if (game_state.street == "river") {
+					street_contributions = playerState.river_cont;
+				}
+
+				let player = new Player({
+					name: playerState.player_name,
+					index: playerState.index,
+					money: playerState.money,
+					action: playerState.last_action,
+					is_players_turn_to_act: is_players_turn_to_act,
+					street_contributions: street_contributions,
+					is_active: playerState.is_active
+				});
+
+				// If this is the player then show the player their cards
+				if ("hole_cards" in game_state &&
+					game_state.hole_cards != null &&
+					playerState.index == game_state.your_index) {
+					let cards = game_state.hole_cards;
+
+					var chars = cards.split("");
+					player.giveCards(
+						new PlayerCard(true, chars[0], chars[1]),
+						new PlayerCard(true, chars[2], chars[3])
+					);
+				}
+
 				player.draw(context, position);
 				// Draw player chips
 				player.drawChips(context, chip_position);
 
-				if (buttonIdx == player.index) {
+				if (game_state.button_idx == playerState.index) {
 					// Draw Button
 					let btn_position = mappedIndexToButtonPosition[mapped_index];
 					context.fillStyle = "white";
@@ -380,8 +353,8 @@
 			}
 
 			// table cards
-			if (flop != "") {
-				const chars = flop.split("");
+			if ("flop" in game_state) {
+				const chars = game_state.flop.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 50,
@@ -404,8 +377,8 @@
 					chars[5]
 				);
 			}
-			if (turn != "") {
-				const chars = turn.split("");
+			if ("turn" in game_state) {
+				const chars = game_state.turn.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 230,
@@ -414,8 +387,8 @@
 					chars[1]
 				);
 			}
-			if (river != "") {
-				const chars = river.split("");
+			if ("river" in game_state) {
+				const chars = game_state.river.split("");
 				drawFrontCard(
 					context,
 					width / 3 + 290,
@@ -425,8 +398,24 @@
 				);
 			}
 
-			drawPots(context);
-			console.log(playerStates);
+			// Draw pots
+			if ("pots" in game_state) {
+				context.font = "bold 18px arial";
+				context.textAlign = "start";
+				context.fillStyle = "white";
+				context.fillText("Pot(s): " + game_state.pots, width / 2 - 40, height / 2 + 80);
+			}
+
+			if ("current_bet" in game_state) {
+				context.font = "bold 18px arial";
+				context.textAlign = "start";
+				context.fillStyle = "white";
+				context.fillText(
+					"Current bet: " + game_state.current_bet,
+					width / 2 - 40,
+					height / 2 + 110
+				);
+			}
 		}
 
 		function log(msg, type = "status") {
@@ -435,42 +424,18 @@
 			$log.scrollTop += 1000;
 		}
 
-		function clearStreet(clear_fold) {
-			// clear everything visually for this street
-			// there should not be an action, contribution, or current bet
-			// go through each player state and set their action to be blank
-			// if clear_fold is true, we also clear "fold", if not, we leave it
-			for (var mapped_index in playerStates) {
-				var latest = playerStates[mapped_index];
-				if (latest.action != "fold" || clear_fold) {
-					latest.action = null;
-				}
-				currentBet = null;
-				latest.street_contributions = null;
-			}
+		function showTable() {
+			// Show Table
+			$gameMenu.style.display = "block";
+			$tableControls.style.display = "block";
+			$lobbyMenu.style.display = "none";
 		}
 
-		function updatePlayer(mapped_index, msg) {
-			// Create new player
-			if (!(mapped_index in playerStates)) {
-				playerStates[mapped_index] = new Player({
-					name: msg.player_name,
-					index: msg.index,
-					money: msg.money,
-				});
-			}
-
-			let player = playerStates[mapped_index];
-			player.name = msg.player_name;
-			player.index = msg.index;
-			player.money = msg.money;
-
-			if ("action" in msg) {
-				player.action = msg.action;
-			}
-
-			player.street_contributions = msg.street_contributions;
-			player.is_active = msg.is_active;
+		function showLobby() {
+			// Show Table
+			$gameMenu.style.display = "none";
+			$tableControls.style.display = "none";
+			$lobbyMenu.style.display = "block";
 		}
 
 		function connect() {
@@ -496,97 +461,28 @@
 				} catch { }
 				if (msg != null) {
 					console.log("hello: " + JSON.stringify(msg));
-					if (msg.msg_type == "joined_game") {
-						playerAtTable = true;
-						yourIdx = msg.index;
+					if (msg.msg_type == "game_state") {
+						drawEverything(msg);
+					} else if (msg.msg_type == "joined_game") {
+						showTable();
 						$tableName.innerHTML = msg.table_name;
 						log(ev.data, "message");
-						$gameMenu.style.display = "block";
-						$tableControls.style.display = "block";
-						$lobbyMenu.style.display = "none";
 					} else if (msg.msg_type == "new_hand") {
 						// Show Table
-						$gameMenu.style.display = "block";
-						$lobbyMenu.style.display = "none";
-						// reset the values for the next hand
-						for (var mapped_index in playerStates) {
-							// Give every player two cards
-							playerStates[mapped_index].giveCards(
-								new PlayerCard(false),
-								new PlayerCard(false)
-							);
-						}
-						hole = "";
-						flop = "";
-						turn = "";
-						river = "";
-						clearStreet(true);
-						// e.g. button_idx = 3
-						buttonIdx = msg.button_index;
+						showTable();
 						log("\n\nPlaying hand " + msg.hand_num, "message");
 					} else if (msg.msg_type == "player_action") {
-						// handle json messages
-						// the mapped_index is where we draw that player on the UI
-						// Our index is always mapped to index 0 (bottom middle)
-						// e.g. If we are index 4, and another player is index 2,
-						// then they map to 7 (i.e. two to our right)
-						// Note: we need to add 9 in the equation because javascript does
-						// modulo wrong for negative numbers lol
-						var mapped_index = (msg.index - yourIdx + 9) % 9;
-						updatePlayer(mapped_index, msg);
-						if (mapped_index == 0) {
-							$betSlider.max = msg.money;
-						}
-						pots = msg.pots;
-						if (msg.action === "big blind") {
-							bigBlind = msg.amount;
-							$betSlider.min = 2 * bigBlind;
-						}
-						currentBet = msg.current_bet;
-						var minBet = currentBet;
-						if (minBet < 2 * bigBlind && flop == "") {
-							minBet = 2 * bigBlind;
-						} else if (minBet < bigBlind) {
-							minBet = bigBlind;
-						}
-
-						$betSlider.min = minBet;
-						$betSlider.value = minBet;
-						$betSize.value = minBet;
-						console.log("setting current bet to now: " + currentBet);
 					} else if (msg.msg_type == "player_info") {
-						var mapped_index = (msg.index - yourIdx + 9) % 9;
-						updatePlayer(mapped_index, msg);
-
-						if (mapped_index == 0) {
-							$betSlider.max = msg.money;
-						}
 					} else if (msg.msg_type == "prompt") {
 						log(msg.prompt, "message");
 					} else if (msg.msg_type == "hole_cards") {
-						hole = msg.hole_cards;
-						var chars = hole.split("");
-						let player = playerStates[0];
-						player.giveCards(
-							new PlayerCard(true, chars[0], chars[1]),
-							new PlayerCard(true, chars[2], chars[3])
-						);
-						log(ev.data, "message"); // TODO remove this log? or good for hand history
 					} else if (msg.msg_type == "flop") {
-						flop = msg.flop;
-						clearStreet(false);
 						log(ev.data, "message");
 					} else if (msg.msg_type == "turn") {
-						turn = msg.turn;
-						clearStreet(false);
 						log(ev.data, "message");
 					} else if (msg.msg_type == "river") {
-						river = msg.river;
-						clearStreet(false);
 						log(ev.data, "message");
 					} else if (msg.msg_type == "player_to_act") {
-						toActIdx = msg.index; // parseInt(ev.data.slice(-1));
-						playerToAct = msg.name;
 					} else if (msg.msg_type == "paying_out") {
 						if (msg.is_showdown) {
 							log("========= SHOWDOWN =========")
@@ -600,8 +496,8 @@
 						log(output2, "message");
 					} else if (msg.msg_type == "left_game") {
 						// Clear game info
-						init();
-						playerAtTable = false;
+						showLobby();
+						drawTable(context, width, height);
 						// Show Lobby
 						$gameMenu.style.display = "none";
 						//$tableControls.style.display = "none";
@@ -609,8 +505,7 @@
 						// have this log for now just for clarity. if the UI is more clear wont need?
 						log("You have left the game and are in the lobby", "message")
 					} else if (msg.msg_type == "created_game") {
-						// TODO: anything needed here?
-						// msg.table_name
+						showTable();
 						log(ev.data, "message");
 					} else if (msg.msg_type == "name_changed") {
 						let output = "You have changed your name to " + msg.new_name
@@ -640,12 +535,6 @@
 				} else {
 					log("SHOULD NOT BE ANY OF THESE", "message")
 					log(ev.data, "message");
-				}
-
-				if (playerAtTable) {
-					drawEverything();
-				} else {
-					drawTable(context, width, height);
 				}
 			};
 
@@ -730,6 +619,8 @@
 		}
 
 		function leaveTable() {
+			showLobby();
+
 			var msg = {}; // build the json to send
 
 			msg["msg_type"] = "leave";
@@ -829,7 +720,7 @@
 
 		connect();
 		updateConnectionStatus();
-		init();
+
 		drawTable(context, width, height);
 	</script>
 </body>
