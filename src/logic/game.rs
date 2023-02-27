@@ -797,7 +797,7 @@ impl Game {
 		}
 		object! {
 		    msg_type: "admin_success".to_owned(),
-		    error: "game_restarted".to_owned(),
+		    updated: "game_restarted".to_owned(),
 		    text: "The game has been restarted to its original state.".to_owned(),
 		}
 	    }
@@ -1226,12 +1226,6 @@ impl Game {
             if !(player.is_active && player.money > 0) {
                 continue;
             }
-            // get the name for messages
-            let name = if let Some(config) = &self.player_ids_to_configs.get(&player.id) {
-                config.name.as_ref().unwrap().clone()
-            } else {
-                "Player who left".to_string()
-            };
 
             let player_cumulative = gamehand
 		.street_contributions
@@ -1245,12 +1239,7 @@ impl Game {
                 gamehand,
             );
 
-            let mut message = object! {
-            msg_type: "player_action".to_owned(),
-            index: i,
-            player_name: name
-            };
-
+	    
 	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
 	    
             // now that we have gotten the current player's action and handled
@@ -1260,8 +1249,6 @@ impl Game {
 	    player.last_action = Some(action);
             match action {
                 PlayerAction::PostSmallBlind(amount) => {
-                    message["action"] = "small blind".into();
-                    message["amount"] = amount.into();
                     current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
@@ -1275,8 +1262,6 @@ impl Game {
                     gamehand.pot_manager.contribute(player.id, amount, all_in);
                 }
                 PlayerAction::PostBigBlind(amount) => {
-                    message["action"] = "big blind".into();
-                    message["amount"] = amount.into();
                     current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
@@ -1292,16 +1277,13 @@ impl Game {
                     // since they still get a chance to act after the small blind
                 }
                 PlayerAction::Fold => {
-                    message["action"] = "fold".into();
                     player.deactivate();
                     num_active -= 1;
                 }
                 PlayerAction::Check => {
-                    message["action"] = "check".into();
                     num_settled += 1;
                 }
                 PlayerAction::Call => {
-                    message["action"] = "call".into();
                     let difference = gamehand.current_bet - player_cumulative;
                     let (amount, all_in) = if difference >= player.money {
                         println!("you have to put in the rest of your chips");
@@ -1311,7 +1293,6 @@ impl Game {
                         num_settled += 1;
 			(difference, false)
                     };
-                    message["amount"] = amount.into();		    
                     gamehand
                         .pot_manager
                         .contribute(player.id, amount, all_in);
@@ -1338,13 +1319,8 @@ impl Game {
                     gamehand
                         .pot_manager
                         .contribute(player.id, difference, all_in);
-                    message["action"] = "bet".into();
-                    message["amount"] = new_bet.into();
                 }
             }
-            println!("{}", message.dump());
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
             // double check at the end of the loop if any players left as a meta-action during the current
             // player's turn. They should no longer be considered as active or all_in
             for player_spot in self.players.iter_mut() {
