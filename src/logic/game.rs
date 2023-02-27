@@ -10,11 +10,11 @@ use crate::hub::GameHub;
 
 use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{cmp, iter, sync::Arc, thread, time};
+use std::{cmp, fmt, iter, sync::Arc, thread, time};
 
 use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 enum Street {
     Preflop,
     Flop,
@@ -23,6 +23,21 @@ enum Street {
     ShowDown,
 }
 
+impl fmt::Display for Street {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	let output = match self {
+	    Street::Preflop => "preflop".to_owned(),
+	    Street::Flop => "flop".to_owned(),
+	    Street::Turn => "turn".to_owned(),
+	    Street::River => "river".to_owned(),
+	    Street::ShowDown => "showdown".to_owned(),
+	};
+        write!(f, "{}", output)
+    }
+}
+
+			
 /// A pot keeps track of the total money, and which player (indices) contributed
 /// A game hand can have multiple pots, when players go all-in, and betting continues
 #[derive(Debug)]
@@ -180,7 +195,8 @@ impl PotManager {
 struct GameHand {
     street: Street,
     pot_manager: PotManager,
-    total_contributions: [u32; 9], // how much a player contributed to the pot during the whole hand
+    street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
+    current_bet: u32, // the current street bet at any moment
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
@@ -191,7 +207,8 @@ impl GameHand {
         GameHand {
             street: Street::Preflop,
             pot_manager: PotManager::new(),
-            total_contributions: [0; 9],
+            street_contributions: HashMap::new(),
+	    current_bet: 0,
             flop: None,
             turn: None,
             river: None,
@@ -276,11 +293,118 @@ impl Game {
         }
     }
 
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, index_to_act_opt: Option<usize>) {
+	let mut state_message = self.get_game_state_json(gamehand_opt, index_to_act_opt);
+	// go through each player, and update the personal information for their message
+	// (i.e. hole cards, player index)
+        for (i, player_spot) in self.players.iter().enumerate() {
+            if let Some(player) = player_spot {
+		state_message["your_index"] = i.into();
+		if player.hole_cards.len() == 2 {
+		    state_message["hole_cards"] = format!("{}{}",
+							  player.hole_cards[0],
+							  player.hole_cards[1])
+			.into();
+		} else {
+		    state_message["hole_cards"] = json::Null;
+		}
+		
+		PlayerConfig::send_specific_message(
+		    &state_message.dump(),
+		    player.id,
+                    &self.player_ids_to_configs,
+        );
+		
+            }
+	}
+    }
+    
+    /// returns the game state as a json-String, for sending to the front-end
+    fn get_game_state_json(
+	&self,
+	gamehand_opt: Option<&GameHand>,
+	index_to_act_opt: Option<usize>,
+    ) -> json::JsonValue {
+        let mut state_message = object! {
+            msg_type: "game_state".to_owned(),
+            name: self.name.to_owned(),
+            max_players: self.max_players,
+            small_blind: self.small_blind,
+            big_blind: self.big_blind,
+            buy_in: self.buy_in,
+            password: self.password.to_owned(),	    
+            button_idx: self.button_idx,
+            hands_played: self.hands_played,
+	};
+
+	// add a list of player infos
+	let mut player_infos = vec![];
+        for (i, player_spot) in self.players.iter().enumerate() {
+            // display the play positions for the front end to consume
+            if let Some(player) = player_spot {
+                let mut player_info = object! {
+                    index: i,
+                };
+                let config = self.player_ids_to_configs.get(&player.id).unwrap();
+                let name = config.name.as_ref().unwrap().clone();
+                player_info["player_name"] = name.into();
+                player_info["money"] = player.money.into();
+                player_info["is_active"] = player.is_active.into();
+		if let Some(last_action) = player.last_action {
+                    player_info["last_action"] = last_action.to_string().into();
+		}
+		if let Some(gamehand) = gamehand_opt {
+		    for (street, contributions) in gamehand.street_contributions.iter() {
+			match street {			    
+			    Street::Preflop => {player_info["preflop_cont"] = contributions[i].into()}
+			    Street::Flop => {player_info["flop_cont"] = contributions[i].into()}
+			    Street::Turn => {player_info["turn_cont"] = contributions[i].into()}
+			    Street::River => {player_info["river_cont"] = contributions[i].into()}
+			    Street::ShowDown => (),
+			}
+		    }
+		}
+		player_infos.push(Some(player_info));
+            } else {
+		player_infos.push(None);
+	    }
+        }
+	state_message["players"] = player_infos.into();
+
+	if let Some(gamehand) = gamehand_opt {
+	    state_message["street"] = gamehand.street.to_string().into();
+	    state_message["current_bet"] = gamehand.current_bet.into();
+	    
+	    if let Some(flop) = &gamehand.flop {
+		state_message["flop"] = format!(
+		    "{}{}{}",
+		    flop[0],
+		    flop[1],
+		    flop[2]
+		)
+		    .into();
+	    }
+	    if let Some(turn) = &gamehand.turn {
+		state_message["turn"] = format!("{}", turn).into();
+            }	
+	    if let Some(river) = &gamehand.river {
+            state_message["river"] = format!("{}", river).into();
+            }
+
+            state_message["pots"] = gamehand.pot_manager.simple_repr().into();	    
+	}
+
+	if let Some(index_to_act) = index_to_act_opt {
+	    state_message["index_to_act"] = index_to_act.into();
+	}
+	state_message
+    }
+	
     /// add a given playerconfig to an empty seat
     /// if the game requires a password, then a matching password must be provided for the user to be added
     /// TODO: eventually we wanmt the player to select an open seat I guess
     /// returns the index of the seat that they joined (if they were able to join)
-    pub fn add_user(
+    fn add_human(
         &mut self,
         player_config: PlayerConfig,
         password: Option<String>,
@@ -299,31 +423,6 @@ impl Game {
         let id = player_config.id; // copy so that we can send the messsage later
         let new_player = Player::new(id, true, self.buy_in);
         let result = self.add_player(player_config, new_player);
-        if let Ok(index) = result {
-            // note: I tried moving this message to either the hub or in handling meta actions,
-            // but this messed up the front end, so I am just moving it back here rather than refactor the front
-            let message = object! {
-            msg_type: "joined_game".to_owned(),
-            index: index,
-            table_name: self.name.clone(),
-            };
-            PlayerConfig::send_specific_message(&message.dump(), id, &self.player_ids_to_configs);
-            for (i, player_spot) in self.players.iter().enumerate() {
-                // display the play positions for the front end to consume
-                if let Some(player) = player_spot {
-                    let mut message = object! {
-                    msg_type: "player_info".to_owned(),
-                    index: i,
-                    };
-                    let config = self.player_ids_to_configs.get(&player.id).unwrap();
-                    let name = config.name.as_ref().unwrap().clone();
-                    message["player_name"] = name.into();
-                    message["money"] = player.money.into();
-                    message["is_active"] = player.is_active.into();
-                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-                }
-            }
-        }
         result
     }
 
@@ -377,6 +476,9 @@ impl Game {
     ) {
         let mut non_human_hands = 0; // we only allow a certain number of hands without a human before ending
         loop {
+	    let between_hands = true;
+            self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
+	    
             self.hands_played += 1;
             if let Some(limit) = hand_limit {
                 if self.hands_played > limit {
@@ -417,8 +519,6 @@ impl Game {
                     .find_next_button()
                     .expect("we could not find a valid button index!");
             }
-	    let between_hands = true;
-            self.handle_meta_actions(&incoming_meta_actions, between_hands);
             // wait for next hand
 	    // this is especially needed when there is only one player in the game
             let wait_duration = time::Duration::from_secs(1);
@@ -465,6 +565,7 @@ impl Game {
 	&mut self,
 	incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
 	between_hands: bool,
+	gamehand: Option<&GameHand>, // if we are between hands, then there won't be a gamehand
     ) {
         let mut meta_actions = incoming_meta_actions.lock().unwrap();
         for _ in 0..meta_actions.len() {
@@ -490,9 +591,10 @@ impl Game {
                         "handling join meta action for {:?} inside game = {:?}",
                         cloned_config.id, &self.name
                     );
-                    match self.add_user(player_config, password) {
+                    match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining game at index: {}", index);
+			    self.send_game_state(gamehand, None);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -513,7 +615,7 @@ impl Game {
                         id, &self.name
                     );
                     if let Some(config) = self.player_ids_to_configs.remove(&id) {
-                        // note: we don't remove  the player from self.players quite yet,
+                        // note: we don't remove the player from self.players quite yet,
                         // we use the lack of the config to indicate to the game during a street
                         // that a player has left. If they were active at the time, this information
                         // needs to be taken into account
@@ -695,7 +797,7 @@ impl Game {
 		}
 		object! {
 		    msg_type: "admin_success".to_owned(),
-		    error: "game_restarted".to_owned(),
+		    updated: "game_restarted".to_owned(),
 		    text: "The game has been restarted to its original state.".to_owned(),
 		}
 	    }
@@ -708,8 +810,9 @@ impl Game {
     }
 	
     fn transition(&mut self, gamehand: &mut GameHand) {
-        let pause_duration = time::Duration::from_secs(2);
+        let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
+	gamehand.current_bet = 0;
         match gamehand.street {
             Street::Preflop => {
                 gamehand.street = Street::Flop;
@@ -718,14 +821,6 @@ impl Game {
                     "\n===========================\nFlop = {:?}\n===========================",
                     gamehand.flop
                 );
-                let message = object! {
-                    msg_type: "flop".to_owned(),
-                            flop: format!("{}{}{}",
-                          gamehand.flop.as_ref().unwrap()[0],
-                          gamehand.flop.as_ref().unwrap()[1],
-                          gamehand.flop.as_ref().unwrap()[2]),
-                };
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
             }
             Street::Flop => {
                 gamehand.street = Street::Turn;
@@ -734,11 +829,6 @@ impl Game {
                     "\n==========================\nTurn = {:?}\n==========================",
                     gamehand.turn
                 );
-                let message = object! {
-                    msg_type: "turn".to_owned(),
-                            turn: format!("{}", gamehand.turn.unwrap())
-                };
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
             }
             Street::Turn => {
                 gamehand.street = Street::River;
@@ -747,11 +837,6 @@ impl Game {
                     "\n==========================\nRiver = {:?}\n==========================",
                     gamehand.river
                 );
-                let message = object! {
-                    msg_type: "river".to_owned(),
-                            river: format!("{}", gamehand.river.unwrap())
-                };
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
             }
             Street::River => {
                 gamehand.street = Street::ShowDown;
@@ -761,6 +846,7 @@ impl Game {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
+	self.send_game_state(Some(gamehand), None);	
     }
 
     fn deal_hands(&mut self) {
@@ -773,15 +859,6 @@ impl Game {
                         panic!("The deck is out of cards somehow?");
                     }
                 }
-                let message = object! {
-                    msg_type: "hole_cards".to_owned(),
-                    hole_cards: format!("{}{}", player.hole_cards[0], player.hole_cards[1]),
-                };
-                PlayerConfig::send_specific_message(
-                    &message.dump(),
-                    player.id,
-                    &self.player_ids_to_configs,
-                );
             }
         }
     }
@@ -1012,22 +1089,8 @@ impl Game {
                 player.is_active = true;
             }
         }
-        for (i, player_spot) in self.players.iter().enumerate() {
-            // display the play positions for the front end to consume
-            if let Some(player) = player_spot {
-                let mut message = object! {
-                    msg_type: "player_info".to_owned(),
-                    index: i
-                };
-                let config = self.player_ids_to_configs.get(&player.id).unwrap();
-                let name = config.name.as_ref().unwrap().clone();
-                message["player_name"] = name.into();
-                message["money"] = player.money.into();
-                message["is_active"] = player.is_active.into();
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-            }
-        }
 
+	self.send_game_state(Some(&gamehand), None);	
         self.deck.shuffle();
         self.deal_hands();
 
@@ -1035,15 +1098,17 @@ impl Game {
 
         while gamehand.street != Street::ShowDown {
             // pause for a second for dramatic effect heh
-            let pause_duration = time::Duration::from_secs(2);
+            let pause_duration = time::Duration::from_secs(1);
             thread::sleep(pause_duration);
             let finished =
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
+	    // after each street, set the player's last action to None again
+            for player in self.players.iter_mut().flatten() {
+		player.last_action = None;
+            }
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
-                // TODO is a msg here needed?
-                //PlayerConfig::send_group_message("\nGame is ending before showdown!", player_ids_to_configs);
                 break;
             } else {
                 // otherwise we move to the next street
@@ -1072,12 +1137,6 @@ impl Game {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         gamehand: &mut GameHand,
     ) -> bool {
-        let mut current_bet: u32 = 0;
-        // each index keeps track of that players' contribution this street
-        let mut cumulative_bets = vec![0; self.players.len()];
-
-        let starting_idx = self.get_starting_idx(); // which player starts the betting
-
         // if a player is still active but has no remaining money (i.e. is all-in),
         let mut num_all_in = self
             .players
@@ -1107,11 +1166,9 @@ impl Game {
 
         // once every player is either all-in or settled, then we move to the next street
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
-
         println!("num active players = {}", num_active);
-        //PlayerConfig::send_group_message(&format!("num active players = {}", num_active), player_ids_to_configs);
 
-        println!("player at index {} starts the betting", starting_idx);
+        //println!("player at index {} starts the betting", starting_idx);
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
             PlayerConfig::send_group_message(
@@ -1119,13 +1176,25 @@ impl Game {
                 &self.player_ids_to_configs,
             );
         }
+
+        // each index keeps track of that players' contribution this street
+        //let mut cumulative_bets = [0; 9];
+	// attach the cumulative bets from this street to the game hand map
+	//gamehand.street_contributions.insert(gamehand.street, cumulative_bets);	
+	
+        let starting_idx = self.get_starting_idx(); // which player starts the betting
+
+        gamehand.street_contributions.insert(gamehand.street, [0;9]);
+	
+	let mut hand_over = false;	
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
-                return true;
+		hand_over = true;
+                break;
             }
             if num_settled + num_all_in == num_active {
                 println!(
@@ -1133,7 +1202,7 @@ impl Game {
                     num_settled
                 );
                 // end the street and indicate to the caller that the hand is going to the next street
-                return false;
+                break;
             }
 
             if self.players[i].is_none() {
@@ -1141,64 +1210,49 @@ impl Game {
                 continue;
             }
 
+	    self.send_game_state(Some(&gamehand), Some(i));
+	    
             // we clone() the current player so that we can use its information
             // while also possibly updating players (if a player leaves or joins the game in handle_meta_actions)
             // if we handle_meta_actions BEFORE accessing the current player, then we will have to wait
             // a long time between user messages, which is a worse user experience
             // the Player struct is not super heavy to clone.
-            let player = self.players[i].clone().unwrap();
-            let player_cumulative = cumulative_bets[i];
-            println!("Current pot = {:?}, Current size of the bet = {:?}, and this player has put in {:?} so far",
+            let player = self.players[i].clone().unwrap();	   
+	    
+            println!("Current pot = {:?}, Current size of the bet = {:?}",
 		     gamehand.pot_manager,
-		     current_bet,
-		     player_cumulative);
+		     gamehand.current_bet);
             println!("Player = {:?}, i = {}", player.id, i);
             if !(player.is_active && player.money > 0) {
                 continue;
             }
-            // get the name for messages
-            let name = if let Some(config) = &self.player_ids_to_configs.get(&player.id) {
-                config.name.as_ref().unwrap().clone()
-            } else {
-                "Player who left".to_string()
-            };
 
-            let message = object! {
-            msg_type: "player_to_act".to_owned(),
-            index: i,
-            player_name: name.clone(),
-            };
-
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
+            let player_cumulative = gamehand
+		.street_contributions
+		.get(&gamehand.street).unwrap()[i];
+	    
             let action = self.get_and_validate_action(
                 incoming_actions,
                 incoming_meta_actions,
                 &player,
-                current_bet,
                 player_cumulative,
                 gamehand,
             );
 
-            let mut message = object! {
-            msg_type: "player_action".to_owned(),
-            index: i,
-            player_name: name
-            };
-
+	    
+	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
+	    
             // now that we have gotten the current player's action and handled
             // any meta actions, we are free to respond and mutate the player
             // so we re-borrow it as mutable
             let player = self.players[i].as_mut().unwrap();
+	    player.last_action = Some(action);
             match action {
                 PlayerAction::PostSmallBlind(amount) => {
-                    message["action"] = "small blind".into();
-                    message["amount"] = amount.into();
-                    cumulative_bets[i] += amount;
-                    gamehand.total_contributions[i] += amount;
+                    current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
-                    current_bet = self.small_blind;
+                    gamehand.current_bet = self.small_blind;
                     let all_in = if player.is_all_in() {
                         num_all_in += 1;
                         true
@@ -1208,13 +1262,10 @@ impl Game {
                     gamehand.pot_manager.contribute(player.id, amount, all_in);
                 }
                 PlayerAction::PostBigBlind(amount) => {
-                    message["action"] = "big blind".into();
-                    message["amount"] = amount.into();
-                    cumulative_bets[i] += amount;
-                    gamehand.total_contributions[i] += amount;
+                    current_contributions[i] += amount;
                     player.money -= amount;
                     // regardless if the player couldn't afford it, the new street bet is the big blind
-                    current_bet = self.big_blind;
+                    gamehand.current_bet = self.big_blind;
                     let all_in = if player.is_all_in() {
                         num_all_in += 1;
                         true
@@ -1226,46 +1277,36 @@ impl Game {
                     // since they still get a chance to act after the small blind
                 }
                 PlayerAction::Fold => {
-                    message["action"] = "fold".into();
                     player.deactivate();
                     num_active -= 1;
                 }
                 PlayerAction::Check => {
-                    message["action"] = "check".into();
                     num_settled += 1;
                 }
                 PlayerAction::Call => {
-                    message["action"] = "call".into();
-                    let difference = current_bet - player_cumulative;
-                    if difference >= player.money {
+                    let difference = gamehand.current_bet - player_cumulative;
+                    let (amount, all_in) = if difference >= player.money {
                         println!("you have to put in the rest of your chips");
-                        gamehand
-                            .pot_manager
-                            .contribute(player.id, player.money, true);
-                        cumulative_bets[i] += player.money;
-                        gamehand.total_contributions[i] += player.money;
-                        message["amount"] = player.money.into();
-                        player.money = 0;
                         num_all_in += 1;
+			(player.money, true)
                     } else {
-                        gamehand
-                            .pot_manager
-                            .contribute(player.id, difference, false);
-                        cumulative_bets[i] += difference;
-                        gamehand.total_contributions[i] += difference;
-                        message["amount"] = difference.into();
-                        player.money -= difference;
                         num_settled += 1;
-                    }
+			(difference, false)
+                    };
+                    gamehand
+                        .pot_manager
+                        .contribute(player.id, amount, all_in);
+                    current_contributions[i] += amount;
+                    player.money -= amount;
+		    
                 }
                 PlayerAction::Bet(new_bet) => {
                     let difference = new_bet - player_cumulative;
                     println!("difference = {}", difference);
                     player.money -= difference;
-                    current_bet = new_bet;
-                    cumulative_bets[i] += difference;
+                    gamehand.current_bet = new_bet;
+                    current_contributions[i] += difference;
                     println!("sup {:?}", player);
-                    gamehand.total_contributions[i] += difference;
                     let all_in = if player.is_all_in() {
                         println!("Just bet the rest of our money!");
                         num_all_in += 1;
@@ -1278,19 +1319,8 @@ impl Game {
                     gamehand
                         .pot_manager
                         .contribute(player.id, difference, all_in);
-                    message["action"] = "bet".into();
-                    message["amount"] = new_bet.into();
                 }
             }
-            message["money"] = player.money.into();
-            message["pots"] = gamehand.pot_manager.simple_repr().into();
-            message["is_active"] = player.is_active.into();
-            message["street_contributions"] = cumulative_bets[i].into();
-            message["current_bet"] = current_bet.into();
-
-            println!("{}", message.dump());
-            PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-
             // double check at the end of the loop if any players left as a meta-action during the current
             // player's turn. They should no longer be considered as active or all_in
             for player_spot in self.players.iter_mut() {
@@ -1308,8 +1338,8 @@ impl Game {
                     }
                 }
             }
-        }
-        true // we can't actually get to this line
+        };
+	hand_over
     }
 
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
@@ -1321,7 +1351,6 @@ impl Game {
     ) -> Option<PlayerAction> {
         if player.human_controlled {
             let mut actions = incoming_actions.lock().unwrap();
-            println!("incoming_actions = {:?}", actions);
             if let Some(action) = actions.get_mut(&player.id) {
                 println!("Player: {:?} has action {:?}", player.id, action);
                 let value = *action;
@@ -1354,9 +1383,8 @@ impl Game {
         incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         player: &Player,
-        current_bet: u32,
         player_cumulative: u32,
-        gamehand: &mut GameHand,
+        gamehand: &GameHand,
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -1366,18 +1394,18 @@ impl Game {
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
 
-        if gamehand.street == Street::Preflop && current_bet == 0 {
+        if gamehand.street == Street::Preflop && gamehand.current_bet == 0 {
             // collect small blind!
             return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));
-        } else if gamehand.street == Street::Preflop && current_bet == self.small_blind {
+        } else if gamehand.street == Street::Preflop && gamehand.current_bet == self.small_blind {
             // collect big blind!
             return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
         }
-        let prompt = if current_bet > player_cumulative {
-            let diff = current_bet - player_cumulative;
+        let prompt = if gamehand.current_bet > player_cumulative {
+            let diff = gamehand.current_bet - player_cumulative;
             format!("Enter action ({} to call): ", diff)
         } else {
-            format!("Enter action (current bet = {}): ", current_bet)
+            format!("Enter action (current bet = {}): ", gamehand.current_bet)
         };
         let message = object! {
             msg_type: "prompt".to_owned(),
@@ -1393,11 +1421,11 @@ impl Game {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;
-        while attempts < 10000 && action.is_none() {
+        while attempts < 60 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
-            self.handle_meta_actions(&incoming_meta_actions, between_hands);
+            self.handle_meta_actions(&incoming_meta_actions, between_hands, Some(gamehand));
             if player.human_controlled {
                 // we don't need to count the attempts at getting a response from a computer
                 // TODO: the computer can give a better than random guess at a move
@@ -1425,7 +1453,7 @@ impl Game {
                 }
 
                 Some(PlayerAction::Fold) => {
-                    if current_bet <= player_cumulative {
+                    if gamehand.current_bet <= player_cumulative {
                         // if the player has put in enough then no sense folding
                         if player.human_controlled {
                             println!("you said fold but we will let you check!");
@@ -1447,7 +1475,7 @@ impl Game {
                 }
                 Some(PlayerAction::Check) => {
                     //println!("Player checks!");
-                    if current_bet > player_cumulative {
+                    if gamehand.current_bet > player_cumulative {
                         // if the current bet is higher than this player's bet
                         if player.human_controlled {
                             let message = json::object! {
@@ -1466,8 +1494,8 @@ impl Game {
                     action = Some(PlayerAction::Check);
                 }
                 Some(PlayerAction::Call) => {
-                    if current_bet <= player_cumulative {
-                        if current_bet != 0 {
+                    if gamehand.current_bet <= player_cumulative {
+                        if gamehand.current_bet != 0 {
                             // if the street bet isn't 0 then this makes no sense
                             println!("should we even be here???!");
                         }
@@ -1487,7 +1515,7 @@ impl Game {
                     action = Some(PlayerAction::Call);
                 }
                 Some(PlayerAction::Bet(new_bet)) => {
-                    if current_bet < player_cumulative {
+                    if gamehand.current_bet < player_cumulative {
                         // will this case happen?
                         println!("this should not happen!");
                         continue;
@@ -1515,7 +1543,7 @@ impl Game {
                         );
                         continue;
                     }
-                    if new_bet <= current_bet {
+                    if new_bet <= gamehand.current_bet {
                         println!("new bet must be larger than current");
                         let message = json::object! {
                             msg_type: "error".to_owned(),
@@ -1566,12 +1594,12 @@ mod tests {
     }
 
     #[test]
-    fn add_user() {
+    fn add_human() {
         let mut game = Game::default();
         let id = uuid::Uuid::new_v4();
         let name = "Human".to_string();
         let settings = PlayerConfig::new(id, Some(name), None);
-        game.add_user(settings, None).expect("could not add user");
+        game.add_human(settings, None).expect("could not add user");
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -1581,7 +1609,7 @@ mod tests {
 
     /// test that a player can join with the correct password
     #[test]
-    fn add_user_password_success() {
+    fn add_human_password_success() {
         let mut game = Game::default();
         //let _incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
         let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
@@ -1600,8 +1628,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some(password)));
 
-        game.handle_meta_actions(&cloned_meta_actions, true);
-
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -1611,7 +1638,7 @@ mod tests {
 
     /// test that a player can NOT join with the incorrect password
     #[test]
-    fn add_user_password_fail() {
+    fn add_human_password_fail() {
         let mut game = Game::default();
         //let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
         let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
@@ -1627,8 +1654,8 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, Some("345".to_string())));
 
-        game.handle_meta_actions(&incoming_meta_actions, true);
-
+        game.handle_meta_actions(&incoming_meta_actions, true, None);
+	
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -1637,7 +1664,7 @@ mod tests {
 
     /// test that a player can NOT join without providing a password
     #[test]
-    fn add_user_password_missing() {
+    fn add_human_password_missing() {
         let mut game = Game::default();
         //let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
         let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
@@ -1653,7 +1680,7 @@ mod tests {
             .unwrap()
             .push_back(MetaAction::Join(settings, None)); // no password passed in
 
-        game.handle_meta_actions(&incoming_meta_actions, true);
+        game.handle_meta_actions(&incoming_meta_actions, true, None);	
 
         assert_eq!(game.players.len(), 9);
         // flatten to get all the Some() players
@@ -1702,13 +1729,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1747,13 +1774,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1812,13 +1839,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1906,14 +1933,14 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
         game.players[0].as_mut().unwrap().money = 3; // set the player to have less than the norm 8 BB
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -1952,13 +1979,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2062,13 +2089,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2157,7 +2184,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -2165,7 +2192,7 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2256,7 +2283,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Big".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         game.players[0].as_mut().unwrap().money = 500; // set the player to have less money
 
@@ -2264,7 +2291,7 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2367,7 +2394,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2375,13 +2402,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3, None).unwrap();
+        game.add_human(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2495,7 +2522,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2503,13 +2530,13 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3, None).unwrap();
+        game.add_human(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2634,7 +2661,7 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Button".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
         // set the button to have less money so there is a side pot
         game.players[0].as_mut().unwrap().money = 500;
 
@@ -2642,19 +2669,19 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Small".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Big".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3, None).unwrap();
+        game.add_human(settings3, None).unwrap();
 
         // player4 will start as UTG
         let id4 = uuid::Uuid::new_v4();
         let name4 = "UTG".to_string();
         let settings4 = PlayerConfig::new(id4, Some(name4), None);
-        game.add_user(settings4, None).unwrap();
+        game.add_human(settings4, None).unwrap();
         // set UTG to have medium money so there is a second side pot
         game.players[3].as_mut().unwrap().money = 750;
 
@@ -2721,13 +2748,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human1".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -2799,17 +2826,17 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         let id3 = uuid::Uuid::new_v4();
         let name3 = "Human3".to_string();
         let settings3 = PlayerConfig::new(id3, Some(name3), None);
-        game.add_user(settings3, None).unwrap();
+        game.add_human(settings3, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -2835,7 +2862,7 @@ mod tests {
         //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
 
         // wait for next hand
-        let wait_duration = time::Duration::from_secs(8);
+        let wait_duration = time::Duration::from_secs(9);
         thread::sleep(wait_duration);
 
         println!("\n\nsetting 2!");
@@ -2904,13 +2931,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 2);
@@ -3024,13 +3051,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -3148,13 +3175,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "Human1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
 
         // player2 will start as the small blind
         let id2 = uuid::Uuid::new_v4();
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 
         // flatten to get all the Some() players
         let some_players = game.players.iter().flatten().count();
@@ -3216,7 +3243,7 @@ mod tests {
             .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
 
 	
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.small_blind, new_blind - 1); // nothing changed	
     }
     
@@ -3242,7 +3269,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.small_blind, new_blind);	       
     }
 
@@ -3265,7 +3292,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::SmallBlind(new_blind)));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.small_blind, new_blind - 1); // still
     }
     
@@ -3291,7 +3318,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::BigBlind(new_blind)));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.big_blind, new_blind);	       
     }
 
@@ -3317,7 +3344,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::BuyIn(new_buy_in)));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.buy_in, new_buy_in);	       
     }
 
@@ -3343,7 +3370,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::Password(new_password.clone())));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.password, Some(new_password));	
     }
 
@@ -3383,7 +3410,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::AddBot));	    
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
         assert_eq!(game.player_ids_to_configs.len(), 3); // 3 player configs
         let some_players = game.players.iter().flatten().count();
         assert_eq!(some_players, 3); // 3 players
@@ -3397,7 +3424,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id, AdminCommand::RemoveBot));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
         assert_eq!(game.player_ids_to_configs.len(), 2); // 2 player configs
 	// the player_ids_to_configs mapping no longer contains the id for the bot at index 0
 	assert!(game.players[0].as_ref().is_none());
@@ -3415,13 +3442,13 @@ mod tests {
         let id1 = uuid::Uuid::new_v4();
         let name1 = "1".to_string();
         let settings1 = PlayerConfig::new(id1, Some(name1), None);
-        game.add_user(settings1, None).unwrap();
+        game.add_human(settings1, None).unwrap();
         game.players[0].as_mut().unwrap().money = 500;
 
         let id2 = uuid::Uuid::new_v4();
         let name2 = "2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
-        game.add_user(settings2, None).unwrap();
+        game.add_human(settings2, None).unwrap();
 	
         // need the id for the admin command
 	game.admin_id = id1; // set the game's admin
@@ -3436,7 +3463,7 @@ mod tests {
             .lock()
             .unwrap()
             .push_back(MetaAction::Admin(id1, AdminCommand::Restart));
-        game.handle_meta_actions(&cloned_meta_actions, true);
+        game.handle_meta_actions(&cloned_meta_actions, true, None);
 	// check that the players have the new_buy_in amount of money
 	assert_eq!(game.players[0].as_mut().unwrap().money, new_buy_in);
 	assert_eq!(game.players[1].as_mut().unwrap().money, new_buy_in);	

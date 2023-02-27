@@ -351,9 +351,11 @@ impl Handler<Create> for GameHub {
 		
 		// update the mapping to find the player at a table
 		self.players_to_table.insert(id, table_name.clone());
-		
-		game.add_user(player_config, password)
-                    .expect("error joining freshly created game");
+
+		meta_actions
+                    .lock()
+                    .unwrap()
+                    .push_back(MetaAction::Join(player_config, password));
 		
 		std::thread::spawn(move || {
                     // Note: I tried having the actions and meta actions as part of the game struct,
