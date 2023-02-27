@@ -471,7 +471,8 @@
 			const { location } = window;
 
 			const proto = location.protocol.startsWith("https") ? "wss" : "ws";
-			const wsUri = `${proto}://${location.host}/ws`;
+		    //const wsUri = `${proto}://${location.host}/join`;
+			const wsUri = `${proto}://${location.host}/rejoin/46e943d0-5a3d-46ff-b4e1-c72027a06595`;
 
 			log("Connecting...");
 			socket = new WebSocket(wsUri);

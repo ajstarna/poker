@@ -160,6 +160,7 @@ impl Handler<Join> for GameHub {
             password,
         } = msg;
 
+	
         let player_config_option = self.main_lobby_connections.remove(&id);
         if player_config_option.is_none() {
             // the player is not in the main lobby,

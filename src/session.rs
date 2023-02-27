@@ -42,13 +42,24 @@ pub struct WsGameSession {
 
 impl WsGameSession {
     pub fn new(hub_addr: Addr<hub::GameHub>) -> Self {
+        let id = Uuid::new_v4();
+	println!("brand new uuid = {id}");
         Self {
-            id: Uuid::new_v4(),
+            id: id,
             hb: Instant::now(),
             hub_addr,
         }
     }
 
+    /// if the client wants to reconnect with an existing uuid
+    pub fn from_existing(uuid: Uuid, hub_addr: Addr<hub::GameHub>) -> Self {
+        Self {
+            id: uuid,
+            hb: Instant::now(),
+            hub_addr,
+        }
+    }
+    
     /// helper method that sends ping to client every 5 seconds (HEARTBEAT_INTERVAL).
     ///
     /// also this method checks heartbeats from client
@@ -110,6 +121,9 @@ impl Actor for WsGameSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server. A Leave is the same thing for the game
+
+	TODO i think this is where we should not send a leave message
+	    
         self.hub_addr.do_send(messages::MetaActionMessage {
             id: self.id,
             meta_action: messages::MetaAction::Leave(self.id),

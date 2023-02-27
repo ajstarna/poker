@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// to the running games Player name change. player join/leave
 #[derive(Debug)]
 pub enum MetaAction {
-    Join(PlayerConfig, Option<String>),
+    Join(PlayerConfig, Option<String>), // player config and optional password
+    Reconnect(PlayerConfig), // reconnect a player with an existing uuid and new message address
     Leave(Uuid),
     ImBack(Uuid),
     SitOut(Uuid),
