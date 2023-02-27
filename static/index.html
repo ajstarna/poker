@@ -535,7 +535,6 @@
 						log("You have left the game and are in the lobby", "message")
 					} else if (msg.msg_type == "created_game") {
 						showTable();
-						log(ev.data, "message");
 					} else if (msg.msg_type == "name_changed") {
 						let output = "You have changed your name to " + msg.new_name;
 						log(output, "message");
