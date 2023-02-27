@@ -547,7 +547,6 @@
 							tables += "<p>" + table + "</p>";
 						}
 						$publicTableList.innerHTML = tables;
-						log(ev.data, "message");
 					} else if (msg.msg_type == "error") {
 						alert(msg.error + ": " + msg.reason);
 						log(msg.error + ": " + msg.reason, "message");
