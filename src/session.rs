@@ -47,7 +47,7 @@ impl WsGameSession {
         let id = Uuid::new_v4();
 	println!("brand new uuid = {id}");
         Self {
-            id: id,
+            id,
             hb: Instant::now(),
             hub_addr,
         }

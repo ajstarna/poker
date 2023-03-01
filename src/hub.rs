@@ -65,33 +65,6 @@ impl Actor for GameHub {
     type Context = Context<Self>;
 }
 
-
-/*
-/// Handler for Connect message.
-///
-/// Register new session and assign unique id to this session
-impl Handler<Connect> for GameHub {
-    type Result = MessageResult<Connect>; // use MessageResult so that we can return a Uuid
-
-    fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
-        println!("Someone is connecting");
-	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
-	println!("self.players_to_table = {:?}", self.players_to_table);	
-        // register session with random id
-        let id = uuid::Uuid::new_v4();
-        // create a config with name==None to start
-        let player_config = PlayerConfig::new(id, None, Some(msg.addr));
-
-        // put them in the main lobby to wait to join a table
-        self.main_lobby_connections.insert(id, player_config);
-
-	msg.addr.do_send(WsMessage
-        // send id back
-        MessageResult(id)
-    }
-}
- */
-
 /// Handler for Connect message.
 ///
 /// Register new session with a given uuid.It could be brand new or a reconnection of an existing uuid
@@ -104,7 +77,12 @@ impl Handler<Connect> for GameHub {
         println!("Someone is connecting with uuid = {id}!");
 	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
 	println!("self.players_to_table = {:?}", self.players_to_table);	
-	
+
+        let message = object! {
+            msg_type: "connected".to_owned(),
+            uuid: id.to_string().to_owned(),
+        };
+	addr.do_send(WsMessage(message.dump() ) );
 	
 	if let Some(config) = self.main_lobby_connections.get_mut(&id) {
 	    // the player happens to be in the lobby at this moment
