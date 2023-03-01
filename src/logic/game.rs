@@ -645,6 +645,11 @@ impl Game {
                 MetaAction::PlayerName(id, new_name) => {
                     PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
                 }
+                MetaAction::UpdateAddress(id, new_addr) => {
+		    println!("Inside game, updating player address for uuid = {id}");
+                    PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
+		    self.send_game_state(gamehand, None);		    
+                }
                 MetaAction::SitOut(id) => {
                     for player in self.players.iter_mut().flatten() {
                         if player.id == id {

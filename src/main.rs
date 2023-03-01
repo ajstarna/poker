@@ -61,8 +61,6 @@ async fn reconnect(
     stream: web::Payload,
     hub_addr: web::Data<Addr<hub::GameHub>>,
 ) -> Result<HttpResponse, Error> {
-    log::info!("inside reconnect()");
-    println!("path = {path}");
     let uuid = path.into_inner();
     ws::start(
         session::WsGameSession::from_existing(uuid, hub_addr.get_ref().clone()),

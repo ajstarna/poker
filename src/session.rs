@@ -24,7 +24,9 @@ pub fn get_help_message() -> Vec<String> {
 	 "/buy_in X".to_string(),
 	 "/password X".to_string(),
 	 "/add_bot".to_string(),
-	 "/remove_bot".to_string()]
+	 "/remove_bot".to_string(),
+	 "/restart".to_string()	 
+    ]
 }
 
 #[derive(Debug)]
@@ -105,12 +107,15 @@ impl Actor for WsGameSession {
         let addr = ctx.address();
         self.hub_addr
             .send(messages::Connect {
+		id: self.id,
                 addr: addr.recipient(),
             })
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
-                    Ok(res) => act.id = res,
+                    Ok(res) => {
+			act.id = res;
+		    },
                     // something is wrong with game server
                     _ => ctx.stop(),
                 }
@@ -122,12 +127,13 @@ impl Actor for WsGameSession {
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify game server. A Leave is the same thing for the game
 
-	TODO i think this is where we should not send a leave message
-	    
+	// TODO i think this is where we should not send a leave message
+	    /*
         self.hub_addr.do_send(messages::MetaActionMessage {
             id: self.id,
             meta_action: messages::MetaAction::Leave(self.id),
         });
+	 */
         Running::Stop
     }
 }
