@@ -19,10 +19,11 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn get_help_message() -> Vec<String> {
-    vec!["/small_blind X".to_string(),
-	 "/big_blind X".to_string(),
-	 "/buy_in X".to_string(),
-	 "/password X".to_string(),
+    vec!["/small_blind <AMOUNT>".to_string(),
+	 "/big_blind <AMOUNT>".to_string(),
+	 "/starting_stack <AMOUNT>".to_string(),
+	 "/set_password <PASSWORD>".to_string(),
+	 "/show_password".to_string(),	 
 	 "/add_bot".to_string(),
 	 "/remove_bot".to_string()]
 }
@@ -438,8 +439,8 @@ impl WsGameSession {
 			true
 		    }
                 }
-                "buy_in" => {
-		    if let Some(Value::String(amount)) = object.get("buy_in") {
+                "starting_stack" => {
+		    if let Some(Value::String(amount)) = object.get("starting_stack") {
 			if let Ok(amount) = amount.to_string().parse::<u32>() {	
 			    self.hub_addr.do_send(messages::MetaActionMessage {
 				id: self.id,
@@ -457,14 +458,14 @@ impl WsGameSession {
 			true
 		    }		    
                 }		
-                "password" => {
-		    if let Some(Value::String(amount)) = object.get("password") {
+                "set_password" => {
+		    if let Some(Value::String(amount)) = object.get("set_password") {
 			let amount = amount.to_string();
 			self.hub_addr.do_send(messages::MetaActionMessage {
 			    id: self.id,
 			    meta_action: messages::MetaAction::Admin(
 				self.id,				
-				messages::AdminCommand::Password(amount),
+				messages::AdminCommand::SetPassword(amount),
 			    )
 			});
 			false
@@ -473,7 +474,15 @@ impl WsGameSession {
 			true
 		    }
                 }
-
+                "show_password" => {
+		    self.hub_addr.do_send(messages::MetaActionMessage {
+			id: self.id,
+			meta_action: messages::MetaAction::Admin(
+			    self.id,				
+			    messages::AdminCommand::ShowPassword),
+                    });
+		    false
+		}		
                 "add_bot" => {
 		    self.hub_addr.do_send(messages::MetaActionMessage {
 			id: self.id,

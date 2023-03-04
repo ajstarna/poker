@@ -731,7 +731,7 @@ impl Game {
                     text: format!("The buy in has been changed to {}", new),
 		}
 	    }		
-	    AdminCommand::Password(new) => {
+	    AdminCommand::SetPassword(new) => {
 		self.password = Some(new.clone());
 		object! {
 		    msg_type: "admin_success".to_owned(),
@@ -739,6 +739,17 @@ impl Game {
                     text: format!("The password has been changed to {}", new),
 		}
 	    }
+	    AdminCommand::ShowPassword => {
+		let pass_str = if let Some(password) = &self.password {
+		    format!("The password is {:?}", password)
+		} else {
+		   "The game has no password".to_string()
+		};
+		object! {
+		    msg_type: "admin_success".to_owned(),
+                    text: pass_str,
+		}
+	    }	    
 	    AdminCommand::AddBot => {
 		match self.add_bot("Bot".to_string()) {
 		    Ok(_) => {
