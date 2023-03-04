@@ -471,8 +471,13 @@
 			const { location } = window;
 
 			const proto = location.protocol.startsWith("https") ? "wss" : "ws";
-		    //const wsUri = `${proto}://${location.host}/join`;
-			const wsUri = `${proto}://${location.host}/rejoin/46e943d0-5a3d-46ff-b4e1-c72027a06595`;
+
+			const uuid = localStorage.getItem('poker-uuid');
+
+			let wsUri = `${proto}://${location.host}/join`;
+			if (uuid) {
+				wsUri = `${proto}://${location.host}/rejoin/${uuid}`;
+			}
 
 			log("Connecting...");
 			socket = new WebSocket(wsUri);
@@ -490,29 +495,20 @@
 				if (msg != null) {
 					console.log("hello: " + JSON.stringify(msg));
 					if (msg.msg_type == "game_state") {
+						$tableName.innerHTML = msg.name;
+						showTable();
+
 						lastGameState = msg;
 						updateBetSlider(msg);
 						drawEverything(msg);
-					} else if (msg.msg_type == "joined_game") {
-						showTable();
-						$tableName.innerHTML = msg.table_name;
-						log(ev.data, "message");
+					} else if (msg.msg_type == "connected") {
+						localStorage.setItem('poker-uuid', msg.uuid);
 					} else if (msg.msg_type == "new_hand") {
 						// Show Table
 						showTable();
 						log("\n\nPlaying hand " + msg.hand_num, "message");
-					} else if (msg.msg_type == "player_action") {
-					} else if (msg.msg_type == "player_info") {
 					} else if (msg.msg_type == "prompt") {
 						log(msg.prompt, "message");
-					} else if (msg.msg_type == "hole_cards") {
-					} else if (msg.msg_type == "flop") {
-						log(ev.data, "message");
-					} else if (msg.msg_type == "turn") {
-						log(ev.data, "message");
-					} else if (msg.msg_type == "river") {
-						log(ev.data, "message");
-					} else if (msg.msg_type == "player_to_act") {
 					} else if (msg.msg_type == "paying_out") {
 						if (msg.is_showdown) {
 							log("========= SHOWDOWN =========")
