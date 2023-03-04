@@ -78,21 +78,28 @@ impl Handler<Connect> for GameHub {
 	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
 	println!("self.players_to_table = {:?}", self.players_to_table);	
 
-        let message = object! {
+        let mut message = object! {
             msg_type: "connected".to_owned(),
             uuid: id.to_string().to_owned(),
+	    name_set: false, //assume their name isn't set, unless we find out it is a re-connection with a name
         };
-	addr.do_send(WsMessage(message.dump() ) );
-	
+
+	let cloned_addr = addr.clone(); // since we are passing to the config, we need to keep it around for us
 	if let Some(config) = self.main_lobby_connections.get_mut(&id) {
 	    // the player happens to be in the lobby at this moment
 	    // simply update the address in the player config
 	    println!("connecting session uuid already in the lobby");
-	    config.player_addr = Some(addr);
+	    println!("{:?}", config);
+	    if config.name.is_some() {
+		// they were in the hub and already had a name!
+		message["name_set"] = true.into();
+	    }
+	    config.player_addr = Some(addr);	    
 	}
 	else if let Some(table_name) = self.players_to_table.get(&id) {
 	    // the player is currently at a table, so we need to tell the table
 	    // that the player has a new address
+	    message["name_set"] = true.into(); // if you are at a table, you must have a name
             if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
                 println!("updating player's address in an existing game");
                 meta_actions
@@ -117,6 +124,7 @@ impl Handler<Connect> for GameHub {
             // put them in the main lobby to wait to join a table
             self.main_lobby_connections.insert(id, player_config);
 	}
+	cloned_addr.do_send(WsMessage(message.dump())); // send the connection message	    	
         // send id back
         MessageResult(id)
     }
