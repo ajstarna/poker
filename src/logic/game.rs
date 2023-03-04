@@ -200,6 +200,7 @@ struct GameHand {
     flop: Option<Vec<Card>>,
     turn: Option<Card>,
     river: Option<Card>,
+    index_to_act: Option<usize>,
 }
 
 impl GameHand {
@@ -212,6 +213,7 @@ impl GameHand {
             flop: None,
             turn: None,
             river: None,
+	    index_to_act: None,
         }
     }
 }
@@ -293,8 +295,8 @@ impl Game {
         }
     }
 
-    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, index_to_act_opt: Option<usize>) {
-	let mut state_message = self.get_game_state_json(gamehand_opt, index_to_act_opt);
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>) {
+	let mut state_message = self.get_game_state_json(gamehand_opt);
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
@@ -323,7 +325,6 @@ impl Game {
     fn get_game_state_json(
 	&self,
 	gamehand_opt: Option<&GameHand>,
-	index_to_act_opt: Option<usize>,
     ) -> json::JsonValue {
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
@@ -391,12 +392,13 @@ impl Game {
             state_message["river"] = format!("{}", river).into();
             }
 
-            state_message["pots"] = gamehand.pot_manager.simple_repr().into();	    
+            state_message["pots"] = gamehand.pot_manager.simple_repr().into();
+
+	    if let Some(index_to_act) = gamehand.index_to_act {
+		state_message["index_to_act"] = index_to_act.into();
+	    }
 	}
 
-	if let Some(index_to_act) = index_to_act_opt {
-	    state_message["index_to_act"] = index_to_act.into();
-	}
 	state_message
     }
 	
@@ -594,7 +596,7 @@ impl Game {
                     match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining game at index: {}", index);
-			    self.send_game_state(gamehand, None);
+			    self.send_game_state(gamehand);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -648,7 +650,7 @@ impl Game {
                 MetaAction::UpdateAddress(id, new_addr) => {
 		    println!("Inside game, updating player address for uuid = {id}");
                     PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
-		    self.send_game_state(gamehand, None);		    
+		    self.send_game_state(gamehand);		    
                 }
                 MetaAction::SitOut(id) => {
                     for player in self.players.iter_mut().flatten() {
@@ -815,9 +817,8 @@ impl Game {
     }
 	
     fn transition(&mut self, gamehand: &mut GameHand) {
-        let pause_duration = time::Duration::from_secs(1);
-        thread::sleep(pause_duration);
 	gamehand.current_bet = 0;
+	gamehand.index_to_act = None;
         match gamehand.street {
             Street::Preflop => {
                 gamehand.street = Street::Flop;
@@ -851,7 +852,7 @@ impl Game {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
-	self.send_game_state(Some(gamehand), None);	
+	self.send_game_state(Some(gamehand));	
     }
 
     fn deal_hands(&mut self) {
@@ -890,7 +891,7 @@ impl Game {
 
     fn finish_hand(&mut self, gamehand: &mut GameHand) {
         // pause for a second for dramatic effect heh
-        let pause_duration = time::Duration::from_secs(2);
+        let pause_duration = time::Duration::from_secs(3);
         thread::sleep(pause_duration);
         if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
@@ -1095,22 +1096,23 @@ impl Game {
             }
         }
 
-	self.send_game_state(Some(&gamehand), None);	
+	self.send_game_state(Some(&gamehand));	
         self.deck.shuffle();
         self.deal_hands();
 
         println!("players = {:?}", self.players);
 
         while gamehand.street != Street::ShowDown {
-            // pause for a second for dramatic effect heh
-            let pause_duration = time::Duration::from_secs(1);
-            thread::sleep(pause_duration);
             let finished =
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
 	    // after each street, set the player's last action to None again
             for player in self.players.iter_mut().flatten() {
 		player.last_action = None;
             }
+            // pause for a second for dramatic effect heh
+            let pause_duration = time::Duration::from_secs(2);
+            thread::sleep(pause_duration);
+	    
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -1215,7 +1217,8 @@ impl Game {
                 continue;
             }
 
-	    self.send_game_state(Some(&gamehand), Some(i));
+	    gamehand.index_to_act = Some(i);
+	    self.send_game_state(Some(&gamehand));
 	    
             // we clone() the current player so that we can use its information
             // while also possibly updating players (if a player leaves or joins the game in handle_meta_actions)

@@ -125,15 +125,6 @@ impl Actor for WsGameSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        // notify game server. A Leave is the same thing for the game
-
-	// TODO i think this is where we should not send a leave message
-	    /*
-        self.hub_addr.do_send(messages::MetaActionMessage {
-            id: self.id,
-            meta_action: messages::MetaAction::Leave(self.id),
-        });
-	 */
         Running::Stop
     }
 }
