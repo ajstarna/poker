@@ -538,19 +538,8 @@
 						let output2 = "hand result = " + msg.hand_result
 						log(output2, "message");
 					} else if (msg.msg_type == "left_game") {
-						// Clear game info
 						showLobby();
 						drawTable(context, width, height);
-						// Show Lobby
-						$gameMenu.style.display = "none";
-						//$tableControls.style.display = "none";
-						$lobbyMenu.style.display = "block";
-						// have this log for now just for clarity. if the UI is more clear wont need?
-					} else if (msg.msg_type == "created_game") {
-					    showTable();
-						let output = "You have created a game: " + msg.table_name + ". Type '/help' for a list of available admin commands. (Private games only)" ;
-						log(output, "message");
-					    
 					} else if (msg.msg_type == "name_changed") {
 						hidePlayerNameWarning();
 						let output = "You have changed your name to " + msg.new_name;
@@ -566,7 +555,6 @@
 						$publicTableList.innerHTML = tables;
 					} else if (msg.msg_type == "error") {
 						alert(msg.error + ": " + msg.reason);
-						//log(msg.error + ": " + msg.reason, "message");
 					} else if (msg.msg_type == "help_message") {
 						log("Available admin commands:", "message");
 						for (const cmd of msg.commands) {
@@ -728,8 +716,8 @@
 				msg["text"] = $input.value;
 			}
 
-		    if (msg["msg_type"] == "admin_command") {
-			        log("Sending: " + JSON.stringify(msg));			
+			if (msg["msg_type"] == "admin_command") {
+				log("Sending: " + JSON.stringify(msg));
 				log("admin commands are handled at the end of the current hand");
 			}
 			socket.send(JSON.stringify(msg));
