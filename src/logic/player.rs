@@ -83,6 +83,16 @@ impl PlayerConfig {
                 )));
         }
     }
+    
+    /// find a player with the given id, and set their address to be the given address
+    pub fn set_player_address(
+	id: Uuid,
+	addr: Recipient<WsMessage>,
+	ids_to_configs: &mut HashMap<Uuid, PlayerConfig>) {
+        if let Some(player_config) = ids_to_configs.get_mut(&id) {
+            player_config.player_addr = Some(addr);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

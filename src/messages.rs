@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// to the running games Player name change. player join/leave
 #[derive(Debug)]
 pub enum MetaAction {
-    Join(PlayerConfig, Option<String>),
+    Join(PlayerConfig, Option<String>), // player config and optional password
+    UpdateAddress(Uuid, Recipient<WsMessage>), // update a player with an existing uuid and new message address
     Leave(Uuid),
     ImBack(Uuid),
     SitOut(Uuid),
@@ -41,8 +42,19 @@ pub struct WsMessage(pub String);
 #[derive(Message)]
 #[rtype(result = "Uuid")]
 pub struct Connect {
+    pub id: Uuid,    
     pub addr: Recipient<WsMessage>,
 }
+
+/*
+/// New ws session is created but with an existing uuid/player
+#[derive(Message)]
+#[rtype(result = "Uuid")]
+pub struct Reconnect {
+    pub id: Uuid,
+    pub addr: Recipient<WsMessage>,
+}
+ */
 
 /// Session is disconnected
 #[derive(Message)]

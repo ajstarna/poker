@@ -19,13 +19,15 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn get_help_message() -> Vec<String> {
-    vec!["/small_blind <AMOUNT>".to_string(),
-	 "/big_blind <AMOUNT>".to_string(),
-	 "/starting_stack <AMOUNT>".to_string(),
-	 "/set_password <PASSWORD>".to_string(),
+    vec!["/small_blind AMOUNT".to_string(),
+	 "/big_blind AMOUNT".to_string(),
+	 "/starting_stack AMOUNT".to_string(),
+	 "/set_password PASSWORD".to_string(),
 	 "/show_password".to_string(),	 
 	 "/add_bot".to_string(),
-	 "/remove_bot".to_string()]
+	 "/remove_bot".to_string(),
+	 "/restart".to_string()	 
+    ]
 }
 
 #[derive(Debug)]
@@ -43,13 +45,24 @@ pub struct WsGameSession {
 
 impl WsGameSession {
     pub fn new(hub_addr: Addr<hub::GameHub>) -> Self {
+        let id = Uuid::new_v4();
+	println!("brand new uuid = {id}");
         Self {
-            id: Uuid::new_v4(),
+            id,
             hb: Instant::now(),
             hub_addr,
         }
     }
 
+    /// if the client wants to reconnect with an existing uuid
+    pub fn from_existing(uuid: Uuid, hub_addr: Addr<hub::GameHub>) -> Self {
+        Self {
+            id: uuid,
+            hb: Instant::now(),
+            hub_addr,
+        }
+    }
+    
     /// helper method that sends ping to client every 5 seconds (HEARTBEAT_INTERVAL).
     ///
     /// also this method checks heartbeats from client
@@ -95,12 +108,15 @@ impl Actor for WsGameSession {
         let addr = ctx.address();
         self.hub_addr
             .send(messages::Connect {
+		id: self.id,
                 addr: addr.recipient(),
             })
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
-                    Ok(res) => act.id = res,
+                    Ok(res) => {
+			act.id = res;
+		    },
                     // something is wrong with game server
                     _ => ctx.stop(),
                 }
@@ -110,11 +126,6 @@ impl Actor for WsGameSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        // notify game server. A Leave is the same thing for the game
-        self.hub_addr.do_send(messages::MetaActionMessage {
-            id: self.id,
-            meta_action: messages::MetaAction::Leave(self.id),
-        });
         Running::Stop
     }
 }

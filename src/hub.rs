@@ -67,21 +67,56 @@ impl Actor for GameHub {
 
 /// Handler for Connect message.
 ///
-/// Register new session and assign unique id to this session
+/// Register new session with a given uuid.It could be brand new or a reconnection of an existing uuid
 impl Handler<Connect> for GameHub {
     type Result = MessageResult<Connect>; // use MessageResult so that we can return a Uuid
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
-        println!("Someone joined");
+        let Connect { id, addr } = msg; // the message contains the uuid
 
-        // register session with random id
-        let id = uuid::Uuid::new_v4();
-        // create a config with name==None to start
-        let player_config = PlayerConfig::new(id, None, Some(msg.addr));
+        println!("Someone is connecting with uuid = {id}!");
+	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
+	println!("self.players_to_table = {:?}", self.players_to_table);	
 
-        // put them in the main lobby to wait to join a table
-        self.main_lobby_connections.insert(id, player_config);
-
+        let message = object! {
+            msg_type: "connected".to_owned(),
+            uuid: id.to_string().to_owned(),
+        };
+	addr.do_send(WsMessage(message.dump() ) );
+	
+	if let Some(config) = self.main_lobby_connections.get_mut(&id) {
+	    // the player happens to be in the lobby at this moment
+	    // simply update the address in the player config
+	    println!("connecting session uuid already in the lobby");
+	    config.player_addr = Some(addr);
+	}
+	else if let Some(table_name) = self.players_to_table.get(&id) {
+	    // the player is currently at a table, so we need to tell the table
+	    // that the player has a new address
+            if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
+                println!("updating player's address in an existing game");
+                meta_actions
+                    .lock()
+                    .unwrap()
+                    .push_back(MetaAction::UpdateAddress(id, addr));
+            } else {
+                // this should never happen. the player is allegedly at a table, but we
+                // have no record of it in tables_to_meta_actions
+                panic!(
+                    "we can not find the meta actions for table named {:?}",
+                    table_name
+                );
+	    }
+	}
+	else {
+	    // we don't have a record of the uuid
+	    // in either the lobby or in any existing table.
+	    // This means it is a new session/player
+            // create a config with name==None to start
+            let player_config = PlayerConfig::new(id, None, Some(addr));
+            // put them in the main lobby to wait to join a table
+            self.main_lobby_connections.insert(id, player_config);
+	}
         // send id back
         MessageResult(id)
     }
@@ -134,7 +169,7 @@ impl Handler<PlayerName> for GameHub {
                     .push_back(MetaAction::PlayerName(msg.id, msg.name));
                 println!("meta actions = {:?}", meta_actions);
             } else {
-                // TODO: this should never happen. the player is allegedly at a table, but we
+                // this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_meta_actions
                 panic!(
                     "we can not find the meta actions for table named {:?}",
@@ -159,7 +194,7 @@ impl Handler<Join> for GameHub {
             table_name,
             password,
         } = msg;
-
+	
         let player_config_option = self.main_lobby_connections.remove(&id);
         if player_config_option.is_none() {
             // the player is not in the main lobby,
