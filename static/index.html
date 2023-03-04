@@ -542,8 +542,7 @@
 						drawTable(context, width, height);
 					} else if (msg.msg_type == "name_changed") {
 						hidePlayerNameWarning();
-						let output = "You have changed your name to " + msg.new_name;
-						log(output, "message");
+						$playerName.value = msg.new_name;
 					} else if (msg.msg_type == "chat") {
 						let output = msg.player_name + ": " + msg.text
 						log(output, "message");
