@@ -46,6 +46,9 @@
 					<button class="button" onclick="setPlayerName()">Set Name</button>
 				</span>
 			</div>
+			<div id="playerNameWarning">
+				<p style="color:crimson; font-weight: bold;">Please enter a user name. It can be anything you want.</p>
+			</div>
 
 			<div class="row">
 				<!--Games List-->
@@ -217,6 +220,7 @@
 		const $form = document.querySelector("#chatform");
 		const $input = document.getElementById("text");
 		const $playerName = document.getElementById("playerName");
+		const $playerNameWarning = document.getElementById("playerNameWarning");
 		const $tableId = document.getElementById("tableId");
 		const $tableName = document.getElementById("table_name");
 		const $tableControls = document.getElementById("table_controls");
@@ -338,6 +342,11 @@
 					player.giveCards(
 						new PlayerCard(true, chars[0], chars[1]),
 						new PlayerCard(true, chars[2], chars[3])
+					);
+				} else if (playerState.is_active && playerState.last_action != "fold") {
+					player.giveCards(
+						new PlayerCard(false),
+						new PlayerCard(false)
 					);
 				}
 
@@ -465,6 +474,14 @@
 			lastGameState = null;
 		}
 
+		function showPlayerNameWarning() {
+			$playerNameWarning.style.display = "block";
+		}
+
+		function hidePlayerNameWarning() {
+			$playerNameWarning.style.display = "none";
+		}
+
 		function connect() {
 			disconnect();
 
@@ -521,20 +538,10 @@
 						let output2 = "hand result = " + msg.hand_result
 						log(output2, "message");
 					} else if (msg.msg_type == "left_game") {
-						// Clear game info
 						showLobby();
 						drawTable(context, width, height);
-						// Show Lobby
-						$gameMenu.style.display = "none";
-						//$tableControls.style.display = "none";
-						$lobbyMenu.style.display = "block";
-						// have this log for now just for clarity. if the UI is more clear wont need?
-					} else if (msg.msg_type == "created_game") {
-					    showTable();
-						let output = "You have created a game: " + msg.table_name + ". Type '/help' for a list of available admin commands. (Private games only)" ;
-						log(output, "message");
-					    
 					} else if (msg.msg_type == "name_changed") {
+						hidePlayerNameWarning();
 						let output = "You have changed your name to " + msg.new_name;
 						log(output, "message");
 					} else if (msg.msg_type == "chat") {
@@ -548,7 +555,6 @@
 						$publicTableList.innerHTML = tables;
 					} else if (msg.msg_type == "error") {
 						alert(msg.error + ": " + msg.reason);
-						//log(msg.error + ": " + msg.reason, "message");
 					} else if (msg.msg_type == "help_message") {
 						log("Available admin commands:", "message");
 						for (const cmd of msg.commands) {
@@ -675,8 +681,8 @@
 
 			}
 			else if ($input.value.startsWith("/starting_stack")) {
-			    msg["msg_type"] = "admin_command";
-				const [_, value] = $input.value.split(" ");			    
+				msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");
 				msg["admin_command"] = "starting_stack";
 				msg["starting_stack"] = value;
 			}
@@ -710,8 +716,8 @@
 				msg["text"] = $input.value;
 			}
 
-		    if (msg["msg_type"] == "admin_command") {
-			        log("Sending: " + JSON.stringify(msg));			
+			if (msg["msg_type"] == "admin_command") {
+				log("Sending: " + JSON.stringify(msg));
 				log("admin commands are handled at the end of the current hand");
 			}
 			socket.send(JSON.stringify(msg));
