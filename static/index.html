@@ -674,16 +674,21 @@
 				msg["big_blind"] = value;
 
 			}
-			else if ($input.value.startsWith("/buy_in")) {
-				msg["msg_type"] = "admin_command";
-				msg["admin_command"] = "buy_in";
-				msg["buy_in"] = value;
+			else if ($input.value.startsWith("/starting_stack")) {
+			    msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");			    
+				msg["admin_command"] = "starting_stack";
+				msg["starting_stack"] = value;
 			}
-			else if ($input.value.startsWith("/password")) {
+			else if ($input.value.startsWith("/set_password")) {
 				msg["msg_type"] = "admin_command";
 				const [_, value] = $input.value.split(" ");
-				msg["admin_command"] = "password";
-				msg["password"] = value;
+				msg["admin_command"] = "set_password";
+				msg["set_password"] = value;
+			}
+			else if ($input.value.startsWith("/show_password")) {
+				msg["msg_type"] = "admin_command";
+				msg["admin_command"] = "show_password";
 			}
 			else if ($input.value.startsWith("/add_bot")) {
 				msg["msg_type"] = "admin_command";
