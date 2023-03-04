@@ -531,7 +531,7 @@
 						// have this log for now just for clarity. if the UI is more clear wont need?
 					} else if (msg.msg_type == "created_game") {
 					    showTable();
-						let output = "You have created a game: " + msg.table_name + ". Type '/help' for a list of available admin commands." ;
+						let output = "You have created a game: " + msg.table_name + ". Type '/help' for a list of available admin commands. (Private games only)" ;
 						log(output, "message");
 					    
 					} else if (msg.msg_type == "name_changed") {
