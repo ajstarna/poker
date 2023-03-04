@@ -46,6 +46,9 @@
 					<button class="button" onclick="setPlayerName()">Set Name</button>
 				</span>
 			</div>
+			<div id="playerNameWarning">
+				<p style="color:crimson; font-weight: bold;">Please enter a user name. It can be anything you want.</p>
+			</div>
 
 			<div class="row">
 				<!--Games List-->
@@ -217,6 +220,7 @@
 		const $form = document.querySelector("#chatform");
 		const $input = document.getElementById("text");
 		const $playerName = document.getElementById("playerName");
+		const $playerNameWarning = document.getElementById("playerNameWarning");
 		const $tableId = document.getElementById("tableId");
 		const $tableName = document.getElementById("table_name");
 		const $tableControls = document.getElementById("table_controls");
@@ -338,6 +342,11 @@
 					player.giveCards(
 						new PlayerCard(true, chars[0], chars[1]),
 						new PlayerCard(true, chars[2], chars[3])
+					);
+				} else if (playerState.is_active && playerState.last_action != "fold") {
+					player.giveCards(
+						new PlayerCard(false),
+						new PlayerCard(false)
 					);
 				}
 
@@ -465,6 +474,14 @@
 			lastGameState = null;
 		}
 
+		function showPlayerNameWarning() {
+			$playerNameWarning.style.display = "block";
+		}
+
+		function hidePlayerNameWarning() {
+			$playerNameWarning.style.display = "none";
+		}
+
 		function connect() {
 			disconnect();
 
@@ -535,6 +552,7 @@
 						log(output, "message");
 					    
 					} else if (msg.msg_type == "name_changed") {
+						hidePlayerNameWarning();
 						let output = "You have changed your name to " + msg.new_name;
 						log(output, "message");
 					} else if (msg.msg_type == "chat") {
@@ -675,8 +693,8 @@
 
 			}
 			else if ($input.value.startsWith("/starting_stack")) {
-			    msg["msg_type"] = "admin_command";
-				const [_, value] = $input.value.split(" ");			    
+				msg["msg_type"] = "admin_command";
+				const [_, value] = $input.value.split(" ");
 				msg["admin_command"] = "starting_stack";
 				msg["starting_stack"] = value;
 			}
