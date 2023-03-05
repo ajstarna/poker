@@ -343,10 +343,14 @@ impl Game {
         for (i, player_spot) in self.players.iter().enumerate() {
             // display the play positions for the front end to consume
             if let Some(player) = player_spot {
+		if !self.player_ids_to_configs.contains_key(&player.id) {
+		    // be safe, double check if config still exists
+		    continue;
+		}
+                let config = self.player_ids_to_configs.get(&player.id).unwrap();		
                 let mut player_info = object! {
                     index: i,
                 };
-                let config = self.player_ids_to_configs.get(&player.id).unwrap();
                 let name = config.name.as_ref().unwrap().clone();
                 player_info["player_name"] = name.into();
                 player_info["money"] = player.money.into();
@@ -1217,6 +1221,24 @@ impl Game {
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
+            // double check if any players left as a meta-action during the previous
+            // player's turn. They should no longer be considered as active or all_in
+            for player_spot in self.players.iter_mut() {
+		if let Some(player) = player_spot {
+                    if !self.player_ids_to_configs.contains_key(&player.id) {
+			println!("player is no longer in the config");
+			if player.is_all_in() {
+                        num_all_in -= 1;
+			}
+			if player.is_active {
+                            player.deactivate(); // technically redundant I guess since setting to None later
+                            num_active -= 1;
+			}
+			*player_spot = None;
+                    }
+		}
+            }
+	    
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
@@ -1349,28 +1371,11 @@ impl Game {
                         .contribute(player.id, difference, all_in);
                 }
             }
-            // double check at the end of the loop if any players left as a meta-action during the current
-            // player's turn. They should no longer be considered as active or all_in
-            for player_spot in self.players.iter_mut() {
-                if let Some(player) = player_spot {
-                    if !self.player_ids_to_configs.contains_key(&player.id) {
-                        println!("player is no longer in the config at the end of the loop");
-                        if player.is_all_in() {
-                            num_all_in -= 1;
-                        }
-                        if player.is_active {
-                            player.deactivate(); // technically redundant I guess since setting to None later
-                            num_active -= 1;
-                        }
-                        *player_spot = None;
-                    }
-                }
-            }
         };
 	self.send_game_state(Some(&gamehand));	
 	hand_over
     }
-
+    
     /// if the player is a human, then we look for their action in the incoming_actions hashmap
     /// this value is set by the game hub when handling a message from a player client
     fn get_action_from_player(
