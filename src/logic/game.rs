@@ -644,8 +644,17 @@ impl Game {
                         println!("\n\nA leave message was received for a player that no longer has a config!")
                     }
                 }
-                MetaAction::PlayerName(id, new_name) => {
-                    PlayerConfig::set_player_name(id, &new_name, &mut self.player_ids_to_configs);
+                MetaAction::SetPlayerName(id, new_name) => {
+		    if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
+			player_config.name = Some(new_name.to_string());
+			player_config.send_player_name();			
+		    }
+		    
+                }
+                MetaAction::SendPlayerName(id) => {
+		    if let Some(player_config) = self.player_ids_to_configs.get(&id) {
+			player_config.send_player_name();
+		    }
                 }
                 MetaAction::UpdateAddress(id, new_addr) => {
 		    println!("Inside game, updating player address for uuid = {id}");
@@ -902,8 +911,6 @@ impl Game {
 
     fn finish_hand(&mut self, gamehand: &mut GameHand) {
         // pause for a second for dramatic effect heh
-        let pause_duration = time::Duration::from_secs(3);
-        thread::sleep(pause_duration);
         if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
             return;
@@ -985,6 +992,8 @@ impl Game {
             );
         }
 
+        let pause_duration = time::Duration::from_secs(1);
+        thread::sleep(pause_duration);	
         // take the players' cards
         for player in self.players.iter_mut().flatten() {
             // todo: is there any issue with calling drain if they dont have any cards?
@@ -1358,6 +1367,7 @@ impl Game {
                 }
             }
         };
+	self.send_game_state(Some(&gamehand));	
 	hand_over
     }
 

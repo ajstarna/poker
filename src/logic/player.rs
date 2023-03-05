@@ -69,18 +69,18 @@ impl PlayerConfig {
         }
     }
 
-    /// find a player with the given id, and set their name to be the given name
-    pub fn set_player_name(id: Uuid, name: &str, ids_to_configs: &mut HashMap<Uuid, PlayerConfig>) {
-        if let Some(player_config) = ids_to_configs.get_mut(&id) {
-            player_config.name = Some(name.to_string());
-            player_config
-                .player_addr
-                .as_ref()
-                .unwrap()
-                .do_send(WsMessage(format!(
-                    "You are changing your name to {:?}",
-                    name
-                )));
+    /// find a player with the given id, and send a message with their name to their address
+    pub fn send_player_name(&self) {
+	if let Some(player_addr) = &self.player_addr {
+            let mut message = json::object! {
+		msg_type: "player_name".to_owned(),
+            };
+	    if let Some(name) = &self.name {
+		message["player_name"] = name.to_owned().into();
+	    } else {
+		message["player_name"] = json::Null;
+	    }
+	    player_addr.do_send(WsMessage(message.dump()));
         }
     }
     

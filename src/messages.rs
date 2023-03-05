@@ -13,7 +13,8 @@ pub enum MetaAction {
     Leave(Uuid),
     ImBack(Uuid),
     SitOut(Uuid),
-    PlayerName(Uuid, String),
+    SetPlayerName(Uuid, String),
+    SendPlayerName(Uuid),    
     Chat(Uuid, String),
     Admin(Uuid, AdminCommand),
 }

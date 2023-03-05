@@ -47,7 +47,7 @@
 				</span>
 			</div>
 			<div id="playerNameWarning">
-				<p style="color:crimson; font-weight: bold;">Please enter a user name. It can be anything you want.</p>
+				<p style="color:crimson; font-weight: bold;">Please enter a user name.</p>
 			</div>
 
 			<div class="row">
@@ -540,9 +540,15 @@
 					} else if (msg.msg_type == "left_game") {
 						showLobby();
 						drawTable(context, width, height);
-					} else if (msg.msg_type == "name_changed") {
+					} else if (msg.msg_type == "created_game") {
+						let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)"
+						log(output, "message");					    
+					} else if (msg.msg_type == "player_name") {
+					    if (msg.player_name != null) {
+						// we only hide the warning and set the name if not null
 						hidePlayerNameWarning();
-						$playerName.value = msg.new_name;
+						$playerName.value = msg.player_name;
+					    }
 					} else if (msg.msg_type == "chat") {
 						let output = msg.player_name + ": " + msg.text
 						log(output, "message");

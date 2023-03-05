@@ -78,10 +78,9 @@ impl Handler<Connect> for GameHub {
 	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
 	println!("self.players_to_table = {:?}", self.players_to_table);	
 
-        let mut message = object! {
+        let message = object! {
             msg_type: "connected".to_owned(),
             uuid: id.to_string().to_owned(),
-	    name_set: false, //assume their name isn't set, unless we find out it is a re-connection with a name
         };
 
 	let cloned_addr = addr.clone(); // since we are passing to the config, we need to keep it around for us
@@ -89,23 +88,23 @@ impl Handler<Connect> for GameHub {
 	    // the player happens to be in the lobby at this moment
 	    // simply update the address in the player config
 	    println!("connecting session uuid already in the lobby");
-	    println!("{:?}", config);
-	    if config.name.is_some() {
-		// they were in the hub and already had a name!
-		message["name_set"] = true.into();
-	    }
-	    config.player_addr = Some(addr);	    
+	    config.player_addr = Some(addr);
+	    config.send_player_name();
 	}
 	else if let Some(table_name) = self.players_to_table.get(&id) {
 	    // the player is currently at a table, so we need to tell the table
 	    // that the player has a new address
-	    message["name_set"] = true.into(); // if you are at a table, you must have a name
             if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
                 println!("updating player's address in an existing game");
                 meta_actions
                     .lock()
                     .unwrap()
                     .push_back(MetaAction::UpdateAddress(id, addr));
+		// also tell the table to send the player its current name
+                meta_actions
+                    .lock()
+                    .unwrap()
+                    .push_back(MetaAction::SendPlayerName(id));
             } else {
                 // this should never happen. the player is allegedly at a table, but we
                 // have no record of it in tables_to_meta_actions
@@ -157,16 +156,8 @@ impl Handler<PlayerName> for GameHub {
         // if the player is the main lobby, find them and set their name
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
             println!("setting player name in the main lobby");
-            let message = object! {
-            msg_type: "name_changed".to_owned(),
-            new_name: msg.name.clone(),
-            };
-            player_config
-                .player_addr
-                .as_ref()
-                .unwrap()
-                .do_send(WsMessage(message.dump()));
             player_config.name = Some(msg.name);
+	    player_config.send_player_name();
         } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change
             if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(table_name) {
@@ -174,7 +165,7 @@ impl Handler<PlayerName> for GameHub {
                 meta_actions
                     .lock()
                     .unwrap()
-                    .push_back(MetaAction::PlayerName(msg.id, msg.name));
+                    .push_back(MetaAction::SetPlayerName(msg.id, msg.name));
                 println!("meta actions = {:?}", meta_actions);
             } else {
                 // this should never happen. the player is allegedly at a table, but we
