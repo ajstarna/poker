@@ -355,6 +355,9 @@ impl Game {
                 player_info["player_name"] = name.into();
                 player_info["money"] = player.money.into();
                 player_info["is_active"] = player.is_active.into();
+		if player.is_sitting_out {
+                    player_info["is_sitting_out"] = true.into();		    
+		}
 		if player.is_all_in() {
                     player_info["is_all_in"] = true.into();
 		}
