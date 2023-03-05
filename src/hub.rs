@@ -373,7 +373,7 @@ impl Handler<Create> for GameHub {
 		);
 		
 		for i in 0..num_bots {
-                    let name = format!("Mr {}", i);
+                    let name = format!("Bot {}", i);
                     game.add_bot(name)
 			.expect("error adding bot on freshly created game");
 		}
