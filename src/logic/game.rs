@@ -355,6 +355,9 @@ impl Game {
                 player_info["player_name"] = name.into();
                 player_info["money"] = player.money.into();
                 player_info["is_active"] = player.is_active.into();
+		if player.is_all_in() {
+                    player_info["is_all_in"] = true.into();
+		}
 		if let Some(last_action) = player.last_action {
                     player_info["last_action"] = last_action.to_string().into();
 		}
