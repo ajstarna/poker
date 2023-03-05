@@ -495,13 +495,16 @@ impl Game {
             println!(
                 "\n\n\nPlaying hand {}, button_idx = {}",
                 self.hands_played, self.button_idx
-            );
+            );	    
             let num_human_players = self
                 .players
                 .iter()
                 .flatten()
                 .filter(|player| player.human_controlled)
                 .count();
+            println!("num human players == {:?}", num_human_players);
+            println!("non human hands == {:?}", non_human_hands);
+	    
             if num_human_players == 0 {
                 non_human_hands += 1;
                 println!("num human players == {:?}", num_human_players);
@@ -617,8 +620,8 @@ impl Game {
                 }
                 MetaAction::Leave(id) => {
                     println!(
-                        "handling leave meta action for {:?} inside game = {:?}",
-                        id, &self.name
+                        "handling leave meta action for {:?} inside game = {:?}. between hands = {}",
+                        id, &self.name, between_hands
                     );
                     if let Some(config) = self.player_ids_to_configs.remove(&id) {
                         // note: we don't remove the player from self.players quite yet,
@@ -642,6 +645,17 @@ impl Game {
                                 reason: ReturnedReason::Left,
                             });
                         }
+			if between_hands {
+			    // if we are between hands, then we instantly want to remove the player
+			    for player_spot in self.players.iter_mut() {
+				if let Some(player) = player_spot {
+				    if player.id == id {
+					println!("removing a player instantly between hands");
+					*player_spot = None;
+				    }
+				}
+			    }
+			}
                     } else {
                         // should not normally happen, but check for Some() to be safe
                         // Perhaps if the client sent many leave messages before them being responded to
@@ -1272,7 +1286,7 @@ impl Game {
             println!("Current pot = {:?}, Current size of the bet = {:?}",
 		     gamehand.pot_manager,
 		     gamehand.current_bet);
-            println!("Player = {:?}, i = {}", player.id, i);
+            println!("Player = {:?}, i = {}", player, i);
             if !(player.is_active && player.money > 0) {
                 continue;
             }
@@ -1455,7 +1469,7 @@ impl Game {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;
-        while attempts < 60 && action.is_none() {
+        while attempts < 25 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action

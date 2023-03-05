@@ -76,7 +76,8 @@ impl Handler<Connect> for GameHub {
 
         println!("Someone is connecting with uuid = {id}!");
 	println!("self.main_lobby_connections = {:?}", self.main_lobby_connections);
-	println!("self.players_to_table = {:?}", self.players_to_table);	
+	println!("self.players_to_table = {:?}", self.players_to_table);
+	println!("self.tables_to_meta_actions = {:?}", self.tables_to_meta_actions);		
 
         let message = object! {
             msg_type: "connected".to_owned(),
