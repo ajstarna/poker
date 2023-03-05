@@ -221,9 +221,9 @@ impl WsGameSession {
                     });
                 }
                 "sitout" => {
-                    self.hub_addr.do_send(messages::MetaActionMessage {
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
                         id: self.id,
-                        meta_action: messages::MetaAction::SitOut(self.id),
+                        player_action: PlayerAction::SitOut,
                     });
                 }
                 "imback" => {

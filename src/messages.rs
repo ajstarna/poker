@@ -12,7 +12,6 @@ pub enum MetaAction {
     UpdateAddress(Uuid, Recipient<WsMessage>), // update a player with an existing uuid and new message address
     Leave(Uuid),
     ImBack(Uuid),
-    SitOut(Uuid),
     SetPlayerName(Uuid, String),
     SendPlayerName(Uuid),    
     Chat(Uuid, String),
@@ -46,16 +45,6 @@ pub struct Connect {
     pub id: Uuid,    
     pub addr: Recipient<WsMessage>,
 }
-
-/*
-/// New ws session is created but with an existing uuid/player
-#[derive(Message)]
-#[rtype(result = "Uuid")]
-pub struct Reconnect {
-    pub id: Uuid,
-    pub addr: Recipient<WsMessage>,
-}
- */
 
 /// Session is disconnected
 #[derive(Message)]

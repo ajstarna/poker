@@ -679,14 +679,6 @@ impl Game {
                     PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
 		    self.send_game_state(gamehand);		    
                 }
-                MetaAction::SitOut(id) => {
-                    for player in self.players.iter_mut().flatten() {
-                        if player.id == id {
-                            println!("player {} being set to is_sitting_out = true", id);
-                            player.is_sitting_out = true;
-                        }
-                    }
-                }
                 MetaAction::ImBack(id) => {
                     for player in self.players.iter_mut().flatten() {
                         if player.id == id {
@@ -1145,7 +1137,10 @@ impl Game {
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
 	    // after each street, set the player's last action to None again
             for player in self.players.iter_mut().flatten() {
-		player.last_action = None;
+		if !player.is_sitting_out {
+		    // if they are sitting out, leave that as their last action to keep showing
+		    player.last_action = None;
+		}
             }
             // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2);
@@ -1344,6 +1339,13 @@ impl Game {
                     player.deactivate();
                     num_active -= 1;
                 }
+                PlayerAction::SitOut => {
+                    player.deactivate();
+                    num_active -= 1;
+		    if let Some(player) = &mut self.players[i] {
+			player.is_sitting_out = true;
+		    }
+                }
                 PlayerAction::Check => {
                     num_settled += 1;
                 }
@@ -1481,8 +1483,8 @@ impl Game {
                 attempts += 1;
             }
             if player.is_sitting_out {
-                println!("player is sitting out, so fold");
-                action = Some(PlayerAction::Fold);
+                println!("player is sitting out, so sitout/fold");
+                action = Some(PlayerAction::SitOut);
                 break;
             }
             if !self.player_ids_to_configs.contains_key(&player.id) {
@@ -1613,11 +1615,11 @@ impl Game {
             }
         }
         // if we got a valid action, then we can return it,
-        // otherwise, we just return Fold
+        // otherwise, we timed out, so sit out
         if let Some(action) = action {
 	    action
         } else {
-            PlayerAction::Fold
+            PlayerAction::SitOut
         }
     }
 }
@@ -3149,10 +3151,10 @@ mod tests {
             .insert(id2, PlayerAction::Bet(10));
 
         // player1 sits out, which folds and moves on
-        incoming_meta_actions
+        incoming_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::SitOut(id1));
+            .insert(id1, PlayerAction::SitOut);
 
         // get the game back from the thread
         let game = handler.join().unwrap();
@@ -3417,7 +3419,7 @@ mod tests {
         incoming_meta_actions
             .lock()
             .unwrap()
-            .push_back(MetaAction::Admin(id, AdminCommand::Password(new_password.clone())));
+            .push_back(MetaAction::Admin(id, AdminCommand::SetPassword(new_password.clone())));
         game.handle_meta_actions(&cloned_meta_actions, true, None);
 	assert_eq!(game.password, Some(new_password));	
     }
