@@ -58,6 +58,9 @@
 					<span>
 						<button class="button" onclick="joinTable()">Join Table</button>
 					</span>
+					<span><input type="text"  id="passwordBox" />
+					  <p style="color:orange; font-weight: bold;">Password (private games only)</p>
+					</span>
 					<h3>Public Tables</h3>
 					<button class="button" onclick="listPublicTable()">
 						Refresh Public Games
@@ -221,7 +224,8 @@
 		const $input = document.getElementById("text");
 		const $playerName = document.getElementById("playerName");
 		const $playerNameWarning = document.getElementById("playerNameWarning");
-		const $tableId = document.getElementById("tableId");
+	        const $tableId = document.getElementById("tableId");
+		const $passwordEnter = document.getElementById("passwordBox");	  
 		const $tableName = document.getElementById("table_name");
 		const $tableControls = document.getElementById("table_controls");
 		const $betSlider = document.getElementById("betSizeSlider");
@@ -617,7 +621,7 @@
 			var msg = {}; // build the json to send
 			msg["msg_type"] = "join";
 			msg["table_name"] = $tableId.value;
-			msg["password"] = "123";
+		        msg["password"] = $passwordEnter.value;
 			socket.send(JSON.stringify(msg));
 		}
 
