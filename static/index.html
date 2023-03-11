@@ -27,7 +27,7 @@
 				<span id="table_name"></span>
 			</div>
 
-			<div>
+			<div>1
 				<span><input type="checkbox" id="sitoutbtn" name="sitoutbtn" value="sitout" /></span>
 				<span>Sit Out</span>
 			</div>
@@ -218,7 +218,8 @@
 		const $publicTableList = document.getElementById("publicTableList");
 
 		const $gameMenu = document.getElementById("game_info");
-		const $sitoutbtn = document.getElementById("sitoutbtn");
+	        const $sitoutbtn = document.getElementById("sitoutbtn");
+	  
 		const $log = document.querySelector("#log");
 		const $form = document.querySelector("#chatform");
 		const $input = document.getElementById("text");
@@ -300,6 +301,14 @@
 			// this is called after every change of state to re-render the entire UI.
 			drawTable(context, width, height); // Draws the background and the table
 
+		        let main_player = gameState.players[gameState.your_index];
+		        if (main_player.is_sitting_out) {
+		            // make sure the check box is in sync with you sitting out or not
+		            // an auto-sitout from timing out should let you know that the checkbox should be checked
+			    $sitoutbtn.checked = true;
+			} else {
+			    $sitoutbtn.checked = false;			    
+			}
 			for (let i = 0; i < gameState.max_players; i++) {
 				let playerState = gameState.players[i];
 
@@ -307,6 +316,7 @@
 					continue;
 				}
 
+			        // the mapped index is always relative to the main player being at index 0
 				let mapped_index = (playerState.index - gameState.your_index + 9) % 9;
 				// Get player position (x, y)
 				let position = mappedIndexToPlayerPosition[mapped_index];

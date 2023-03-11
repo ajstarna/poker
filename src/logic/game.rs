@@ -582,7 +582,7 @@ impl Game {
 	between_hands: bool,
 	gamehand: Option<&GameHand>, // if we are between hands, then there won't be a gamehand
     ) {
-        let mut meta_actions = incoming_meta_actions.lock().unwrap();
+        let mut meta_actions = incoming_meta_actions.lock().unwrap();	
         for _ in 0..meta_actions.len() {
             match meta_actions.pop_front().unwrap() {
                 MetaAction::Chat(id, text) => {
@@ -692,6 +692,7 @@ impl Game {
                             player.is_sitting_out = false;
                         }
                     }
+		    self.send_game_state(gamehand);		    		    
                 }
 		MetaAction::Admin(id, admin_command) => {
 		    if !between_hands {
@@ -1232,10 +1233,15 @@ impl Game {
 
         gamehand.street_contributions.insert(gamehand.street, [0;9]);
 	
+	let between_hands = false;		
+	
 	let mut hand_over = false;	
         // iterate over the players from the starting index to the end of the vec,
         // and then from the beginning back to the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
+	    // handle meta actions once right at the beginning to be responsive to sitout messages for example
+            self.handle_meta_actions(&incoming_meta_actions, between_hands, Some(gamehand));
+	    
             // double check if any players left as a meta-action during the previous
             // player's turn. They should no longer be considered as active or all_in
             for player_spot in self.players.iter_mut() {
@@ -1273,7 +1279,7 @@ impl Game {
                 // no one sitting in this spot
                 continue;
             }
-
+	    
 	    gamehand.index_to_act = Some(i);
 	    self.send_game_state(Some(&gamehand));
 	    
@@ -1445,7 +1451,7 @@ impl Game {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
         // position is our spot in the order, with 0 == small blind, etc
-
+	
         // we sleep a little bit each time so that the output doesnt flood the user at one moment
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
@@ -1476,7 +1482,7 @@ impl Game {
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
-	let between_hands = false;
+	let between_hands = false;		
         while attempts < 25 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
