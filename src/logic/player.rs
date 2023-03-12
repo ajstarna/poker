@@ -2,8 +2,13 @@ use super::card::Card;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 use std::fmt;
+
+/// the player timeout is how long without doing anything (player action, text messages, etc)
+/// before we remove them from any game AND the hub.
+pub const PLAYER_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
@@ -38,6 +43,13 @@ pub struct PlayerConfig {
     pub id: Uuid,
     pub name: Option<String>,
     pub player_addr: Option<Recipient<WsMessage>>,
+    // the heart_beat indicates the last time the player was "active"
+    // inside the game, any player action updates the heartbeat, as well as text messages or ImBack
+    // If a player times out inside a game, the game returns the config to the game hub and removes the Player
+    // The game hub checks on an interval for failed-heart-beat configs in the lobby, and removes them
+    // Moreover, the WsPlayerSession also maintains a heartbeat, and on time out, stops itself
+    // This should remove all memory of this player and session from the system (unless I missed something lol)
+    pub heart_beat: Instant, 
 }
 
 impl PlayerConfig {
@@ -46,6 +58,7 @@ impl PlayerConfig {
             id,
             name,
             player_addr,
+	    heart_beat: Instant::now(),
         }
     }
 
@@ -94,6 +107,23 @@ impl PlayerConfig {
         if let Some(player_config) = ids_to_configs.get_mut(&id) {
             player_config.player_addr = Some(addr);
         }
+    }
+
+    /// returns a bool indicating of the player has done something
+    /// within the past PLAYER_TIMEOUT time.
+    /// This indicates if a player needs to be removed from a game or the main lobby, so that
+    /// a player can't sit in a table indefinitely.
+    pub fn has_active_heart_beat(&self) -> bool {
+	let gap = Instant::now().duration_since(self.heart_beat);
+	println!("config = {:?}, gap = {:?}", self, gap);
+	if gap > PLAYER_TIMEOUT {
+            // heartbeat timed out
+            println!("player timed out!");
+	    false
+	} else {
+	    true
+	}
+	
     }
 }
 

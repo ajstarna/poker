@@ -9,14 +9,14 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::hub;
-use crate::logic::player::PlayerAction;
+use crate::logic::{PlayerAction, PLAYER_TIMEOUT};
 use crate::messages;
 
 /// How often heartbeat pings are sent
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
 /// How long before lack of client response causes a timeout
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub fn get_help_message() -> Vec<String> {
     vec!["/small_blind AMOUNT".to_string(),
@@ -31,25 +31,31 @@ pub fn get_help_message() -> Vec<String> {
 }
 
 #[derive(Debug)]
-pub struct WsGameSession {
+pub struct WsPlayerSession {
     /// unique session id
     pub id: Uuid,
 
     /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
     /// otherwise we drop connection.
-    pub hb: Instant,
+    pub client_hb: Instant,
 
+    // we also keep track of how long since they did a "real" command
+    // if the player is inactive for too long, we stop the session to clear resources
+    // Note: the hub also checks for a command heart beat to clear the player config itself from the lobby
+    pub command_hb: Instant,
+    
     /// Game hub address
     pub hub_addr: Addr<hub::GameHub>,
 }
 
-impl WsGameSession {
+impl WsPlayerSession {
     pub fn new(hub_addr: Addr<hub::GameHub>) -> Self {
         let id = Uuid::new_v4();
 	println!("brand new uuid = {id}");
         Self {
             id,
-            hb: Instant::now(),
+            client_hb: Instant::now(),
+            command_hb: Instant::now(),	    
             hub_addr,
         }
     }
@@ -58,7 +64,8 @@ impl WsGameSession {
     pub fn from_existing(uuid: Uuid, hub_addr: Addr<hub::GameHub>) -> Self {
         Self {
             id: uuid,
-            hb: Instant::now(),
+            client_hb: Instant::now(),
+            command_hb: Instant::now(),	    
             hub_addr,
         }
     }
@@ -66,19 +73,34 @@ impl WsGameSession {
     /// helper method that sends ping to client every 5 seconds (HEARTBEAT_INTERVAL).
     ///
     /// also this method checks heartbeats from client
+    /// I believe this latter check is usually redundant, since if the client closers their
+    /// browser, for example, it will trigger a stopping() call. I guess if the client can't even
+    /// respond at all, this heartbeat could come in handy?
     fn hb(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             // check client heartbeats
-            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
-                // heartbeat timed out
+	    let command_gap = Instant::now().duration_since(act.command_hb);	    
+            if command_gap > PLAYER_TIMEOUT + Duration::from_secs(30) {
+                // command heartbeat timed out
+		// Note: we wait a bit longer than the PLAYER_TIMEOUT, so that we might first receive
+		// the message from the hub that we timed out
+                println!("Session PLAYER heartbeat failed, disconnecting!");
+
+                // stop actor
+                ctx.stop();
+
+                // don't try to send a ping
+                return;
+            }
+
+	    let client_gap = Instant::now().duration_since(act.client_hb);	    
+            if client_gap > CLIENT_TIMEOUT {
+                // client heartbeat timed out
                 println!("Websocket Client heartbeat failed, disconnecting!");
-
-                // notify game server. A Leave is the same thing for the game
-                act.hub_addr.do_send(messages::MetaActionMessage {
-                    id: act.id,
-                    meta_action: messages::MetaAction::Leave(act.id),
-                });
-
+		// Note: here we do NOT tell the hub that we want to leave the game.
+		// This allows for the client to rejoin with the same UUID and a new session
+		// (Up to the PLAYER_TIMEOUT)
+		
                 // stop actor
                 ctx.stop();
 
@@ -91,7 +113,7 @@ impl WsGameSession {
     }
 }
 
-impl Actor for WsGameSession {
+impl Actor for WsPlayerSession {
     type Context = ws::WebsocketContext<Self>;
 
     /// Method is called on actor start.
@@ -103,7 +125,7 @@ impl Actor for WsGameSession {
         // register self in game server. `AsyncContext::wait` register
         // future within context, but context waits until this future resolves
         // before processing any other events.
-        // HttpContext::state() is instance of WsGameSessionState, state is shared
+        // HttpContext::state() is instance of WsPlayerSessionState, state is shared
         // across all routes within application
         let addr = ctx.address();
         self.hub_addr
@@ -126,12 +148,17 @@ impl Actor for WsGameSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
+	println!("im 'stopping' inside Actor");
         Running::Stop
+    }
+    
+    fn stopped(&mut self, _: &mut Self::Context) {
+	println!("im 'stopped' inside Actor");
     }
 }
 
 /// Handle messages from game server, we simply send it to peer websocket
-impl Handler<messages::WsMessage> for WsGameSession {
+impl Handler<messages::WsMessage> for WsPlayerSession {
     type Result = ();
 
     fn handle(&mut self, msg: messages::WsMessage, ctx: &mut Self::Context) {
@@ -140,7 +167,7 @@ impl Handler<messages::WsMessage> for WsGameSession {
 }
 
 /// WebSocket message handler
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsPlayerSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         let msg = match msg {
             Err(_) => {
@@ -151,19 +178,20 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
         };
 
         log::debug!("WEBSOCKET MESSAGE: {msg:?}");
-        //println!("WEBSOCKET MESSAGE: {:?}", msg);
+        println!("WEBSOCKET MESSAGE: {:?}", msg);
         match msg {
             ws::Message::Ping(msg) => {
-                self.hb = Instant::now();
+                self.client_hb = Instant::now();
                 ctx.pong(&msg);
             }
             ws::Message::Pong(_) => {
-                self.hb = Instant::now();
+                self.client_hb = Instant::now();
             }
             ws::Message::Text(text) => {
                 let m = text.trim();
 
                 if let Ok(object) = serde_json::from_str(m) {
+                    self.command_hb = Instant::now(); // we got a command, so set the heartbeat
                     println!("parsed: {}", object);
                     self.handle_client_command(object, m, ctx);
                 } else {
@@ -183,12 +211,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsGameSession {
     }
 }
 
-impl WsGameSession {
+impl WsPlayerSession {
     fn handle_client_command(
         &mut self,
         object: Value,
 	m: &str, // the original string in case we want to use it to parse
-        ctx: &mut <WsGameSession as Actor>::Context,
+        ctx: &mut <WsPlayerSession as Actor>::Context,
     ) {
         println!("Entered handle_client_command {:?}", object);
         let msg_type_opt = object.get("msg_type");
@@ -258,7 +286,7 @@ impl WsGameSession {
         }
     }
 
-    fn handle_create_table(&self, msg: &str, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_create_table(&self, msg: &str, ctx: &mut <WsPlayerSession as Actor>::Context) {
         self.hub_addr
             .send(messages::Create {
                 id: self.id,
@@ -296,7 +324,7 @@ impl WsGameSession {
         // of tables back
     }
     
-    fn handle_list_tables(&self, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_list_tables(&self, ctx: &mut <WsPlayerSession as Actor>::Context) {
         // Send ListTables message to game server and wait for
         // response
         println!("List tables");
@@ -322,7 +350,7 @@ impl WsGameSession {
         // of tables back
     }
 
-    fn handle_join_table(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_join_table(&self, object: Value, ctx: &mut <WsPlayerSession as Actor>::Context) {
         if let (Some(Value::String(table_name)), Some(password)) =
             (object.get("table_name"), object.get("password"))
         {
@@ -344,7 +372,7 @@ impl WsGameSession {
         }
     }
 
-    fn handle_player_action(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_player_action(&self, object: Value, ctx: &mut <WsPlayerSession as Actor>::Context) {
         if let Some(Value::String(player_action)) = object.get("action") {
             let player_action = player_action.to_string();
             match player_action.as_str() {
@@ -390,7 +418,7 @@ impl WsGameSession {
         }
     }
 
-    fn handle_player_name(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_player_name(&self, object: Value, ctx: &mut <WsPlayerSession as Actor>::Context) {
         if let Some(Value::String(name)) = object.get("player_name") {
             println!("{}", name);
             self.hub_addr.do_send(messages::PlayerName {
@@ -402,7 +430,7 @@ impl WsGameSession {
         }
     }
 
-    fn handle_chat(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_chat(&self, object: Value, ctx: &mut <WsPlayerSession as Actor>::Context) {
         if let Some(Value::String(text)) = object.get("text") {
             let text = text.to_string();
             self.hub_addr.do_send(messages::MetaActionMessage {
@@ -416,7 +444,7 @@ impl WsGameSession {
     }
 
     // e.g. {"msg_type": "admin_command", "admin_command": "big_blind", "big_blind": 24}
-    fn handle_admin_command(&self, object: Value, ctx: &mut <WsGameSession as Actor>::Context) {
+    fn handle_admin_command(&self, object: Value, ctx: &mut <WsPlayerSession as Actor>::Context) {
         if let Some(Value::String(admin_command)) = object.get("admin_command") {
             let invalid_json =  match admin_command.as_str() {
                 "small_blind" => {

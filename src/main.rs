@@ -44,7 +44,7 @@ async fn new_connection(
 ) -> Result<HttpResponse, Error> {
     log::info!("inside new_connection()");
     ws::start(
-        session::WsGameSession::new(hub_addr.get_ref().clone()),
+        session::WsPlayerSession::new(hub_addr.get_ref().clone()),
         &req,
         stream,
     )
@@ -63,7 +63,7 @@ async fn reconnect(
 ) -> Result<HttpResponse, Error> {
     let uuid = path.into_inner();
     ws::start(
-        session::WsGameSession::from_existing(uuid, hub_addr.get_ref().clone()),
+        session::WsPlayerSession::from_existing(uuid, hub_addr.get_ref().clone()),
         &req,
         stream,
     )

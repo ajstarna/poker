@@ -95,6 +95,7 @@ pub struct Join {
 
 pub enum ReturnedReason {
     Left, // the player left
+    HeartBeatFailed,
     FailureToJoin(JoinGameError),
 }
 
@@ -118,7 +119,7 @@ pub struct PlayerName {
 pub enum CreateGameError {
     NameNotSet,
     UnableToParseJson(String),
-    InvalidFieldValue(String), // contains the invalid field
+    PlayerDoesNotExist, // cannot be found in the lobby or at a table
     AlreadyAtTable(String),    // contains the table name
     TooManyBots,
     TooLargeBlinds,
@@ -136,8 +137,8 @@ impl fmt::Display for CreateGameError {
             CreateGameError::AlreadyAtTable(table_name) => {
                 write!(f, "You are already at the table {}", table_name)
             }
-            CreateGameError::InvalidFieldValue(invalid_field) => {
-                write!(f, "Invalid field value: {}", invalid_field)
+            CreateGameError::PlayerDoesNotExist => {
+                write!(f, "The game is unaware of you. Please try refreshing your browser.")
             }
             CreateGameError::TooManyBots => {
                 write!(f, "Too many bots selected")
