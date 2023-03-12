@@ -7,9 +7,10 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{atomic::AtomicUsize, Arc, Mutex},
+    time::{Duration, Instant},
 };
 
-use crate::logic::{Game, PlayerAction, PlayerConfig};
+use crate::logic::{Game, PlayerAction, PlayerConfig, PLAYER_TIMEOUT};
 use crate::messages::{
     Connect, Create, CreateFields, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
@@ -55,7 +56,7 @@ impl GameHub {
             private_tables: HashSet::new(),
             visitor_count,
         }
-    }
+    }    
 }
 
 /// Make actor from `GameHub`
@@ -63,6 +64,20 @@ impl Actor for GameHub {
     /// We are going to use simple Context, we just need ability to communicate
     /// with other actors.
     type Context = Context<Self>;
+
+    /// Method is called on actor start.
+    /// we start the heart beat interval process, checking all
+    /// player configs in the lobby for inaction
+    fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.run_interval(Duration::from_secs(10), |this_actor, _ctx| {
+            // check client heartbeats
+	    println!("checking heart beats in the game hub");
+	    this_actor.main_lobby_connections.retain(|_uuid, config| {
+		config.has_active_heart_beat()
+	    });
+	    println!("self.main_lobby_connections = {:?}", this_actor.main_lobby_connections);	    
+	});
+    }
 }
 
 /// Handler for Connect message.
@@ -158,6 +173,7 @@ impl Handler<PlayerName> for GameHub {
         if let Some(player_config) = self.main_lobby_connections.get_mut(&msg.id) {
             println!("setting player name in the main lobby");
             player_config.name = Some(msg.name);
+	    player_config.heart_beat = Instant::now(); // this counts as activity
 	    player_config.send_player_name();
         } else if let Some(table_name) = self.players_to_table.get(&msg.id) {
             // otherwise, find which game they are in, and tell the game there has been a name change
@@ -177,8 +193,11 @@ impl Handler<PlayerName> for GameHub {
                 );
             }
         } else {
-            // player id not found anywhere. this should never happen
-            panic!("how can we set a name if no config exists anywhere!");
+            // player id not found anywhere. this probably means they player_timeouted, and
+	    // they were removed from the lobby.
+	    // TODO: I think this should stop the session actor that sent this message, otherwise
+	    // we can have a session actor living indefinitely with no corresponding playerconfig?
+            println!("we cannot set the name since no config exists anywhere!");
         }
     }
 }
@@ -202,8 +221,10 @@ impl Handler<Join> for GameHub {
             println!("player config not in the main lobby, so they must already be at a game");
             return;
         }
-        let player_config = player_config_option.unwrap();
+        let mut player_config = player_config_option.unwrap();
 
+	player_config.heart_beat = Instant::now(); // this counts as activity
+	
         if player_config.name.is_none() {
             // they are not allowed to join a game without a Name set
             let message = json::object! {
@@ -222,9 +243,6 @@ impl Handler<Join> for GameHub {
             return;
         }
 
-        // update the mapping to find the player at a table
-        self.players_to_table.insert(id, table_name.clone());
-
         if let Some(meta_actions) = self.tables_to_meta_actions.get_mut(&table_name) {
             // since the meta actions already exist, this means the game already exists
             // so we can simply join it
@@ -233,6 +251,9 @@ impl Handler<Join> for GameHub {
                 .lock()
                 .unwrap()
                 .push_back(MetaAction::Join(player_config, password));
+            // update the mapping to find the player at a table
+            self.players_to_table.insert(id, table_name.clone());
+	    
         } else {
             let message = json::object! {
                     msg_type: "error".to_owned(),
@@ -272,6 +293,11 @@ impl Handler<Returned> for GameHub {
                 ReturnedReason::Left => {
                     message["msg_type"] = "left_game".into();
                 }
+                ReturnedReason::HeartBeatFailed => {
+		    message["msg_type"] = "error".into();
+                    message["error"] = "disconnected_from_server".into();		    
+                    message["reason"] = "timed out due to inactivity".into();
+                }
                 ReturnedReason::FailureToJoin(err) => {
 		    message["msg_type"] = "error".into();
                     message["error"] = "unable_to_join".into();		    
@@ -304,11 +330,14 @@ impl Handler<Create> for GameHub {
                 return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
             } else {
                 println!("player not at lobby nor at a table");
-                return Err(CreateGameError::AlreadyAtTable("unknown".to_string()));
+		// TODO: I think this should stop the session actor that sent this message, otherwise
+		// we can have a session actor living indefinitely with no corresponding playerconfig?		
+                return Err(CreateGameError::PlayerDoesNotExist);
             }
         }
-        let player_config = player_config_option.unwrap();
-
+        let mut player_config = player_config_option.unwrap();
+	player_config.heart_beat = Instant::now(); // this counts as activity
+	
         if player_config.name.is_none() {
             // they are not allowed to join a game without a Name set
             // put them back in the lobby

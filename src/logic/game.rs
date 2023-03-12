@@ -315,7 +315,7 @@ impl Game {
 		    &state_message.dump(),
 		    player.id,
                     &self.player_ids_to_configs,
-        );
+		);
 		
             }
 	}
@@ -480,6 +480,30 @@ impl Game {
         Err(JoinGameError::GameIsFull)
     }
 
+    /// if any of the player configs has not had a heart beat in a long time,
+    /// we tell the hub (via a Returned message), and then removethe config from
+    /// self.player_ids_to_configs
+    fn handle_player_heart_beats(&mut self) {
+	for (_uuid, config) in self.player_ids_to_configs.iter() {
+	    if !config.has_active_heart_beat() {
+                if let Some(hub_addr) = &self.hub_addr {
+                    // tell the hub that we left
+                    let cloned_config = config.clone(); // clone to send back to the hub
+                    hub_addr.do_send(Returned {
+                        config: cloned_config,
+                        reason: ReturnedReason::HeartBeatFailed,
+                    });
+                }
+	    }
+	}
+	// now remove the configs that failed the heart beat
+	// They is probably a better way to code this method, but this works for now
+        self.player_ids_to_configs.retain(|_uuid, config| {
+            // if a player config has no active heartbeat (i.e. has not done anything in a long time)
+            // then we remove their config               
+            config.has_active_heart_beat()
+        });
+    }
     pub fn play(
         &mut self,
         incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
@@ -489,8 +513,23 @@ impl Game {
         let mut non_human_hands = 0; // we only allow a certain number of hands without a human before ending
         loop {
 	    let between_hands = true;
-            self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
-	    
+
+	    ////
+	    self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
+            println!("checking heart beats in the game play()");
+	    self.handle_player_heart_beats();
+            // check if any player left with a meta action or timed out due to heart beat.                 
+            // if so, their config will be gone, so now remove the player struct as well.
+            for player_spot in self.players.iter_mut() {
+                if let Some(player) = player_spot {
+                    if !self.player_ids_to_configs.contains_key(&player.id) {
+                        println!("player is no longer in the config");
+                        *player_spot = None;
+			
+                    }
+		}
+	    }
+ 	    
             self.hands_played += 1;
             if let Some(limit) = hand_limit {
                 if self.hands_played > limit {
@@ -589,15 +628,15 @@ impl Game {
                     // send the message to all players,
                     // appended by the player name
                     println!("chat message inside the game hand wow!");
-
-                    let name = &self.player_ids_to_configs.get(&id).unwrap().name;
-                    let message = object! {
-                    msg_type: "chat".to_owned(),
-                    player_name: name.clone(),
-                    text: text,
-                            };
-
-                    PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+		    if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
+			player_config.heart_beat = time::Instant::now(); // this counts as activity
+			let message = object! {
+			    msg_type: "chat".to_owned(),
+			    player_name: player_config.name.clone(),
+			    text: text,
+                        };
+			PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+		    }
                 }		
                 MetaAction::Join(player_config, password) => {
                     // add a new player to the game
@@ -651,17 +690,6 @@ impl Game {
                                 reason: ReturnedReason::Left,
                             });
                         }
-			if between_hands {
-			    // if we are between hands, then we instantly want to remove the player
-			    for player_spot in self.players.iter_mut() {
-				if let Some(player) = player_spot {
-				    if player.id == id {
-					println!("removing a player instantly between hands");
-					*player_spot = None;
-				    }
-				}
-			    }
-			}
                     } else {
                         // should not normally happen, but check for Some() to be safe
                         // Perhaps if the client sent many leave messages before them being responded to
@@ -692,6 +720,9 @@ impl Game {
                             player.is_sitting_out = false;
                         }
                     }
+		    if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
+			player_config.heart_beat = time::Instant::now(); // this counts as activity
+		    }
 		    self.send_game_state(gamehand);		    		    
                 }
                 MetaAction::SitOut(id) => {
@@ -1322,6 +1353,7 @@ impl Game {
                 gamehand,
             );
 
+	    println!("action = {:?}", action);
 	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
 	    
             // now that we have gotten the current player's action and handled
@@ -1491,7 +1523,7 @@ impl Game {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;		
-        while attempts < 10 && action.is_none() {
+        while attempts < 45 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
@@ -1637,6 +1669,10 @@ impl Game {
         // if we got a valid action, then we can return it,
         // otherwise, we timed out, so sit out
         if let Some(action) = action {
+	    if let Some(player_config) = self.player_ids_to_configs.get_mut(&player.id) {
+		// the fact that we received an action tells us to update the active heartbeat		
+		player_config.heart_beat = time::Instant::now();
+	    }
 	    action
         } else {
 	    // send a meta action (to ourself) that this player should be sitting out
@@ -1931,6 +1967,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2025,6 +2064,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player (small blind) bets,
         // even though player1 is already all-in, so the BB can only 3 win bucks
         incoming_actions
@@ -2070,7 +2112,10 @@ mod tests {
             game.play_one_hand(&cloned_actions, &cloned_meta_actions);
             game // return the game back
         });
-
+	
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+		      
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2181,6 +2226,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2278,6 +2326,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2377,6 +2428,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets a bunch
         incoming_actions
             .lock()
@@ -2497,6 +2551,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // the button goes all in with the short stack
         incoming_actions
             .lock()
@@ -2625,6 +2682,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // the button goes all in with the short stack
         incoming_actions
             .lock()
@@ -2773,6 +2833,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // UTG goes all in with the medium stack
         incoming_actions
             .lock()
@@ -2840,12 +2903,18 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(1.1)); 
+	
         // set the action that player2 folds
         incoming_actions
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Fold);
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(9.5)); 
+	println!("ADDING THE FOLD OUTSIDE GAME\n\n");	
         // then player1 folds next hand
         incoming_actions
             .lock()
@@ -2924,6 +2993,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // id3 should not have to act as the big blind
         println!("\n\nsetting 1!");
         incoming_actions
@@ -2934,7 +3006,6 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Fold);
-        //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
 
         // wait for next hand
         let wait_duration = time::Duration::from_secs(9);
@@ -3023,6 +3094,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -3153,6 +3227,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -3175,12 +3252,12 @@ mod tests {
             .unwrap()
             .insert(id2, PlayerAction::Bet(10));
 
-        // player1 sits out, which folds and moves on
-        incoming_actions
+        // player1 sit out META action, which folds and ends the hand
+        incoming_meta_actions
             .lock()
             .unwrap()
-            .insert(id1, PlayerAction::SitOut);
-
+            .push_back(MetaAction::SitOut(id1));
+	
         // get the game back from the thread
         let game = handler.join().unwrap();
 
@@ -3268,6 +3345,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we wait before adding the leave meta action
+        thread::sleep(time::Duration::from_secs_f32(1.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
