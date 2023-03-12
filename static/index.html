@@ -207,10 +207,11 @@
 
 		// Create Game
 		const $playerLimitSlider = document.getElementById("player_limit_slider");
-		const $playerLimitValue = document.getElementById("player_limit_value");
+	        const $playerLimitValue = document.getElementById("player_limit_value");
+	        $playerLimitSlider.value = 9; // start matching the value
 	        const $botNumberSlider = document.getElementById("number_of_bots_slider");
-	        $botNumberSlider.value = 0; // start at 0 like the value
-		const $botNumberValue = document.getElementById("number_of_bots_value");
+	        const $botNumberValue = document.getElementById("number_of_bots_value");
+	        $botNumberSlider.value = 0; // start matching the value
 		const $smallBlindValue = document.getElementById("small_blind_value");
 		const $bigBlindValue = document.getElementById("big_blind_value");
 		const $startingStackValue = document.getElementById("starting_stack_value");
