@@ -8,7 +8,7 @@ use std::fmt;
 
 /// the player timeout is how long without doing anything (player action, text messages, etc)
 /// before we remove them from any game AND the hub.
-pub const PLAYER_TIMEOUT: Duration = Duration::from_secs(600);
+pub const PLAYER_TIMEOUT: Duration = Duration::from_secs(1800);
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlayerAction {
