@@ -1353,6 +1353,7 @@ impl Game {
                 gamehand,
             );
 
+	    println!("action = {:?}", action);
 	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
 	    
             // now that we have gotten the current player's action and handled
@@ -1966,6 +1967,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2060,6 +2064,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player (small blind) bets,
         // even though player1 is already all-in, so the BB can only 3 win bucks
         incoming_actions
@@ -2105,7 +2112,10 @@ mod tests {
             game.play_one_hand(&cloned_actions, &cloned_meta_actions);
             game // return the game back
         });
-
+	
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+		      
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2216,6 +2226,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2313,6 +2326,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets
         incoming_actions
             .lock()
@@ -2412,6 +2428,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 bets a bunch
         incoming_actions
             .lock()
@@ -2532,6 +2551,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // the button goes all in with the short stack
         incoming_actions
             .lock()
@@ -2660,6 +2682,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // the button goes all in with the short stack
         incoming_actions
             .lock()
@@ -2808,6 +2833,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // UTG goes all in with the medium stack
         incoming_actions
             .lock()
@@ -2875,12 +2903,18 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(1.1)); 
+	
         // set the action that player2 folds
         incoming_actions
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Fold);
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(9.5)); 
+	println!("ADDING THE FOLD OUTSIDE GAME\n\n");	
         // then player1 folds next hand
         incoming_actions
             .lock()
@@ -2959,6 +2993,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // id3 should not have to act as the big blind
         println!("\n\nsetting 1!");
         incoming_actions
@@ -2969,7 +3006,6 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Fold);
-        //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
 
         // wait for next hand
         let wait_duration = time::Duration::from_secs(9);
@@ -3058,6 +3094,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -3188,6 +3227,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -3210,12 +3252,12 @@ mod tests {
             .unwrap()
             .insert(id2, PlayerAction::Bet(10));
 
-        // player1 sits out, which folds and moves on
-        incoming_actions
+        // player1 sit out META action, which folds and ends the hand
+        incoming_meta_actions
             .lock()
             .unwrap()
-            .insert(id1, PlayerAction::SitOut);
-
+            .push_back(MetaAction::SitOut(id1));
+	
         // get the game back from the thread
         let game = handler.join().unwrap();
 
@@ -3303,6 +3345,9 @@ mod tests {
             game // return the game back
         });
 
+	// sleep so we wait before adding the leave meta action
+        thread::sleep(time::Duration::from_secs_f32(1.2)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
