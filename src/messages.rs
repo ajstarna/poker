@@ -11,6 +11,7 @@ pub enum MetaAction {
     Join(PlayerConfig, Option<String>), // player config and optional password
     UpdateAddress(Uuid, Recipient<WsMessage>), // update a player with an existing uuid and new message address
     Leave(Uuid),
+    SitOut(Uuid),    
     ImBack(Uuid),
     SetPlayerName(Uuid, String),
     SendPlayerName(Uuid),    

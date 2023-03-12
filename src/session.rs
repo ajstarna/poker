@@ -220,16 +220,23 @@ impl WsGameSession {
                         meta_action: messages::MetaAction::Leave(self.id),
                     });
                 }
-                "sitout" => {
-                    self.hub_addr.do_send(messages::PlayerActionMessage {
-                        id: self.id,
-                        player_action: PlayerAction::SitOut,
-                    });
-                }
                 "imback" => {
                     self.hub_addr.do_send(messages::MetaActionMessage {
                         id: self.id,
                         meta_action: messages::MetaAction::ImBack(self.id),
+                    });
+                }
+                "sitout" => {
+		    // we actually send a meta action and a player action.
+		    // Depending where we are in the game street loop,
+		    // sending both guarantees it will respond quickly
+                    self.hub_addr.do_send(messages::PlayerActionMessage {
+                        id: self.id,
+                        player_action: PlayerAction::SitOut,
+                    });		    		    
+                    self.hub_addr.do_send(messages::MetaActionMessage {
+                        id: self.id,
+                        meta_action: messages::MetaAction::SitOut(self.id),
                     });
                 }
                 "name" => {

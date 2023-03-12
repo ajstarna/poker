@@ -694,6 +694,15 @@ impl Game {
                     }
 		    self.send_game_state(gamehand);		    		    
                 }
+                MetaAction::SitOut(id) => {
+                    for player in self.players.iter_mut().flatten() {
+                        if player.id == id {
+                            println!("player {} being set to is_sitting_out = true", id);
+                            player.is_sitting_out = true;
+                        }
+                    }
+		    self.send_game_state(gamehand);		    		    
+                }
 		MetaAction::Admin(id, admin_command) => {
 		    if !between_hands {
 			// put it back on the meta actions queue to be handled only between hands
@@ -1124,7 +1133,6 @@ impl Game {
     ) {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
         let mut gamehand = GameHand::default();
-
         for player in self.players.iter_mut().flatten() {
             if player.is_sitting_out || player.money == 0 {
                 player.is_active = false;
@@ -1133,6 +1141,11 @@ impl Game {
             }
         }
 
+	// drain any linger actions from a previous hand
+        let mut actions = incoming_actions.lock().unwrap();
+	actions.drain();
+	std::mem::drop(actions); // give it back
+	
 	self.send_game_state(Some(&gamehand));	
         self.deck.shuffle();
         self.deal_hands();
@@ -1144,10 +1157,7 @@ impl Game {
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
 	    // after each street, set the player's last action to None again
             for player in self.players.iter_mut().flatten() {
-		if !player.is_sitting_out {
-		    // if they are sitting out, leave that as their last action to keep showing
-		    player.last_action = None;
-		}
+		player.last_action = None;
             }
             // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2);
@@ -1279,10 +1289,7 @@ impl Game {
                 // no one sitting in this spot
                 continue;
             }
-	    
-	    gamehand.index_to_act = Some(i);
-	    self.send_game_state(Some(&gamehand));
-	    
+	    	    
             // we clone() the current player so that we can use its information
             // while also possibly updating players (if a player leaves or joins the game in handle_meta_actions)
             // if we handle_meta_actions BEFORE accessing the current player, then we will have to wait
@@ -1294,10 +1301,15 @@ impl Game {
 		     gamehand.pot_manager,
 		     gamehand.current_bet);
             println!("Player = {:?}, i = {}", player, i);
+	    
             if !(player.is_active && player.money > 0) {
+		// if the player is not active with money, they can't do anything.
                 continue;
             }
 
+	    gamehand.index_to_act = Some(i);
+	    self.send_game_state(Some(&gamehand));
+	    
             let player_cumulative = gamehand
 		.street_contributions
 		.get(&gamehand.street).unwrap()[i];
@@ -1310,7 +1322,6 @@ impl Game {
                 gamehand,
             );
 
-	    
 	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
 	    
             // now that we have gotten the current player's action and handled
@@ -1354,9 +1365,6 @@ impl Game {
                 PlayerAction::SitOut => {
                     player.deactivate();
                     num_active -= 1;
-		    if let Some(player) = &mut self.players[i] {
-			player.is_sitting_out = true;
-		    }
                 }
                 PlayerAction::Check => {
                     num_settled += 1;
@@ -1483,7 +1491,7 @@ impl Game {
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;		
-        while attempts < 25 && action.is_none() {
+        while attempts < 10 && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
@@ -1631,6 +1639,11 @@ impl Game {
         if let Some(action) = action {
 	    action
         } else {
+	    // send a meta action (to ourself) that this player should be sitting out
+            incoming_meta_actions
+                .lock()
+                .unwrap()
+                .push_back(MetaAction::SitOut(player.id));
             PlayerAction::SitOut
         }
     }
