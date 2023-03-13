@@ -181,7 +181,7 @@ function getSuitColor(suit) {
     if (suit === 'd')
         return "rgb(0, 0, 255)";
 
-    throw 'Suit must be one of the following [c, s, h, d]';
+    throw new Error('Suit must be one of the following [c, s, h, d]');
 }
 
 function drawSuit(ctx, x, y, size, suit, color) {
@@ -205,7 +205,7 @@ function drawSuit(ctx, x, y, size, suit, color) {
         return;
     }
 
-    throw 'Suit must be one of the following [c, s, h, d]';
+    throw new Error('Suit must be one of the following [c, s, h, d]');
 }
 
 export function drawFrontCard(ctx, x, y, value, suit, size=55) {

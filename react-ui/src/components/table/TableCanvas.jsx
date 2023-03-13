@@ -5,7 +5,7 @@ import { PlayerCard } from "./playerCard";
 import { drawFrontCard } from "./drawCard";
 
 const TableCanvas = props => {
-    const canvasRef = useRef(null)
+    const canvasRef = useRef(null);
 
     function draw() {
         const canvas = canvasRef.current;
