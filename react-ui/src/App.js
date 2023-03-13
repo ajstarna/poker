@@ -114,6 +114,8 @@ class App extends React.Component {
             gameState: json
           });
           that.props.navigate("/table");
+        } else if (json.msg_type === "left_game") {
+          that.props.navigate("/menu");
         } else if (json.msg_type === "error") {
           if (json.error === "unable_to_create") {
             that.setState({creatingTable: false});

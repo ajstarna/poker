@@ -15,6 +15,7 @@ class Table extends React.Component {
 
         this.handleBetChange = this.handleBetChange.bind(this);
         this.handleSittingOutChange = this.handleSittingOutChange.bind(this);
+        this.handleLeave = this.handleLeave.bind(this);
 
         this.handleFold = this.handleFold.bind(this);
         this.handleCheck = this.handleCheck.bind(this);
@@ -35,7 +36,20 @@ class Table extends React.Component {
         if (gameState === null) return [0, 0];
 
         let main_player = gameState.players[gameState.your_index];
-        return [0, main_player.money];
+        let street_contributions = 0;
+
+        if (gameState.street === "preflop") {
+            street_contributions = main_player.preflop_cont;
+        } else if (gameState.street === "flop") {
+            street_contributions = main_player.flop_cont;
+        } else if (gameState.street === "turn") {
+            street_contributions = main_player.turn_cont;
+        } else if (gameState.street === "river") {
+            street_contributions = main_player.river_cont;
+        }
+
+        let max = main_player.money + street_contributions
+        return [0, max];
     }
 
     isSittingOut(gameState) {
@@ -113,6 +127,11 @@ class Table extends React.Component {
         this.setState({ betSize: event.target.value });
     }
 
+    handleLeave(_) {
+        let data = { "msg_type": "leave" };
+        this.sendMessage(data);
+    }
+
     render() {
         return (
             <div className="h-screen flex flex-col justify-between">
@@ -129,11 +148,19 @@ class Table extends React.Component {
                             <span className="text-gray-200 mr-4">
                                 Sitting Out
                             </span>
-                            <input className="leading-tight w-4 h-4" type="checkbox" name="sittingOut"
+                            <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
                                 checked={this.isSittingOut(this.props.gameState)}
                                 onChange={this.handleSittingOutChange}
                             />
                         </label>
+                    </div>
+
+                    <div className="absolute p-4 top-0 right-0">
+                        <p className="text-gray-200">
+                            <ActionButton onClick={this.handleLeave}>
+                                Leave Table
+                            </ActionButton>
+                        </p>
                     </div>
 
                     <nav className="order-first lg:w-24 xl:w-48 bg-stone-700"></nav>
