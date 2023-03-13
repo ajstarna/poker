@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::logic::{Game, PlayerAction, PlayerConfig, PLAYER_TIMEOUT};
+use crate::logic::{Game, PlayerAction, PlayerConfig};
 use crate::messages::{
     Connect, Create, CreateFields, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
