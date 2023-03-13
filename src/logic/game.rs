@@ -1165,17 +1165,19 @@ impl Game {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
         let mut gamehand = GameHand::default();
         for player in self.players.iter_mut().flatten() {
-            if player.is_sitting_out || player.money == 0 {
+            if player.money == 0 {
                 player.is_active = false;
             } else {
+		// note: even sitting_out players start as active
+		// since they might need to pay their blinds still
                 player.is_active = true;
             }
         }
 
-	// drain any linger actions from a previous hand
+	// drain any lingering actions from a previous hand
         let mut actions = incoming_actions.lock().unwrap();
 	actions.drain();
-	std::mem::drop(actions); // give it back
+	std::mem::drop(actions); // give back the lock
 	
 	self.send_game_state(Some(&gamehand));	
         self.deck.shuffle();
@@ -1316,45 +1318,33 @@ impl Game {
                 break;
             }
 
-            if self.players[i].is_none() {
+	    if let Some(player) = &self.players[i]  {
+		println!("Current pot = {:?}, Current size of the bet = {:?}",
+			 gamehand.pot_manager,
+			 gamehand.current_bet);
+		println!("Player = {:?}, i = {}", player, i);		
+		if !(player.is_active && player.money > 0) {
+		    // if the player is not active with money, they can't do anything.
+                    continue;
+		}
+	    } else {
                 // no one sitting in this spot
                 continue;
-            }
-	    	    
-            // we clone() the current player so that we can use its information
-            // while also possibly updating players (if a player leaves or joins the game in handle_meta_actions)
-            // if we handle_meta_actions BEFORE accessing the current player, then we will have to wait
-            // a long time between user messages, which is a worse user experience
-            // the Player struct is not super heavy to clone.
-            let player = self.players[i].clone().unwrap();	   
+	    }
 	    
-            println!("Current pot = {:?}, Current size of the bet = {:?}",
-		     gamehand.pot_manager,
-		     gamehand.current_bet);
-            println!("Player = {:?}, i = {}", player, i);
-	    
-            if !(player.is_active && player.money > 0) {
-		// if the player is not active with money, they can't do anything.
-                continue;
-            }
-
 	    gamehand.index_to_act = Some(i);
 	    self.send_game_state(Some(&gamehand));
-	    
-            let player_cumulative = gamehand
-		.street_contributions
-		.get(&gamehand.street).unwrap()[i];
-	    
+	    	    
             let action = self.get_and_validate_action(
                 incoming_actions,
                 incoming_meta_actions,
-                &player,
-                player_cumulative,
                 gamehand,
+		i
             );
 
 	    println!("action = {:?}", action);
 	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
+            let player_cumulative = current_contributions[i];
 	    
             // now that we have gotten the current player's action and handled
             // any meta actions, we are free to respond and mutate the player
@@ -1484,9 +1474,8 @@ impl Game {
         &mut self,
         incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-        player: &Player,
-        player_cumulative: u32,
         gamehand: &GameHand,
+	index: usize
     ) -> PlayerAction {
         // if it isnt valid based on the current bet and the amount the player has already contributed,
         // then it loops
@@ -1496,29 +1485,41 @@ impl Game {
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
 
-        if gamehand.street == Street::Preflop && gamehand.current_bet == 0 {
-            // collect small blind!
-            return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));
-        } else if gamehand.street == Street::Preflop && gamehand.current_bet == self.small_blind {
-            // collect big blind!
-            return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
-        }
-        let prompt = if gamehand.current_bet > player_cumulative {
-            let diff = gamehand.current_bet - player_cumulative;
-            format!("Enter action ({} to call): ", diff)
-        } else {
-            format!("Enter action (current bet = {}): ", gamehand.current_bet)
-        };
-        let message = object! {
-            msg_type: "prompt".to_owned(),
-            prompt: prompt,
-        };
-        PlayerConfig::send_specific_message(
-            &message.dump(),
-            player.id,
-            &self.player_ids_to_configs,
-        );
+	// note: several times in this method we access player within a scope, so that
+	// we can call handle_meta_actions in between. Since that method wants to modify self.players,
+	// we cannot have one borrowed at the same time.
+	// I used to handle this via cloning the player, but that didn't seem satisfying, especially
+	// since the player object contains a vec of Cards (this could be changed to an array of two opt<cards>
+	// if that seemed better in the future to bring back the clone() in a lighter way)
+	// I don't know if this is somewhat common, or if I have coded myself into a corner...
+	let player_id = {
+	    let player = self.players[index].as_ref().unwrap();	   	
+            if gamehand.street == Street::Preflop && gamehand.current_bet == 0 {
+		// collect small blind!
+		return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));
+            } else if gamehand.street == Street::Preflop && gamehand.current_bet == self.small_blind {
+		// collect big blind!
+		return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
+            }
 
+	    let player_cumulative = gamehand.street_contributions.get(&gamehand.street).unwrap()[index];	
+	    let prompt = if gamehand.current_bet > player_cumulative {
+		let diff = gamehand.current_bet - player_cumulative;
+		format!("Enter action ({} to call): ", diff)
+	    } else {
+		format!("Enter action (current bet = {}): ", gamehand.current_bet)
+	    };
+	    let message = object! {
+		msg_type: "prompt".to_owned(),
+		prompt: prompt,
+	    };
+	    PlayerConfig::send_specific_message(
+		&message.dump(),
+		player.id,
+		&self.player_ids_to_configs,
+	    );
+	    player.id
+	};
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
@@ -1528,148 +1529,142 @@ impl Game {
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
             self.handle_meta_actions(&incoming_meta_actions, between_hands, Some(gamehand));
-            if player.human_controlled {
-                // we don't need to count the attempts at getting a response from a computer
-                // TODO: the computer can give a better than random guess at a move
-                // Currently it might try to check when it has to call for example,
-                attempts += 1;
-            }
-            if player.is_sitting_out {
-                println!("player is sitting out, so sitout/fold");
-                action = Some(PlayerAction::SitOut);
-                break;
-            }
-            if !self.player_ids_to_configs.contains_key(&player.id) {
-                // the config no longer exists for this player, so they must have left
-                println!("player config no longer exists, so the player must have left");
-                action = Some(PlayerAction::Fold);
-                break;
-            }
+	    {
+		let player = self.players[index].as_ref().unwrap();	   	
+		let player_cumulative = gamehand.street_contributions.get(&gamehand.street).unwrap()[index];
+		if player.human_controlled {
+		    // we don't need to count the attempts at getting a response from a computer
+		    // TODO: the computer can give a better than random guess at a move
+		    // Currently it might try to check when it has to call for example,
+		    attempts += 1;
+		}
+		if player.is_sitting_out {
+		    println!("player is sitting out, so sitout/fold");
+		    action = Some(PlayerAction::SitOut);
+		    break;
+		}
+		if !self.player_ids_to_configs.contains_key(&player.id) {
+		    // the config no longer exists for this player, so they must have left
+		    println!("player config no longer exists, so the player must have left");
+		    action = Some(PlayerAction::Fold);
+		    break;
+		}
 
-            println!("Attempting to get player action on attempt {:?}", attempts);
-            match self.get_action_from_player(incoming_actions, player) {
-                None => {
-                    // println!("No action is set for the player {:?}", player.id);
-                    // we give the user a second to place their action
-                    thread::sleep(retry_duration);
-                }
+		println!("Attempting to get player action on attempt {:?}", attempts);
+		match self.get_action_from_player(incoming_actions, &player) {
+		    None => {
+			// we give the user a second to place their action
+			thread::sleep(retry_duration);
+		    }
 
-                Some(PlayerAction::Fold) => {
-                    if gamehand.current_bet <= player_cumulative {
-                        // if the player has put in enough then no sense folding
-                        if player.human_controlled {
-                            println!("you said fold but we will let you check!");
-                            let message = json::object! {
-                            msg_type: "error".to_owned(),
-                            error: "invalid_action".to_owned(),
-                            reason: "You said fold but we will let you check!".to_owned(),
-                            };
-                            PlayerConfig::send_specific_message(
-                                &message.dump(),
-                                player.id,
-                                &self.player_ids_to_configs,
-                            );
-                        }
-                        action = Some(PlayerAction::Check);
-                    } else {
-                        action = Some(PlayerAction::Fold);
-                    }
-                }
-                Some(PlayerAction::Check) => {
-                    //println!("Player checks!");
-                    if gamehand.current_bet > player_cumulative {
-                        // if the current bet is higher than this player's bet
-                        if player.human_controlled {
-                            let message = json::object! {
-                            msg_type: "error".to_owned(),
-                            error: "invalid_action".to_owned(),
-                            reason: "You can't check since there is a bet!!".to_owned(),
-                            };
-                            PlayerConfig::send_specific_message(
-                                &message.dump(),
-                                player.id,
-                                &self.player_ids_to_configs,
-                            );
-                        }
-                        continue;
-                    }
-                    action = Some(PlayerAction::Check);
-                }
-                Some(PlayerAction::Call) => {
-                    if gamehand.current_bet <= player_cumulative {
-                        if gamehand.current_bet != 0 {
-                            // if the street bet isn't 0 then this makes no sense
-                            println!("should we even be here???!");
-                        }
-                        let message = json::object! {
-                            msg_type: "error".to_owned(),
-                            error: "invalid_action".to_owned(),
-                            reason: "There is nothing for you to call!".to_owned()
-                        };
-                        PlayerConfig::send_specific_message(
-                            &message.dump(),
-                            player.id,
-                            &self.player_ids_to_configs,
-                        );
-                        // we COULD let them check, but better to wait for a better action
-                        continue;
-                    }
-                    action = Some(PlayerAction::Call);
-                }
-                Some(PlayerAction::Bet(new_bet)) => {
-                    if gamehand.current_bet < player_cumulative {
-                        // will this case happen?
-                        println!("this should not happen!");
-                        continue;
-                    }
-                    // TODO: this line blew up
-                    // thread '<unnamed>' panicked at 'attempt to subtract with overflow', src/logic/game.rs:738:24
-                    // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-                    // I think we need to change the money amounts to be signed
-                    // OR it might be better to look into/fix the bet logic
-                    // like should new_bet just be a standalone thing above the current bet?
-                    // do we need to add raising?
-
-                    // NOTE ---> I changed it now
-                    if new_bet > player.money + player_cumulative {
-                        println!("cant bet more than you have");
-                        let message = json::object! {
-                            msg_type: "error".to_owned(),
-                            error: "invalid_action".to_owned(),
-                            reason:"You can't bet more than you have!!".to_owned(),
-                        };
-                        PlayerConfig::send_specific_message(
-                            &message.dump(),
-                            player.id,
-                            &self.player_ids_to_configs,
-                        );
-                        continue;
-                    }
-                    if new_bet <= gamehand.current_bet {
-                        println!("new bet must be larger than current");
-                        let message = json::object! {
-                            msg_type: "error".to_owned(),
-                            error: "invalid_action".to_owned(),
-                            reason: "the new bet must be larger than the current bet!".to_owned(),
-                        };
-                        PlayerConfig::send_specific_message(
-                            &message.dump(),
-                            player.id,
-                            &self.player_ids_to_configs,
-                        );
-                        continue;
-                    }
-                    action = Some(PlayerAction::Bet(new_bet));
-                }
-                other => {
-                    action = other;
-                }
-            }
+		    Some(PlayerAction::Fold) => {
+			if gamehand.current_bet <= player_cumulative {
+			    // if the player has put in enough then no sense folding
+			    if player.human_controlled {
+				println!("you said fold but we will let you check!");
+				let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "You said fold but we will let you check!".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+			    }
+			    action = Some(PlayerAction::Check);
+			} else {
+			    action = Some(PlayerAction::Fold);
+			}
+		    }
+		    Some(PlayerAction::Check) => {
+			//println!("Player checks!");
+			if gamehand.current_bet > player_cumulative {
+			    // if the current bet is higher than this player's bet
+			    if player.human_controlled {
+				let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "You can't check since there is a bet!!".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+			    }
+			    continue;
+			}
+			action = Some(PlayerAction::Check);
+		    }
+		    Some(PlayerAction::Call) => {
+			if gamehand.current_bet <= player_cumulative {
+			    if gamehand.current_bet != 0 {
+				// if the street bet isn't 0 then this makes no sense
+				println!("should we even be here???!");
+			    }
+			    let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "There is nothing for you to call!".to_owned()
+			    };
+			    PlayerConfig::send_specific_message(
+				&message.dump(),
+				player.id,
+				&self.player_ids_to_configs,
+			    );
+			    // we COULD let them check, but better to wait for a better action
+			    continue;
+			}
+			action = Some(PlayerAction::Call);
+		    }
+		    Some(PlayerAction::Bet(new_bet)) => {
+			if gamehand.current_bet < player_cumulative {
+			    // will this case happen?
+			    println!("this should not happen!");
+			    continue;
+			}
+			if new_bet > player.money + player_cumulative {
+			    println!("cant bet more than you have");
+			    let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason:"You can't bet more than you have!!".to_owned(),
+			    };
+			    PlayerConfig::send_specific_message(
+				&message.dump(),
+				player.id,
+				&self.player_ids_to_configs,
+			    );
+			    continue;
+			}
+			if new_bet <= gamehand.current_bet {
+			    println!("new bet must be larger than current");
+			    let message = json::object! {
+				msg_type: "error".to_owned(),
+				error: "invalid_action".to_owned(),
+				reason: "the new bet must be larger than the current bet!".to_owned(),
+			    };
+			    PlayerConfig::send_specific_message(
+				&message.dump(),
+				player.id,
+				&self.player_ids_to_configs,
+			    );
+			    continue;
+			}
+			action = Some(PlayerAction::Bet(new_bet));
+		    }
+		    other => {
+			action = other;
+		    }
+		}
+	    }
         }
         // if we got a valid action, then we can return it,
         // otherwise, we timed out, so sit out
         if let Some(action) = action {
-	    if let Some(player_config) = self.player_ids_to_configs.get_mut(&player.id) {
+	    if let Some(player_config) = self.player_ids_to_configs.get_mut(&player_id) {
 		// the fact that we received an action tells us to update the active heartbeat		
 		player_config.heart_beat = time::Instant::now();
 	    }
@@ -1679,7 +1674,7 @@ impl Game {
             incoming_meta_actions
                 .lock()
                 .unwrap()
-                .push_back(MetaAction::SitOut(player.id));
+                .push_back(MetaAction::SitOut(player_id));
             PlayerAction::SitOut
         }
     }
@@ -1802,7 +1797,7 @@ mod tests {
     /// if we set max_players, then trying to add anyone past that point will
     /// not work
     #[test]
-    fn max_players_in_game_() {
+    fn max_players_in_game() {
         let mut game = Game::default();
         let max_players = 3;
         game.max_players = max_players;
@@ -3622,6 +3617,67 @@ mod tests {
 	// check that the players have the new_buy_in amount of money
 	assert_eq!(game.players[0].as_mut().unwrap().money, new_buy_in);
 	assert_eq!(game.players[1].as_mut().unwrap().money, new_buy_in);	
+    }
+
+    /// even if a player is_sitting_out, they still are obliged to pay the blinds as
+    /// they come around.
+    #[test]
+    fn sitting_out_pay_blinds() {
+        let mut game = Game::default();
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        game.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        game.add_human(settings2, None).unwrap();
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings2 = PlayerConfig::new(id3, Some(name3), None);
+        game.add_human(settings2, None).unwrap();
+
+	// player2 is_sitting_out
+        game.players[1].as_mut().unwrap().is_sitting_out = true;
+	// player3 is_sitting_out
+        game.players[2].as_mut().unwrap().is_sitting_out = true;
+	
+	// confirm we have two sitting out players
+        let num_sitting_out = game.players.iter().flatten().filter(|p| p.is_sitting_out).count();
+        assert_eq!(num_sitting_out, 2);	
+
+        let handler = std::thread::spawn(move || {
+            game.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            game // return the game back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
+        // set the action that player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+
+        // get the game back from the thread
+        let game = handler.join().unwrap();
+
+	// each sitting out player should pay their blinds and then fold,
+	// and player1 will win the blinds
+        assert_eq!(game.players[0].as_ref().unwrap().money, 1012);
+        assert_eq!(game.players[1].as_ref().unwrap().money, 996);
+        assert_eq!(game.players[1].as_ref().unwrap().money, 996);	
     }
     
 }

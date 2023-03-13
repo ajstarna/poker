@@ -148,12 +148,7 @@ impl Actor for WsPlayerSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-	println!("im 'stopping' inside Actor");
         Running::Stop
-    }
-    
-    fn stopped(&mut self, _: &mut Self::Context) {
-	println!("im 'stopped' inside Actor");
     }
 }
 
