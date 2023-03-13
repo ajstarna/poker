@@ -32,7 +32,7 @@ struct Args {
 }
 
 async fn index() -> impl Responder {
-    NamedFile::open_async("./static/index.html").await.unwrap()
+    NamedFile::open_async("./site/index.html").await.unwrap()
 }
 
 /// Entry point for our websocket route
@@ -98,7 +98,7 @@ async fn main() -> std::io::Result<()> {
             .service(reconnect)
             .service(new_connection)	    
             .route("/count", web::get().to(get_count))
-            .service(Files::new("/static", "./static"))
+            .service(Files::new("/static", "./site/static"))
             .wrap(Logger::default())
     })
     .workers(2)
