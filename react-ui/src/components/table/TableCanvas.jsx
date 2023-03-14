@@ -147,20 +147,19 @@ const TableCanvas = props => {
 
             // Draw pots
             if ("pots" in props.gameState) {
-                context.font = "bold 18px arial";
+                context.font = `bold ${0.03 * size}px arial`;
                 context.textAlign = "center";
                 context.fillStyle = "white";
-                context.fillText("Pot(s): " + props.gameState.pots, canvasW / 2, canvasH / 2 + 80);
+                context.fillText("Pot(s): " + props.gameState.pots, canvasW / 2, canvasH / 2 + 0.1 * size);
             }
 
             if ("current_bet" in props.gameState) {
-                context.font = "bold 18px arial";
+                context.font = `bold ${0.025 * size}px arial`;
                 context.textAlign = "center";
                 context.fillStyle = "white";
                 context.fillText(
-                    "Current bet: " + props.gameState.current_bet,
-                    canvasW / 2,
-                    canvasH / 2 + 110
+                    "Current Bet: " + props.gameState.current_bet,
+                    canvasW / 2, canvasH / 2 + 0.15 * size
                 );
             }
         }

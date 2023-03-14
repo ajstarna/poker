@@ -19,11 +19,17 @@ export function drawBackground(ctx, width, height) {
 export function drawTable(ctx, width, height) {
     var size = Math.min(width, height);
 
-    var x0 = 0.2 * size;
-    var y0 = 0.2 * size;
+    var cw = width/2;
+    var ch = height/2;
 
-    var x1 = width - 2 * x0;
-    var y1 = height - 2 * y0;
+    var w = 0.8*size;
+    var h = 0.6*size;
+
+    var x0 = cw - w/2;
+    var y0 = ch - h/2;
+
+    var x1 = w;
+    var y1 = h;
 
     var borderSize = 0.025 * size;
 

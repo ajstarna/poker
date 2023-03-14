@@ -217,10 +217,10 @@ export function drawFrontCard(ctx, x, y, value, suit, size=55) {
     drawCardBase(ctx, x, y, width, height, suitColor);
 
     // Draw value
-    ctx.font = 'bold 18px arial';
+    ctx.font = `bold ${0.4*size}px arial`;
     ctx.textAlign = "start";
     ctx.fillStyle = 'white';
-    ctx.fillText(value, x+5, y+18);
+    ctx.fillText(value, x+0.1*size, y+0.41*size);
 
     // Draw suit
     drawSuit(ctx, x + width/2, y + width/2, width/2, suit, 'white');

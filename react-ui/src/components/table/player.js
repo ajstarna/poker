@@ -29,45 +29,48 @@ export class Player {
     }
 
     drawChips(ctx, width, height) {
-        var size = 0.2 * Math.min(width, height);
-        
-        let [x, y] = getChipsPostion(this.index, width, height, size);
+        var size = 0.1*Math.min(width, height);
+        let [x, y] = getChipsPostion(this.index, width, height);
 
         let x0 = x;
         let y0 = y;
+        let w = size;
+        let h = 0.25*size;
+
+        let chip_size = 0.15*size;
 
         if (this.street_contributions > 0) {
             // Draw boarder for text
             ctx.fillStyle = "#00000066";
             ctx.strokeStyle = "black";
-            roundRect(ctx, x0, y0-10, 80, 20, 5);
+            roundRect(ctx, x0-w/2, y0-h/2, w, h, 5);
             ctx.stroke();
             ctx.fill();
 
             // Draw text (street contributions)
-            ctx.font = '14px arial';
+            ctx.font = `${0.2*size}px arial`;
             ctx.fillStyle = "white";
-            ctx.fillText(this.street_contributions, x0+25, y0+6);
+            ctx.fillText(this.street_contributions, x0-w/2 + 0.3*size, y0-h/2 + 0.2*size);
 
             // Draw chips
             ctx.beginPath();
             ctx.fillStyle = "yellow";
             ctx.strokeStyle = "black";
-            ctx.arc(x0, y0+2, 10, 0, Math.PI * 2, true);
+            ctx.arc(x0-w/2, y0+0.1*chip_size, chip_size, 0, Math.PI * 2, true);
             ctx.fill();
             ctx.stroke();
 
             ctx.beginPath();
             ctx.fillStyle = "yellow";
             ctx.strokeStyle = "black";
-            ctx.arc(x0, y0, 10, 0, Math.PI * 2, true);
+            ctx.arc(x0-w/2, y0, chip_size, 0, Math.PI * 2, true);
             ctx.fill();
             ctx.stroke();
 
             ctx.beginPath();
             ctx.fillStyle = "white";
             ctx.strokeStyle = "black";
-            ctx.arc(x0, y0, 6, 0, Math.PI * 2, true);
+            ctx.arc(x0-w/2, y0, 0.6*chip_size, 0, Math.PI * 2, true);
             ctx.fill();
             ctx.stroke();
             
@@ -75,9 +78,9 @@ export class Player {
     }
 
     drawButton(ctx, width, height) {
-        var size = 0.2 * Math.min(width, height);
+        var button_size = 0.01*Math.min(width, height);
 
-        let btn_position = getButtonPostion(this.index, width, height,size);
+        let btn_position = getButtonPostion(this.index, width, height);
         ctx.fillStyle = "white";
         ctx.strokeStyle = "black";
     
@@ -85,7 +88,7 @@ export class Player {
         ctx.arc(
             btn_position[0],
             btn_position[1] + 2,
-            10,
+            button_size,
             0,
             Math.PI * 2,
             true
@@ -97,7 +100,7 @@ export class Player {
         ctx.arc(
             btn_position[0],
             btn_position[1],
-            10,
+            button_size,
             0,
             Math.PI * 2,
             true
@@ -108,14 +111,14 @@ export class Player {
 
     draw(ctx, width, height) {
         var size = Math.min(width, height);
-        let info_size = 0.2 * size;
+        let info_size = 0.175 * size;
         let info_offset = info_size / 2;
         let boarder_size = 5;
 
-        let [x, y] = getPlayerPostion(this.index, width, height, info_size / 2, info_size / 4);
+        let [x, y] = getPlayerPostion(this.index, width, height);
 
         let info_x0 = x - info_size / 2;
-        let info_y0 = y + info_offset - info_size;
+        let info_y0 = y - info_size / 4;
         let info_x1 = info_size;
         let info_y1 = info_size / 2;
 
@@ -139,13 +142,13 @@ export class Player {
                 info_y0 - boarder_size,
                 info_x1 + 2 * boarder_size,
                 info_y1 + 2 * boarder_size,
-                5);
+                0.05*(info_size + 2 * boarder_size));
             ctx.fill();
         }
 
         ctx.fillStyle = "#202020";
         ctx.strokeStyle = "black";
-        roundRect(ctx, info_x0, info_y0, info_x1, info_y1, 5);
+        roundRect(ctx, info_x0, info_y0, info_x1, info_y1, 0.05*info_size);
         ctx.stroke();
         ctx.fill();
 
@@ -160,7 +163,7 @@ export class Player {
             ctx.fillStyle = "#aaaaaa";
         }
 
-        ctx.font = 'bold 16px arial';
+        ctx.font = `bold ${0.15*info_size}px arial`;
         ctx.textAlign = "center";
         ctx.fillText(this.name, info_x0+info_offset, info_y0 + info_size/6);
 
@@ -171,7 +174,7 @@ export class Player {
             ctx.fillStyle = "#206E28";
         }
 
-        ctx.font = 'bold 16px arial';
+        ctx.font = `bold ${0.15*info_size}px arial`;
         ctx.textAlign = "center";
         ctx.fillText(this.money, info_x0+info_offset, info_y0 + 3*info_size/8);
 
@@ -204,16 +207,16 @@ export class Player {
             ctx.strokeStyle = action_stroke_color;
             roundRect(ctx, 
                 info_x0+info_offset/3, info_y0 + info_size/2, 
-                2*info_size/3, 20, 
+                2*info_size/3, 0.15*info_size, 
                 5);
             ctx.stroke(); 
             ctx.fill();
 
             // Draw text
-            ctx.font = 'bold 14px arial';
+            ctx.font = `bold ${0.1*info_size}px arial`;
             ctx.textAlign = "center";
             ctx.fillStyle = action_stroke_color;
-            ctx.fillText(this.action, info_x0+info_offset, info_y0 + info_size/2 + 15);
+            ctx.fillText(this.action, info_x0 + info_offset, info_y0 + info_size/2 + 0.1*info_size);
             // Restore the default state
             ctx.restore();
         }
