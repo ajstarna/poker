@@ -1,8 +1,8 @@
 import React, { useRef } from "react";
-import { drawTable, drawBackground } from "./drawTable";
-import { Player } from "./player";
-import { PlayerCard } from "./playerCard";
-import { drawFrontCard } from "./drawCard";
+import { drawTable, drawBackground } from "./draw/drawTable";
+import { Player } from "./draw/player";
+import { PlayerCard } from "./draw/playerCard";
+import { drawFrontCard } from "./draw/drawCard";
 
 const TableCanvas = props => {
     const canvasRef = useRef(null);
