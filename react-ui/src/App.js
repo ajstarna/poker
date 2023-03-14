@@ -5,6 +5,7 @@ import MenuBody from './components/layout/MenuBody';
 import ErrorModal from './components/modal/ErrorModal';
 import Spinner from './components/spinnner/Spinner';
 import Create from './pages/Create';
+import JoinTable from './pages/JoinTable';
 import Login from "./pages/Login";
 import Menu from './pages/Menu';
 import Table from "./pages/Table";
@@ -193,6 +194,7 @@ class App extends React.Component {
         <Routes>
           <Route path="/" element={<Login websocket={this.state.ws} player_name={this.state.playerName} />} />
           <Route path="/menu" element={<Menu />} />
+          <Route path="/join" element={<JoinTable websocket={this.state.ws} />} />
           <Route path="/create" element={
             this.state.creatingTable ? (
               <MenuBody>
