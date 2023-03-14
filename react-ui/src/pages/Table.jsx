@@ -1,6 +1,7 @@
 import React, { createRef } from "react";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
+import "../components/table/chat.css";
 
 class Table extends React.Component {
     constructor(props) {
@@ -9,6 +10,8 @@ class Table extends React.Component {
         this.state = {
             betSize: 0
         }
+
+        this.chatLogEndRef = createRef();
 
         this.betSlider = createRef();
         this.betSize = createRef();
@@ -24,12 +27,20 @@ class Table extends React.Component {
     }
 
     componentDidUpdate(_) {
+        this.chatLogEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+
         let [min, max] = this.getBetMinMax(this.props.gameState);
         this.betSlider.current.min = min;
         this.betSlider.current.max = max;
 
         this.betSize.current.min = min;
         this.betSize.current.max = max;
+
+        if (this.state.betSize < min) {
+            this.setState({ betSize: min });
+        } else if (this.state.betSize > max) {
+            this.setState({ betSize: max });
+        }
     }
 
     getBetMinMax(gameState) {
@@ -168,29 +179,41 @@ class Table extends React.Component {
                     <aside className="lg:w-24 xl:w-48 bg-stone-700"></aside>
                 </div>
 
-                <footer className="grid grid-cols-2 h-40 border-t-2 border-stone-600">
-                    <div className="bg-stone-700">
-                        Chat
+                <footer className="grid grid-cols-2 h-60 border-t-2 border-stone-600">
+                    <div className="bg-stone-700 p-2 flex flex-col">
+                        <div name="chatLog" className="bg-stone-500 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
+                            {this.props.chatLog?.map((message) => (
+                                <p className={`text-stone-200 msg msg--${message.type}`}>
+                                    {message.msg}
+                                </p>
+                            ))}
+                            <div ref={this.chatLogEndRef} />
+                        </div>
+                        <div className="w-full flex flex-row mt-2">
+                            <input
+                                type="text"
+                                name="textMessage"
+                                className="w-full mr-2 p-2 bg-stone-500 text-gray-200" />
+                            <ActionButton>Send</ActionButton>
+                        </div>
                     </div>
                     <div className="bg-stone-700 px-4 md:px-10">
                         <div className="mt-4 grid grid-cols-4 gap-2">
-                            <div className="text-gray-200 w-full" >Bet:</div>
+                            <p className="text-gray-200 font-bold w-full" >Bet:</p>
                             <input
                                 ref={this.betSlider}
                                 type="range" min="1" max="100"
                                 value={this.state.betSize}
                                 onChange={this.handleBetChange}
                                 name="betSizeSlider"
-                                className="col-span-2 w-full accent-gray-200 " />
-                            <div>
-                                <input
-                                    ref={this.betSize}
-                                    type="number" min="0"
-                                    value={this.state.betSize}
-                                    onChange={this.handleBetChange}
-                                    name="betSize"
-                                    className="w-full" />
-                            </div>
+                                className="col-span-2 w-full accent-gray-200" />
+                            <input
+                                ref={this.betSize}
+                                type="number" min="0"
+                                value={this.state.betSize}
+                                onChange={this.handleBetChange}
+                                name="betSize"
+                                className="w-full bg-stone-500 text-center text-gray-200 font-bold" />
                         </div>
                         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-1">
                             <ActionButton onClick={this.handleFold}>

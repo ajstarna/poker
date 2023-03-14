@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, useNavigate } from "react-router-dom";
+
 import MenuBody from './components/layout/MenuBody';
 import ErrorModal from './components/modal/ErrorModal';
 import Spinner from './components/spinnner/Spinner';
@@ -19,6 +20,7 @@ class App extends React.Component {
         playerName: playerName,
         creatingTable: false,
         gameState: null,
+        chatLog: [],
         showErrorModal: false,
         errorMessage: ''
     };
@@ -106,6 +108,8 @@ class App extends React.Component {
             localStorage.setItem('poker-player-name', json.player_name);
           }
         } else if (json.msg_type === "created_game") {
+          let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
+          that.log(output, "message");	
           that.setState({creatingTable: false});
           that.props.navigate("/table");
         } else if (json.msg_type === "game_state") {
@@ -114,6 +118,13 @@ class App extends React.Component {
             gameState: json
           });
           that.props.navigate("/table");
+        } else if (json.msg_type === "chat") {
+          let output = json.player_name + ": " + json.text
+          that.log(output, "message");
+        } else if (json.msg_type === "new_hand") {
+          that.log("Playing hand " + json.hand_num, "message");
+        } else if (json.msg_type === "prompt") {
+          that.log("Your turn to act ...", "message");
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
         } else if (json.msg_type === "error") {
@@ -140,6 +151,13 @@ class App extends React.Component {
       if (!ws || ws.readyState === WebSocket.CLOSED) this.connect(); //check if websocket instance is closed, if so call `connect` function.
   };
 
+  log(msg, type = "status") {
+    console.log(msg);
+    this.setState({ 
+      chatLog: [...this.state.chatLog, {msg: msg, type: type}]
+    });
+  }
+
   render() {
     return (
       <>
@@ -163,7 +181,7 @@ class App extends React.Component {
               <Create websocket={this.state.ws} onCreate={() => this.setState({creatingTable: true})}/>
             )
           } />
-          <Route path="/table" element={<Table websocket={this.state.ws} gameState={this.state.gameState}/>} />
+          <Route path="/table" element={<Table websocket={this.state.ws} gameState={this.state.gameState} chatLog={this.state.chatLog}/>} />
         </Routes>
         </>
     );
@@ -174,7 +192,7 @@ class App extends React.Component {
 /* eslint import/no-anonymous-default-export: [2, {"allowArrowFunction": true}] */
 export default (props) => {
   const navigate = useNavigate();
-
+  
   return <App {...props} navigate={navigate} />;
 }
 

@@ -172,7 +172,7 @@ const TableCanvas = props => {
     // Call handler right away so state gets updated with initial window size
     draw();
 
-    return <canvas ref={canvasRef} {...props} />
+    return <canvas ref={canvasRef} className={props.className} />
 };
 
 export default TableCanvas;

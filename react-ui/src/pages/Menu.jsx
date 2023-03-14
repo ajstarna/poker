@@ -20,6 +20,11 @@ class Menu extends React.Component {
                         Create Table
                     </MenuButton>
                 </div>
+                <div>
+                    <MenuButton onClick={() => { this.props.navigate("/"); }} >
+                        Change Name
+                    </MenuButton>
+                </div>
             </MenuBody>
         );
     }
