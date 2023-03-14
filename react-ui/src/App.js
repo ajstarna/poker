@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createRef }  from 'react';
 import { Routes, Route, useNavigate } from "react-router-dom";
 
 import MenuBody from './components/layout/MenuBody';
@@ -20,10 +20,16 @@ class App extends React.Component {
         playerName: playerName,
         creatingTable: false,
         gameState: null,
+        soundEnabled: false,
         chatLog: [],
         showErrorModal: false,
         errorMessage: ''
     };
+
+    this.deckSuffleSound = createRef();
+    this.notificationActionSound = createRef();
+
+    this.soundToggleCallback = this.soundToggleCallback.bind(this);
   }
 
   // single websocket instance for the own application and constantly trying to reconnect.
@@ -122,8 +128,14 @@ class App extends React.Component {
           let output = json.player_name + ": " + json.text
           that.log(output, "chat");
         } else if (json.msg_type === "new_hand") {
+          if (that.state.soundEnabled) {
+            that.deckSuffleSound.current?.play();
+          }
           that.log("Playing hand " + json.hand_num, "message");
         } else if (json.msg_type === "prompt") {
+          if (that.state.soundEnabled) {
+            that.notificationActionSound.current?.play();
+          }
           that.log("Your turn to act ...", "message");
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
@@ -158,6 +170,10 @@ class App extends React.Component {
     });
   }
 
+  soundToggleCallback(event) {
+    this.setState({ soundEnabled: !this.state.soundEnabled });
+  }
+
   render() {
     return (
       <>
@@ -181,8 +197,10 @@ class App extends React.Component {
               <Create websocket={this.state.ws} onCreate={() => this.setState({creatingTable: true})}/>
             )
           } />
-          <Route path="/table" element={<Table websocket={this.state.ws} gameState={this.state.gameState} chatLog={this.state.chatLog}/>} />
+          <Route path="/table" element={<Table websocket={this.state.ws} gameState={this.state.gameState} soundEnabled={this.state.soundEnabled} soundToggleCallback={this.soundToggleCallback} chatLog={this.state.chatLog}/>} />
         </Routes>
+        <audio ref={this.deckSuffleSound} src={process.env.PUBLIC_URL + '/assets/sounds/cards-shuffling.mp3'} preload="auto" controls="none" className="hidden" />
+        <audio ref={this.notificationActionSound} src={process.env.PUBLIC_URL + '/assets/sounds/notification-action.mp3'} preload="auto" controls="none" className="hidden" />
         </>
     );
   };

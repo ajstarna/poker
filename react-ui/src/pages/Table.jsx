@@ -174,17 +174,28 @@ class Table extends React.Component {
                         <TableCanvas gameState={this.props.gameState} className="absolute w-full h-full" />
                     </main>
 
-                    <div className="absolute p-4">
+                    <div className="absolute top-0 left-0 p-4">
                         <p className="text-gray-200">
                             Table:  {this.props.gameState && this.props.gameState.name}
                         </p>
+                    </div>
+                    <div className="absolute bottom-60 left-0 p-4">
                         <label className="block mt-4 mb-2">
                             <span className="text-gray-200 mr-4">
-                                Sitting Out
+                                Sit Out
                             </span>
                             <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
                                 checked={this.isSittingOut(this.props.gameState)}
                                 onChange={this.handleSittingOutChange}
+                            />
+                        </label>
+                        <label className="block mt-4 mb-2">
+                            <span className="text-gray-200 mr-4">
+                                Enable Sounds
+                            </span>
+                            <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
+                                checked={this.props.soundEnabled}
+                                onChange={this.props.soundToggleCallback}
                             />
                         </label>
                     </div>
