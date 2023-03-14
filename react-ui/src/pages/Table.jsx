@@ -8,13 +8,19 @@ class Table extends React.Component {
         super(props);
 
         this.state = {
-            betSize: 0
+            betSize: 0,
+            chatMessage: ""
         }
 
+        // Refs
         this.chatLogEndRef = createRef();
 
         this.betSlider = createRef();
         this.betSize = createRef();
+
+        // Handlers
+        this.handleMessage = this.handleMessage.bind(this);
+        this.handleMessageChange = this.handleMessageChange.bind(this);
 
         this.handleBetChange = this.handleBetChange.bind(this);
         this.handleSittingOutChange = this.handleSittingOutChange.bind(this);
@@ -72,7 +78,7 @@ class Table extends React.Component {
         return false;
     }
 
-    sendMessage(data) {
+    sendToWS(data) {
         const { websocket } = this.props; // websocket instance passed as props to the child component.
 
         try {
@@ -94,7 +100,7 @@ class Table extends React.Component {
             };
         }
 
-        this.sendMessage(data);
+        this.sendToWS(data);
     }
 
     handleFold(_) {
@@ -103,7 +109,7 @@ class Table extends React.Component {
             "action": "fold"
         };
 
-        this.sendMessage(data);
+        this.sendToWS(data);
     }
 
     handleCheck(_) {
@@ -112,7 +118,7 @@ class Table extends React.Component {
             "action": "check"
         };
 
-        this.sendMessage(data);
+        this.sendToWS(data);
     }
 
     handleCall(_) {
@@ -121,7 +127,7 @@ class Table extends React.Component {
             "action": "call"
         };
 
-        this.sendMessage(data);
+        this.sendToWS(data);
     }
 
     handleBet(_) {
@@ -131,7 +137,7 @@ class Table extends React.Component {
             "amount": this.state.betSize
         };
 
-        this.sendMessage(data);
+        this.sendToWS(data);
     }
 
     handleBetChange(event) {
@@ -140,7 +146,24 @@ class Table extends React.Component {
 
     handleLeave(_) {
         let data = { "msg_type": "leave" };
-        this.sendMessage(data);
+        this.sendToWS(data);
+    }
+
+    handleMessage(_) {
+        if (this.state.chatMessage.length > 0) {
+            let data = {
+                "msg_type": "chat",
+                "text": this.state.chatMessage
+            };
+
+            this.sendToWS(data);
+
+            this.setState({ chatMessage: "" });
+        }
+    }
+
+    handleMessageChange(event) {
+        this.setState({ chatMessage: event.target.value });
     }
 
     render() {
@@ -193,8 +216,13 @@ class Table extends React.Component {
                             <input
                                 type="text"
                                 name="textMessage"
+                                value={this.state.chatMessage}
+                                onChange={this.handleMessageChange}
+                                onKeyDown={(event) => { if (event.key === 'Enter') this.handleMessage(null); }}
                                 className="w-full mr-2 p-2 bg-stone-500 text-gray-200" />
-                            <ActionButton>Send</ActionButton>
+                            <ActionButton onClick={this.handleMessage}>
+                                Send
+                            </ActionButton>
                         </div>
                     </div>
                     <div className="bg-stone-700 px-4 md:px-10">

@@ -4,13 +4,15 @@
 }
 
 .msg--status {
-    /* a light yellow */
     background-color: #a19700;
 }
 
 .msg--message {
-    /* a light blue */
     background-color: #021218;
+}
+
+.msg--chat {
+    background-color: #093747;
 }
 
 .msg--error {

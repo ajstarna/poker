@@ -120,7 +120,7 @@ class App extends React.Component {
           that.props.navigate("/table");
         } else if (json.msg_type === "chat") {
           let output = json.player_name + ": " + json.text
-          that.log(output, "message");
+          that.log(output, "chat");
         } else if (json.msg_type === "new_hand") {
           that.log("Playing hand " + json.hand_num, "message");
         } else if (json.msg_type === "prompt") {
