@@ -65,16 +65,20 @@ impl actix::Message for ListTables {
 pub enum JoinGameError {
     GameIsFull,
     InvalidPassword,
+    MissingPassword
 }
 
 impl fmt::Display for JoinGameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             JoinGameError::GameIsFull => {
-                write!(f, "Game is full",)
+                write!(f, "Game is full.",)
             }
             JoinGameError::InvalidPassword => {
-                write!(f, "Invalid Password")
+                write!(f, "Invalid password.")
+            }
+            JoinGameError::MissingPassword => {
+                write!(f, "Password is required.")
             }
         }
     }

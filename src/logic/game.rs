@@ -429,7 +429,7 @@ impl Game {
                 }
             } else {
                 // we did not provide a password, but the game requires one
-                return Err(JoinGameError::InvalidPassword);
+                return Err(JoinGameError::MissingPassword);
             }
         }
         let id = player_config.id; // copy so that we can send the messsage later

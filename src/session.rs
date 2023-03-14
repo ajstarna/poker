@@ -350,12 +350,11 @@ impl WsPlayerSession {
             (object.get("table_name"), object.get("password"))
         {
             let table_name = table_name.to_string();
-            let password = if password.is_string() {
-                Some(password.to_string())
+            let password = if let Some(password) = password.as_str()  {
+                Some(password.to_owned())
             } else {
                 None
             };
-
             self.hub_addr.do_send(messages::Join {
                 id: self.id,
                 table_name,
