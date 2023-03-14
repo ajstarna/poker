@@ -110,9 +110,17 @@ class App extends React.Component {
         } else if (json.msg_type === "player_name") {
           console.log(`New player name: ${json.player_name}`);
           if (json.player_name) {
-            that.setState({ player_name: json.player_name });
+            that.setState({ playerName: json.player_name });
             localStorage.setItem('poker-player-name', json.player_name);
+          } else if (that.state.playerName) {
+            let data = {
+              "msg_type": "name",
+              "player_name": that.state.playerName
+            };
+
+            ws.send(JSON.stringify(data)); //send data to the server
           }
+          console.log(that.state);
         } else if (json.msg_type === "created_game") {
           let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
           that.log(output, "message");	
