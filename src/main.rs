@@ -98,7 +98,7 @@ async fn main() -> std::io::Result<()> {
             .service(reconnect)
             .service(new_connection)	    
             .route("/count", web::get().to(get_count))
-            .service(Files::new("/static", "./site/static"))
+            .service(Files::new("/", "./site/"))
             .wrap(Logger::default())
     })
     .workers(2)

@@ -15,6 +15,7 @@ class JoinTable extends React.Component {
         this.handleChange = this.handleChange.bind(this);
         this.handleSubmit = this.handleSubmit.bind(this);
     }
+
     handleChange(event) {
         this.setState({
             ...this.state,
@@ -46,7 +47,7 @@ class JoinTable extends React.Component {
         return (
             <MenuBody>
                 <p className="text-3xl text-gray-200 font-bold mb-5">
-                    Lobby
+                    Join Table
                 </p>
                 <form onSubmit={this.handleSubmit}>
                     <div className="grid grid-cols-2 gap-4">

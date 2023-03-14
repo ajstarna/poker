@@ -2,6 +2,7 @@ import React, { createRef } from "react";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
 import "../components/table/chat.css";
+import TextInput from "../components/input/TextInput";
 
 class Table extends React.Component {
     constructor(props) {
@@ -215,23 +216,23 @@ class Table extends React.Component {
 
                 <footer className="grid grid-cols-2 h-60 border-t-2 border-stone-600">
                     <div className="bg-stone-700 p-2 flex flex-col">
-                        <div name="chatLog" className="bg-stone-500 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
+                        <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
                             {this.props.chatLog?.map((message) => (
-                                <p className={`text-stone-200 msg msg--${message.type}`}>
+                                <p className="text-stone-200 msg">
                                     {message.msg}
                                 </p>
                             ))}
                             <div ref={this.chatLogEndRef} />
                         </div>
                         <div className="w-full flex flex-row mt-2">
-                            <input
+                            < TextInput
                                 type="text"
                                 name="textMessage"
                                 value={this.state.chatMessage}
                                 onChange={this.handleMessageChange}
                                 onKeyDown={(event) => { if (event.key === 'Enter') this.handleMessage(null); }}
-                                className="w-full mr-2 p-2 bg-stone-500 text-gray-200" />
-                            <ActionButton onClick={this.handleMessage}>
+                                className="w-full mr-2 p-2" />
+                            <ActionButton className="ml-2" onClick={this.handleMessage}>
                                 Send
                             </ActionButton>
                         </div>
@@ -269,8 +270,8 @@ class Table extends React.Component {
                             </ActionButton>
                         </div>
                     </div>
-                </footer>
-            </div>
+                </footer >
+            </div >
         );
     }
 };

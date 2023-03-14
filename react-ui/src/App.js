@@ -6,6 +6,7 @@ import ErrorModal from './components/modal/ErrorModal';
 import Spinner from './components/spinnner/Spinner';
 import Create from './pages/Create';
 import JoinTable from './pages/JoinTable';
+import Lobby from './pages/Lobby';
 import Login from "./pages/Login";
 import Menu from './pages/Menu';
 import Table from "./pages/Table";
@@ -23,6 +24,7 @@ class App extends React.Component {
         gameState: null,
         soundEnabled: false,
         chatLog: [],
+        tables: [],
         showErrorModal: false,
         errorMessage: ''
     };
@@ -121,7 +123,8 @@ class App extends React.Component {
 
             ws.send(JSON.stringify(data)); //send data to the server
           }
-          console.log(that.state);
+        } else if (json.msg_type === "tables_list") {
+          that.setState({ tables: json.tables });
         } else if (json.msg_type === "created_game") {
           let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
           that.log(output, "message");	
@@ -195,6 +198,7 @@ class App extends React.Component {
           <Route path="/" element={<Login websocket={this.state.ws} player_name={this.state.playerName} />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/join" element={<JoinTable websocket={this.state.ws} />} />
+          <Route path="/lobby" element={<Lobby websocket={this.state.ws} tables={this.state.tables} />} />
           <Route path="/create" element={
             this.state.creatingTable ? (
               <MenuBody>

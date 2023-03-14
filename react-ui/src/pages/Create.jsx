@@ -100,7 +100,7 @@ class Create extends React.Component {
                             <TextInput type="password" name="password" value={this.state.password} onChange={this.handleChange} required />
                         </>
                     }
-                    <MenuButton type="submit">Create</MenuButton>
+                    <MenuButton type="submit" className="mt-10">Create</MenuButton>
                 </form>
             </MenuBody>
         );

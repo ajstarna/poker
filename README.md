@@ -52,10 +52,21 @@ For live development you can run the server and React UI seperatly.
 
 2. Then start the React UI.
 
+        cd react-ui
         REACT_APP_SERVER_PORT=8080 npm start
 
-### Build
+### Build UI
+
+You can simply call the following.
 
 ```
+cd react-ui
 npm run build
+```
+
+If you need to specify the port of your server then you can run the following build command.
+
+```
+cd react-ui
+REACT_APP_SERVER_PORT=8080 npm run build
 ```

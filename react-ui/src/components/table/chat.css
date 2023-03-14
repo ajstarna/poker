@@ -2,19 +2,3 @@
     margin: 0;
     padding: 0.25em 0.5em;
 }
-
-.msg--status {
-    background-color: #a19700;
-}
-
-.msg--message {
-    background-color: #021218;
-}
-
-.msg--chat {
-    background-color: #093747;
-}
-
-.msg--error {
-    background-color: rgb(122, 0, 20);
-}
