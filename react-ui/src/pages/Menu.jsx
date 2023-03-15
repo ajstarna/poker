@@ -7,8 +7,11 @@ class Menu extends React.Component {
     render() {
         return (
             <MenuBody>
-                <p className="text-3xl text-gray-200 font-bold mb-16">
-                    Main Menu
+                <p className="text-3xl text-gray-200 font-bold mb-8">
+                    Good Friends Poker
+                </p>
+                <p className="text-gray-200 text-lg mb-8">
+                    Welcome, {this.props.playerName}!
                 </p>
                 <div>
                     <MenuButton className="mb-10" onClick={() => { this.props.navigate("/join"); }} >

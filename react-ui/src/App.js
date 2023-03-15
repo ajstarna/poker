@@ -277,7 +277,7 @@ class App extends React.Component {
       ) : null}
         <Routes>
           <Route path="/" element={<Login websocket={this.state.ws} player_name={this.state.playerName} />} />
-          <Route path="/menu" element={<Menu />} />
+          <Route path="/menu" element={<Menu playerName={this.state.playerName} />} />
           <Route path="/join" element={<JoinTable websocket={this.state.ws} />} />
           <Route path="/lobby" element={<Lobby websocket={this.state.ws} tables={this.state.tables} />} />
           <Route path="/create" element={

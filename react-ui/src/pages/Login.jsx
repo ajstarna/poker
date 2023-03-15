@@ -53,7 +53,7 @@ class Login extends React.Component {
                     Good Friends Poker
                 </p>
                 <p className="text-gray-200 text-lg">
-                    Please enter a username. It can be anything you want.
+                    Please enter your name.
                 </p>
                 <form onSubmit={this.handleSubmit}>
                     <label htmlFor="username" className="block mt-10 mb-2 text-lg font-medium text-gray-200">Username:</label>
