@@ -972,13 +972,17 @@ impl Game {
             // the game is currently empty, so there is nothing to finish
             return;
         }
+        // Notify players the hand is over
+        let mut finish_hand_message = object! {
+            msg_type: "finish_hand".to_owned()
+        };
+
         let hand_results: HashMap<Uuid, Option<HandResult>> = self
             .players
             .iter()
             .flatten()
             .map(|player| (player.id, self.determine_best_hand(player, gamehand)))
             .collect();
-
         let is_showdown = gamehand.street == Street::ShowDown;
         println!("hand results = {:?}", hand_results);
         if let Street::ShowDown = gamehand.street {
@@ -1026,7 +1030,8 @@ impl Game {
                 let num_winners = best_ids.len();
                 let payout = (pot.money as f64 / num_winners as f64) as u32;
                 //self.pot_manager.pots.first_mut().unwrap().money = 0;
-                self.pay_players(best_ids, payout, &hand_results, is_showdown);
+                let pay_outs = self.pay_players(best_ids, payout, &hand_results, is_showdown);
+                finish_hand_message["pay_outs"] = pay_outs.into();
             }
         } else {
             // the hand ended before Showdown, so we simple find the one active player remaining
@@ -1041,13 +1046,16 @@ impl Game {
             }
             // if we didn't make it to show down, there better be only one player left
             assert!(best_ids.len() == 1);
-            self.pay_players(
+            let pay_outs = self.pay_players(
                 best_ids,
                 gamehand.pot_manager.pots.first().unwrap().money,
                 &hand_results,
                 is_showdown,
             );
+            finish_hand_message["pay_outs"] = pay_outs.into();
         }
+
+        PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
 
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);	
@@ -1064,9 +1072,11 @@ impl Game {
         payout: u32,
         hand_results: &HashMap<Uuid, Option<HandResult>>,
         is_showdown: bool,
-    ) {
+    ) -> Vec<json::JsonValue> {
+        let mut pay_outs: Vec<json::JsonValue> = vec![];
+
         println!("best_indices = {:?}", best_ids);
-        for player in self.players.iter_mut().flatten() {
+        for (i, player) in self.players.iter_mut().flatten().enumerate() {
             if best_ids.contains(&player.id) {
                 // get the name for messages
                 let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id)
@@ -1082,6 +1092,24 @@ impl Game {
                     } else {
                         "Unknown".to_string()
                     };
+                let hand_ranking_string =
+                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                        hand_result.hand_ranking_string()
+                    } else {
+                        "Unknown".to_string()
+                    };
+                let constituent_cards_string =
+                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                        hand_result.constituent_cards_string()
+                    } else {
+                        "Unknown".to_string()
+                    };
+                let kickers_string =
+                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                        hand_result.kickers_string()
+                    } else {
+                        "Unknown".to_string()
+                    };
                 println!(
                     "paying out {:?} to {:?}, with hand result = {:?}",
                     payout, name, ranking_string
@@ -1093,18 +1121,23 @@ impl Game {
                 };
 
                 let message = object! {
-                    msg_type: "paying_out".to_owned(),
                     payout: payout,
+                    index: i,
                     player_name: name,
                     hole_cards: hole_string,
-                    hand_result: ranking_string,
+                    hand_result: hand_ranking_string,
+                    constituent_cards: constituent_cards_string,
+                    kickers: kickers_string,
                     is_showdown: is_showdown,
                 };
-                PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+
+                pay_outs.push(message);
                 player.pay(payout);
                 println!("after payment: {:?}", player);
             }
         }
+
+        return pay_outs;
     }
 
     /// Given a player, we need to determine which 5 cards make the best hand for this player

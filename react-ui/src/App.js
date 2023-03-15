@@ -23,7 +23,9 @@ class App extends React.Component {
         creatingTable: false,
         gameState: null,
         soundEnabled: false,
-        chatLog: [],
+        chatMessages: [],
+        handHistory: [],
+        logMessages: [],
         tables: [],
         showErrorModal: false,
         errorMessage: ''
@@ -127,7 +129,7 @@ class App extends React.Component {
           that.setState({ tables: json.tables });
         } else if (json.msg_type === "created_game") {
           let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
-          that.log(output, "message");	
+          that.log(output);	
           that.setState({creatingTable: false});
           that.props.navigate("/table");
         } else if (json.msg_type === "game_state") {
@@ -138,17 +140,19 @@ class App extends React.Component {
           that.props.navigate("/table");
         } else if (json.msg_type === "chat") {
           let output = json.player_name + ": " + json.text
-          that.log(output, "chat");
+          that.chat(output);
         } else if (json.msg_type === "new_hand") {
           if (that.state.soundEnabled) {
             that.deckSuffleSound.current?.play();
           }
-          that.log("Playing hand " + json.hand_num, "message");
+          that.log("Playing hand " + json.hand_num);
         } else if (json.msg_type === "prompt") {
           if (that.state.soundEnabled) {
             that.notificationActionSound.current?.play();
           }
-          that.log("Your turn to act ...", "message");
+          that.log("Your turn to act ...");
+        } else if (json.msg_type === "finish_hand") {
+          that.saveHandHistory(json.pay_outs);
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
         } else if (json.msg_type === "error") {
@@ -175,10 +179,82 @@ class App extends React.Component {
       if (!ws || ws.readyState === WebSocket.CLOSED) this.connect(); //check if websocket instance is closed, if so call `connect` function.
   };
 
-  log(msg, type = "status") {
+  chat(msg) {
+    this.setState({ 
+      chatMessages: [...this.state.chatMessages, msg]
+    });
+  }
+
+  saveHandHistory(payOuts) {
+    let { gameState } = this.state;
+
+    let playerIndex = gameState.your_index;
+    let holeCards = gameState.hole_cards;
+    let board = "";
+
+    if ("flop" in gameState) {
+      board += gameState.flop;
+    }
+
+    if ("turn" in gameState) {
+      board += gameState.turn;
+    }
+
+    if ("river" in gameState) {
+      board += gameState.river;
+    }
+
+    let winnings = 0;
+    let player = gameState.players[playerIndex];
+    
+    for (let payOut of payOuts) {
+      if (payOut.index === playerIndex) {
+        winnings = payOut.payout;
+        break;
+      }
+    }
+
+    if ("preflop_cont" in player) {
+      winnings -= player.preflop_cont;
+    }
+
+    if ("flop_cont" in player) {
+      winnings -= player.flop_cont;
+    }
+
+    if ("turn_cont" in player) {
+      winnings -= player.turn_cont;
+    }
+
+    if ("river_cont" in player) {
+      winnings -= player.river_cont;
+    }
+
+    let color = "text-gray-200";
+
+    if (winnings > 0) {
+      color = "text-green-500";
+    } else if (winnings < 0) {
+      color = "text-red-500";
+    }
+
+    let history = {
+      holeCards: holeCards,
+      board: board,
+      winnings: Math.abs(winnings),
+      loss: winnings < 0,
+      color: color
+    }
+
+    this.setState({ 
+      handHistory: [...this.state.handHistory, history]
+    });
+  }
+
+  log(msg) {
     console.log(msg);
     this.setState({ 
-      chatLog: [...this.state.chatLog, {msg: msg, type: type}]
+      logMessages: [...this.state.logMessages, msg]
     });
   }
 
@@ -211,7 +287,16 @@ class App extends React.Component {
               <Create websocket={this.state.ws} onCreate={() => this.setState({creatingTable: true})}/>
             )
           } />
-          <Route path="/table" element={<Table websocket={this.state.ws} gameState={this.state.gameState} soundEnabled={this.state.soundEnabled} soundToggleCallback={this.soundToggleCallback} chatLog={this.state.chatLog}/>} />
+          <Route path="/table" element={
+            <Table 
+              websocket={this.state.ws} 
+              gameState={this.state.gameState} 
+              soundEnabled={this.state.soundEnabled} 
+              soundToggleCallback={this.soundToggleCallback} 
+              chatMessages={this.state.chatMessages}
+              handHistory={this.state.handHistory}
+              logMessages={this.state.logMessages}
+              />} />
         </Routes>
         <audio ref={this.deckSuffleSound} src={process.env.PUBLIC_URL + '/assets/sounds/cards-shuffling.mp3'} preload="auto" controls="none" className="hidden" />
         <audio ref={this.notificationActionSound} src={process.env.PUBLIC_URL + '/assets/sounds/notification-action.mp3'} preload="auto" controls="none" className="hidden" />

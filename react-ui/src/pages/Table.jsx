@@ -10,16 +10,19 @@ class Table extends React.Component {
 
         this.state = {
             betSize: 0,
+            selectedTextWindow: "chat",
             chatMessage: ""
         }
 
         // Refs
-        this.chatLogEndRef = createRef();
+        this.chatEndRef = createRef();
 
         this.betSlider = createRef();
         this.betSize = createRef();
 
         // Handlers
+        this.handleTextWindowChange = this.handleTextWindowChange.bind(this);
+
         this.handleMessage = this.handleMessage.bind(this);
         this.handleMessageChange = this.handleMessageChange.bind(this);
 
@@ -34,7 +37,7 @@ class Table extends React.Component {
     }
 
     componentDidUpdate(_) {
-        this.chatLogEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
         let [min, max] = this.getBetMinMax(this.props.gameState);
         this.betSlider.current.min = min;
@@ -150,6 +153,10 @@ class Table extends React.Component {
         this.sendToWS(data);
     }
 
+    handleTextWindowChange(event) {
+        this.setState({ selectedTextWindow: event.target.id });
+    }
+
     handleMessage(_) {
         if (this.state.chatMessage.length > 0) {
             let data = {
@@ -168,6 +175,9 @@ class Table extends React.Component {
     }
 
     render() {
+        let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
+        let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -180,7 +190,7 @@ class Table extends React.Component {
                             Table:  {this.props.gameState && this.props.gameState.name}
                         </p>
                     </div>
-                    <div className="absolute bottom-60 left-0 p-4">
+                    <div className="absolute bottom-80 left-0 p-4">
                         <label className="block mt-4 mb-2">
                             <span className="text-gray-200 mr-4">
                                 Sit Out
@@ -214,15 +224,81 @@ class Table extends React.Component {
                     <aside className="lg:w-24 xl:w-48 bg-stone-700"></aside>
                 </div>
 
-                <footer className="grid grid-cols-2 h-60 border-t-2 border-stone-600">
+                <footer className="grid grid-cols-2 h-80 border-t-2 border-stone-600">
                     <div className="bg-stone-700 p-2 flex flex-col">
+                        <div className="text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700">
+                            <ul className="flex flex-wrap -mb-px">
+                                <li className="mr-2">
+                                    <p id="chat"
+                                        onClick={this.handleTextWindowChange}
+                                        className={this.state.selectedTextWindow === "chat" ? textWindowTabActive : textWindowTab}>
+                                        Chat
+                                    </p>
+                                </li>
+                                <li className="mr-2">
+                                    <p id="handHistory"
+                                        onClick={this.handleTextWindowChange}
+                                        className={this.state.selectedTextWindow === "handHistory" ? textWindowTabActive : textWindowTab}>
+                                        Hands
+                                    </p>
+                                </li>
+                                <li className="mr-2">
+                                    <p id="log"
+                                        onClick={this.handleTextWindowChange}
+                                        className={this.state.selectedTextWindow === "log" ? textWindowTabActive : textWindowTab}>
+                                        Log
+                                    </p>
+                                </li>
+                            </ul>
+                        </div>
+
+
                         <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
-                            {this.props.chatLog?.map((message) => (
-                                <p className="text-stone-200 msg">
-                                    {message.msg}
-                                </p>
-                            ))}
-                            <div ref={this.chatLogEndRef} />
+                            {
+                                this.state.selectedTextWindow === "chat" &&
+                                this.props.chatMessages?.map((message) => (
+                                    <p className="text-stone-200 msg">
+                                        {message}
+                                    </p>
+                                ))
+                            }
+                            {
+                                this.state.selectedTextWindow === "handHistory" &&
+                                (<>
+                                    <div className="shadow-md sm:rounded-lg">
+                                        <table className="relative w-full text-sm text-left">
+                                            <thead className="text-xs uppercase">
+                                                <tr>
+                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">My Cards</th>
+                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Board</th>
+                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Winnings</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {
+                                                    this.props.handHistory?.map((hand) => (
+                                                        <tr>
+                                                            <td className="px-6 py-4">{hand.holeCards}</td>
+                                                            <td className="px-6 py-4">{hand.board}</td>
+                                                            <td className={`${hand.color} px-6 py-4`}>{hand.winnings}</td>
+                                                        </tr>
+                                                    ))
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                                )
+                            }
+                            {
+                                this.state.selectedTextWindow === "log" &&
+                                this.props.logMessages?.map((message) => (
+                                    <p className="text-stone-200 msg">
+                                        {message}
+                                    </p>
+                                ))
+                            }
+                            <div ref={this.chatEndRef} />
                         </div>
                         <div className="w-full flex flex-row mt-2">
                             < TextInput
