@@ -25,7 +25,6 @@ class App extends React.Component {
         soundEnabled: false,
         chatMessages: [],
         handHistory: [],
-        logMessages: [],
         tables: [],
         showErrorModal: false,
         errorMessage: ''
@@ -129,7 +128,7 @@ class App extends React.Component {
           that.setState({ tables: json.tables });
         } else if (json.msg_type === "created_game") {
           let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
-          that.log(output);	
+          that.chat("Dealer", output);	
           that.setState({creatingTable: false});
           that.props.navigate("/table");
         } else if (json.msg_type === "game_state") {
@@ -139,20 +138,32 @@ class App extends React.Component {
           });
           that.props.navigate("/table");
         } else if (json.msg_type === "chat") {
-          let output = json.player_name + ": " + json.text
-          that.chat(output);
+          that.chat(json.player_name, json.text);
         } else if (json.msg_type === "new_hand") {
           if (that.state.soundEnabled) {
             that.deckSuffleSound.current?.play();
           }
-          that.log("Playing hand " + json.hand_num);
+          that.chat("Dealer", "Playing hand " + json.hand_num);
         } else if (json.msg_type === "prompt") {
           if (that.state.soundEnabled) {
             that.notificationActionSound.current?.play();
           }
-          that.log("Your turn to act ...");
+          if (json.current_bet > 0) {
+            that.chat("Dealer", `Your turn to act. The current bet is ${json.current_bet}.`);
+          } else {
+            that.chat("Dealer", `Your turn to act. There is currently no bet.`);
+          }
         } else if (json.msg_type === "finish_hand") {
           that.saveHandHistory(json.pay_outs);
+
+          for (let payOut of json.pay_outs) {
+            let showdown = "";
+            if (payOut.is_showdown) {
+              showdown = ` in a showdown with ${payOut.hand_result}: ${payOut.constituent_cards} and ${payOut.kickers} kicker.`;
+            }
+
+            that.chat("Dealer", `${payOut.player_name} won ${payOut.payout}${showdown}`);
+          }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
         } else if (json.msg_type === "error") {
@@ -179,9 +190,9 @@ class App extends React.Component {
       if (!ws || ws.readyState === WebSocket.CLOSED) this.connect(); //check if websocket instance is closed, if so call `connect` function.
   };
 
-  chat(msg) {
+  chat(user, msg) {
     this.setState({ 
-      chatMessages: [...this.state.chatMessages, msg]
+      chatMessages: [...this.state.chatMessages, {user, msg}]
     });
   }
 
@@ -251,12 +262,6 @@ class App extends React.Component {
     });
   }
 
-  log(msg) {
-    console.log(msg);
-    this.setState({ 
-      logMessages: [...this.state.logMessages, msg]
-    });
-  }
 
   soundToggleCallback(event) {
     this.setState({ soundEnabled: !this.state.soundEnabled });
@@ -295,7 +300,6 @@ class App extends React.Component {
               soundToggleCallback={this.soundToggleCallback} 
               chatMessages={this.state.chatMessages}
               handHistory={this.state.handHistory}
-              logMessages={this.state.logMessages}
               />} />
         </Routes>
         <audio ref={this.deckSuffleSound} src={process.env.PUBLIC_URL + '/assets/sounds/cards-shuffling.mp3'} preload="auto" controls="none" className="hidden" />

@@ -242,13 +242,6 @@ class Table extends React.Component {
                                         Hands
                                     </p>
                                 </li>
-                                <li className="mr-2">
-                                    <p id="log"
-                                        onClick={this.handleTextWindowChange}
-                                        className={this.state.selectedTextWindow === "log" ? textWindowTabActive : textWindowTab}>
-                                        Log
-                                    </p>
-                                </li>
                             </ul>
                         </div>
 
@@ -258,7 +251,8 @@ class Table extends React.Component {
                                 this.state.selectedTextWindow === "chat" &&
                                 this.props.chatMessages?.map((message) => (
                                     <p className="text-stone-200 msg">
-                                        {message}
+                                        <strong>{message.user}: </strong>
+                                        {message.msg}
                                     </p>
                                 ))
                             }
@@ -289,14 +283,6 @@ class Table extends React.Component {
                                     </div>
                                 </>
                                 )
-                            }
-                            {
-                                this.state.selectedTextWindow === "log" &&
-                                this.props.logMessages?.map((message) => (
-                                    <p className="text-stone-200 msg">
-                                        {message}
-                                    </p>
-                                ))
                             }
                             <div ref={this.chatEndRef} />
                         </div>

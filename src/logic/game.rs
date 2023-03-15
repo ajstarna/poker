@@ -1545,6 +1545,7 @@ impl Game {
 	    let message = object! {
 		msg_type: "prompt".to_owned(),
 		prompt: prompt,
+        current_bet: gamehand.current_bet
 	    };
 	    PlayerConfig::send_specific_message(
 		&message.dump(),
