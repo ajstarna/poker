@@ -1,4 +1,5 @@
 import React, { createRef } from "react";
+import { SpeakerWaveIcon, SpeakerXMarkIcon } from "@heroicons/react/24/outline";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
 import "../components/table/chat.css";
@@ -200,15 +201,6 @@ class Table extends React.Component {
                                 onChange={this.handleSittingOutChange}
                             />
                         </label>
-                        <label className="block mt-4 mb-2">
-                            <span className="text-gray-200 mr-4">
-                                Enable Sounds
-                            </span>
-                            <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
-                                checked={this.props.soundEnabled}
-                                onChange={this.props.soundToggleCallback}
-                            />
-                        </label>
                     </div>
 
                     <div className="absolute p-4 top-0 right-0">
@@ -224,7 +216,7 @@ class Table extends React.Component {
                     <aside className="lg:w-24 xl:w-48 bg-stone-700"></aside>
                 </div>
 
-                <footer className="grid grid-cols-2 h-80 border-t-2 border-stone-600">
+                <footer className="grid grid-cols-2 h-70 border-t-2 border-stone-600">
                     <div className="bg-stone-700 p-2 flex flex-col">
                         <div className="text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700">
                             <ul className="flex flex-wrap -mb-px">
@@ -300,36 +292,47 @@ class Table extends React.Component {
                         </div>
                     </div>
                     <div className="bg-stone-700 px-4 md:px-10">
-                        <div className="mt-4 grid grid-cols-4 gap-2">
-                            <p className="text-gray-200 font-bold w-full" >Bet:</p>
-                            <input
-                                ref={this.betSlider}
-                                type="range" min="1" max="100"
-                                value={this.state.betSize}
-                                onChange={this.handleBetChange}
-                                name="betSizeSlider"
-                                className="col-span-2 w-full accent-gray-200" />
-                            <input
-                                ref={this.betSize}
-                                type="number" min="0"
-                                value={this.state.betSize}
-                                onChange={this.handleBetChange}
-                                name="betSize"
-                                className="w-full bg-stone-500 text-center text-gray-200 font-bold" />
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-1">
-                            <ActionButton onClick={this.handleFold}>
-                                Fold
-                            </ActionButton>
-                            <ActionButton onClick={this.handleCheck}>
-                                Check
-                            </ActionButton>
-                            <ActionButton onClick={this.handleCall}>
-                                Call
-                            </ActionButton>
-                            <ActionButton onClick={this.handleBet}>
-                                Bet
-                            </ActionButton>
+                        <div className="flex flex-col h-full justify-between">
+                            <div>
+                                <div className="mt-4 grid grid-cols-4 gap-2">
+                                    <p className="text-gray-200 font-bold w-full" >Bet:</p>
+                                    <input
+                                        ref={this.betSlider}
+                                        type="range" min="1" max="100"
+                                        value={this.state.betSize}
+                                        onChange={this.handleBetChange}
+                                        name="betSizeSlider"
+                                        className="col-span-2 w-full accent-gray-200" />
+                                    <input
+                                        ref={this.betSize}
+                                        type="number" min="0"
+                                        value={this.state.betSize}
+                                        onChange={this.handleBetChange}
+                                        name="betSize"
+                                        className="w-full bg-stone-500 text-center text-gray-200 font-bold" />
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-1">
+                                    <ActionButton onClick={this.handleFold}>
+                                        Fold
+                                    </ActionButton>
+                                    <ActionButton onClick={this.handleCheck}>
+                                        Check
+                                    </ActionButton>
+                                    <ActionButton onClick={this.handleCall}>
+                                        Call
+                                    </ActionButton>
+                                    <ActionButton onClick={this.handleBet}>
+                                        Bet
+                                    </ActionButton>
+                                </div>
+                            </div>
+                            <div className="flex flex-row w-full justify-between">
+                                <div></div>
+                                <ActionButton className="mb-4 x-auto text-gray-200 text-center"
+                                    onClick={this.props.soundToggleCallback}>
+                                    {this.props.soundEnabled ? <SpeakerXMarkIcon className="w-8 h-8 text-gray-200" /> : <SpeakerWaveIcon className="w-8 h-8 text-gray-200" />}
+                                </ActionButton>
+                            </div>
                         </div>
                     </div>
                 </footer >
