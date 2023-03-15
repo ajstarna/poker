@@ -55,15 +55,21 @@ class Lobby extends React.Component {
                 <p className="text-3xl text-gray-200 font-bold mb-5">
                     Lobby
                 </p>
-                <MenuButton className="mt-10" onClick={this.refresh} >
-                    Refresh List
-                </MenuButton>
+                <div className="grid grid-cols-2 gap-4 mt-10">
+                    <MenuButton onClick={() => this.props.navigate("/menu")}>Back</MenuButton>
+                    <MenuButton onClick={this.refresh} >Refresh List</MenuButton>
+                </div>
                 <div className="mt-10">
-                    {this.props.tables?.map((table) => (
+                    {this.props.tables.length > 0 ? this.props.tables?.map((table) => (
                         <p key={table} onClick={() => this.join(table)} className="text-stone-200 p-4 mt-2 w-full bg-gray-700 hover:bg-gray-800 active:bg-gray-900 border-gray-600 border-2">
                             {table}
                         </p>
-                    ))}
+                    )) : (
+                        <p className="text-stone-200 p-4 mt-2 w-full bg-gray-700 border-gray-600 border-2 text-center" >
+                            There are currenly no public tables listed.
+                        </p>
+                    )
+                    }
                 </div>
             </MenuBody>
         );

@@ -60,9 +60,10 @@ class JoinTable extends React.Component {
                             <TextInput type="password" name="password" value={this.state.password} onChange={this.handleChange} placeholder="Password" />
                         </div>
                     </div>
-                    <MenuButton className="mt-10" type="submit">
-                        Join Table
-                    </MenuButton>
+                    <div className="grid grid-cols-2 gap-4 mt-10">
+                        <MenuButton type="button" onClick={() => this.props.navigate("/menu")}>Back</MenuButton>
+                        <MenuButton type="submit" >Join Table</MenuButton>
+                    </div>
                 </form>
             </MenuBody>
         );
