@@ -4,6 +4,7 @@ import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
 import "../components/table/chat.css";
 import TextInput from "../components/input/TextInput";
+import { handleAdminCommands, ADMIN_PREFIX } from "../utils/admin-actions";
 
 class Table extends React.Component {
     constructor(props) {
@@ -160,10 +161,17 @@ class Table extends React.Component {
 
     handleMessage(_) {
         if (this.state.chatMessage.length > 0) {
-            let data = {
-                "msg_type": "chat",
-                "text": this.state.chatMessage
-            };
+            let data = {};
+            if (this.state.chatMessage.startsWith(ADMIN_PREFIX)) {
+                data = handleAdminCommands(this.state.chatMessage);
+            } else {
+                data = {
+                    "msg_type": "chat",
+                    "text": this.state.chatMessage
+                };
+            }
+
+            console.log(data);
 
             this.sendToWS(data);
 

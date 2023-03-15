@@ -10,6 +10,7 @@ import Lobby from './pages/Lobby';
 import Login from "./pages/Login";
 import Menu from './pages/Menu';
 import Table from "./pages/Table";
+import { ADMIN_PREFIX } from './utils/admin-actions';
 
 class App extends React.Component {
   constructor(props) {
@@ -166,6 +167,13 @@ class App extends React.Component {
           }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
+        } else if (json.msg_type === "help_message") {
+          that.chat("Dealer", "Available admin commands:");
+          for (const cmd of json.commands) {
+            that.chat("Dealer", cmd.replace("/", ADMIN_PREFIX));
+          }
+        } else if (json.msg_type === "admin_success") {
+          that.chat("Dealer", json.text);
         } else if (json.msg_type === "error") {
           if (json.error === "unable_to_create") {
             that.setState({creatingTable: false});
@@ -191,9 +199,9 @@ class App extends React.Component {
   };
 
   chat(user, msg) {
-    this.setState({ 
-      chatMessages: [...this.state.chatMessages, {user, msg}]
-    });
+    this.setState(prevState => ({ 
+      chatMessages: [...prevState.chatMessages, {user, msg}]
+    }));
   }
 
   saveHandHistory(payOuts) {
