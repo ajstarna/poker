@@ -1076,64 +1076,67 @@ impl Game {
         let mut pay_outs: Vec<json::JsonValue> = vec![];
 
         println!("best_indices = {:?}", best_ids);
-        for (i, player) in self.players.iter_mut().flatten().enumerate() {
-            if best_ids.contains(&player.id) {
-                // get the name for messages
-                let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id)
-                {
-                    config.name.as_ref().unwrap().clone()
-                } else {
-                    // it is a bit weird if we made it all the way to the pay stage for a left player
-                    "Player who left".to_string()
-                };
-                let ranking_string =
-                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                        hand_result.to_string()
+        for (i, player_spot) in self.players.iter_mut().enumerate() {
+            if player_spot.is_some() {
+                let player = player_spot.as_mut().unwrap();
+                if best_ids.contains(&player.id) {
+                    // get the name for messages
+                    let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id)
+                    {
+                        config.name.as_ref().unwrap().clone()
+                    } else {
+                        // it is a bit weird if we made it all the way to the pay stage for a left player
+                        "Player who left".to_string()
+                    };
+                    let ranking_string =
+                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                            hand_result.to_string()
+                        } else {
+                            "Unknown".to_string()
+                        };
+                    let hand_ranking_string =
+                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                            hand_result.hand_ranking_string()
+                        } else {
+                            "Unknown".to_string()
+                        };
+                    let constituent_cards_string =
+                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                            hand_result.constituent_cards_string()
+                        } else {
+                            "Unknown".to_string()
+                        };
+                    let kickers_string =
+                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+                            hand_result.kickers_string()
+                        } else {
+                            "Unknown".to_string()
+                        };
+                    println!(
+                        "paying out {:?} to {:?}, with hand result = {:?}",
+                        payout, name, ranking_string
+                    );
+                    let hole_string = if is_showdown {
+                        format!("{}{}", player.hole_cards[0], player.hole_cards[1])
                     } else {
                         "Unknown".to_string()
                     };
-                let hand_ranking_string =
-                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                        hand_result.hand_ranking_string()
-                    } else {
-                        "Unknown".to_string()
-                    };
-                let constituent_cards_string =
-                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                        hand_result.constituent_cards_string()
-                    } else {
-                        "Unknown".to_string()
-                    };
-                let kickers_string =
-                    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                        hand_result.kickers_string()
-                    } else {
-                        "Unknown".to_string()
-                    };
-                println!(
-                    "paying out {:?} to {:?}, with hand result = {:?}",
-                    payout, name, ranking_string
-                );
-                let hole_string = if is_showdown {
-                    format!("{}{}", player.hole_cards[0], player.hole_cards[1])
-                } else {
-                    "Unknown".to_string()
-                };
 
-                let message = object! {
-                    payout: payout,
-                    index: i,
-                    player_name: name,
-                    hole_cards: hole_string,
-                    hand_result: hand_ranking_string,
-                    constituent_cards: constituent_cards_string,
-                    kickers: kickers_string,
-                    is_showdown: is_showdown,
-                };
+                    let message = object! {
+                        payout: payout,
+                        index: i,
+                        player_name: name,
+                        hole_cards: hole_string,
+                        hand_result: hand_ranking_string,
+                        constituent_cards: constituent_cards_string,
+                        kickers: kickers_string,
+                        is_showdown: is_showdown,
+                    };
 
-                pay_outs.push(message);
-                player.pay(payout);
-                println!("after payment: {:?}", player);
+                    pay_outs.push(message);
+                    player.pay(payout);
+                    println!("after payment: {:?}", player);
+                }
             }
         }
 
