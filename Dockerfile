@@ -22,5 +22,5 @@ FROM debian:buster-slim AS runtime
 WORKDIR app
 COPY --from=builder /app/target/release/poker .
 # need the front end files
-COPY ./static ./static 
+COPY ./site ./site 
 ENTRYPOINT ["./poker", "--ip", "0.0.0.0"]
