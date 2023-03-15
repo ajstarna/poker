@@ -49,6 +49,7 @@ export class Player {
 
             // Draw text (street contributions)
             ctx.font = `${0.2*size}px arial`;
+            ctx.textAlign = "start";
             ctx.fillStyle = "white";
             ctx.fillText(this.street_contributions, x0-w/2 + 0.3*size, y0-h/2 + 0.2*size);
 
