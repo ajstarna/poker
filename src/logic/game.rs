@@ -1139,8 +1139,7 @@ impl Game {
                 }
             }
         }
-
-        return pay_outs;
+        pay_outs
     }
 
     /// Given a player, we need to determine which 5 cards make the best hand for this player

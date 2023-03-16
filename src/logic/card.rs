@@ -350,25 +350,21 @@ impl HandResult {
     }
 
     pub fn constituent_cards_string(&self) -> String {
-        format!(
-            "{}",
-            self.constituent_cards
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join("-")
-        )
+	self.constituent_cards
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("-")
+	    .to_string()
     }
 
     pub fn kickers_string(&self) -> String {
-        format!(
-            "{}",
-            self.kickers
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join("-")
-        )
+        self.kickers
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("-")
+            .to_string()
     }
 }
 
