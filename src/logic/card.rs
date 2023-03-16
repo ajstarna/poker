@@ -341,6 +341,31 @@ impl HandResult {
             value,
         }
     }
+
+    pub fn hand_ranking_string(&self) -> String {
+        format!(
+            "{:?}",
+            self.hand_ranking
+        )
+    }
+
+    pub fn constituent_cards_string(&self) -> String {
+	self.constituent_cards
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("-")
+	    .to_string()
+    }
+
+    pub fn kickers_string(&self) -> String {
+        self.kickers
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("-")
+            .to_string()
+    }
 }
 
 /// trait to define behaviour that you would expect out of a deck of cards
