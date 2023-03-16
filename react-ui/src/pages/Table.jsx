@@ -216,6 +216,32 @@ class Table extends React.Component {
             );
         }
 
+        let playerOrder = [];
+        if (this.props.gameState?.players) {
+            for (let player of this.props.gameState.players) {
+                playerOrder.push({
+                    index: player?.index,
+                    money: player?.money
+                })
+            }
+        }
+
+        playerOrder.sort((x, y) => y.money - x.money);
+
+        let yourPosition = playerOrder.length;
+        for (let i = 0; i < playerOrder.length; i++) {
+            if (playerOrder[i].index === this.props.gameState?.your_index) {
+                yourPosition = i + 1;
+                break;
+            }
+        }
+
+        let stats = {
+            yourPosition: yourPosition,
+            numPlayers: playerOrder.length,
+            handsPlayed: this.props.gameState?.hands_played
+        }
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -284,6 +310,13 @@ class Table extends React.Component {
                                         Hands
                                     </p>
                                 </li>
+                                <li className="mr-2">
+                                    <p id="stats"
+                                        onClick={this.handleTextWindowChange}
+                                        className={this.state.selectedTextWindow === "stats" ? textWindowTabActive : textWindowTab}>
+                                        Stats
+                                    </p>
+                                </li>
                             </ul>
                         </div>
 
@@ -291,8 +324,8 @@ class Table extends React.Component {
                         <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
                             {
                                 this.state.selectedTextWindow === "chat" &&
-                                this.props.chatMessages?.map((message) => (
-                                    <p className="text-stone-200 msg">
+                                this.props.chatMessages?.map((message, index) => (
+                                    <p key={`chatMessage${index}`} className="text-stone-200 msg">
                                         <strong>{message.user}: </strong>
                                         {message.msg}
                                     </p>
@@ -332,6 +365,18 @@ class Table extends React.Component {
                                         </table>
                                     </div>
                                 </>
+                                )
+                            }
+                            {
+                                this.state.selectedTextWindow === "stats" &&
+                                (<div className="p-4">
+                                    <p>
+                                        <strong>Position:</strong> {stats.yourPosition} out of {stats.numPlayers}
+                                    </p>
+                                    <p className="mt-2">
+                                        <strong>Hands Played:</strong> {stats.handsPlayed}
+                                    </p>
+                                </div>
                                 )
                             }
                             <div ref={this.chatEndRef} />
