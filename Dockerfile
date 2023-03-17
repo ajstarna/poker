@@ -1,3 +1,14 @@
+# build environment
+FROM node:13.12.0-alpine as react
+WORKDIR /app
+ENV PATH /app/node_modules/.bin:$PATH
+COPY react-ui/package.json ./
+COPY react-ui/package-lock.json ./
+RUN npm ci --silent
+RUN npm install react-scripts@3.4.1 -g --silent
+COPY ./react-ui ./
+RUN npm run build
+
 FROM rust:1.67.0 AS chef
 # cargo-chef lets us build the the dependencies as a docker layer
 # We only pay the installation cost once, 
@@ -22,5 +33,5 @@ FROM debian:buster-slim AS runtime
 WORKDIR app
 COPY --from=builder /app/target/release/poker .
 # need the front end files
-COPY ./site ./site 
+COPY --from=react /app/build ./site
 ENTRYPOINT ["./poker", "--ip", "0.0.0.0"]

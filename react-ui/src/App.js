@@ -53,17 +53,18 @@ class App extends React.Component {
     const proto = window.location.protocol.startsWith("https") ? "wss" : "ws";
     const hostname = window.location.hostname;
     const uuid = localStorage.getItem('poker-uuid');
+    let host = window.location.host;
 
-    let port = "";
     if (process.env.REACT_APP_SERVER_PORT) {
-      port = `:${process.env.REACT_APP_SERVER_PORT}`;
       console.log(`REACT_APP_SERVER_PORT=${process.env.REACT_APP_SERVER_PORT}`);
+      host = `${hostname}:${process.env.REACT_APP_SERVER_PORT}`;
     }
 
-    let wsUri = `${proto}://${hostname}${port}/join`;
+    let wsUri = `${proto}://${host}/join`;
     if (uuid) {
-      wsUri = `${proto}://${hostname}${port}/rejoin/${uuid}`;
+      wsUri = `${proto}://${host}/rejoin/${uuid}`;
     }
+    
 
     const ws = new WebSocket(wsUri);
     let that = this; // cache the this
