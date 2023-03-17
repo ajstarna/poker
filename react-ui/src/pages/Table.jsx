@@ -5,6 +5,7 @@ import ActionButton from "../components/button/ActionButton"
 import "../components/table/chat.css";
 import TextInput from "../components/input/TextInput";
 import { handleAdminCommands, ADMIN_PREFIX } from "../utils/admin-actions";
+import CardCanvas from "../components/table/CardCanvas";
 
 class Table extends React.Component {
     constructor(props) {
@@ -189,6 +190,32 @@ class Table extends React.Component {
         let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
         let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
 
+        let cardSize = "24";
+
+        function stringToCards(cardString) {
+            var cards = [];
+            if (cardString === null) return cards;
+
+            var chars = cardString.split("");
+
+            for (var i = 0; i < chars.length; i += 2) {
+                cards.push({
+                    value: chars[i],
+                    suit: chars[i + 1]
+                });
+            }
+
+            return (
+                <>
+                    {
+                        cards.map((card) => (
+                            <CardCanvas size={cardSize} value={card.value} suit={card.suit} />
+                        ))
+                    }
+                </>
+            );
+        }
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -287,8 +314,16 @@ class Table extends React.Component {
                                                 {
                                                     this.props.handHistory?.map((hand) => (
                                                         <tr>
-                                                            <td className="px-6 py-4">{hand.holeCards}</td>
-                                                            <td className="px-6 py-4">{hand.board}</td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex flex-row space-x-1">
+                                                                    {stringToCards(hand.holeCards)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex flex-row space-x-1">
+                                                                    {stringToCards(hand.board)}
+                                                                </div>
+                                                            </td>
                                                             <td className={`${hand.color} px-6 py-4`}>{hand.winnings}</td>
                                                         </tr>
                                                     ))
