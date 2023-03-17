@@ -17,7 +17,29 @@ class Table extends React.Component {
             leaving: false,
             sittingOut: false,
             selectedTextWindow: "chat",
-            chatMessage: ""
+            chatMessage: "",
+            betPresets: [
+                {
+                    id: "betPreset1",
+                    name: "Min",
+                    value: 0
+                },
+                {
+                    id: "betPreset2",
+                    name: "2x",
+                    value: 0
+                },
+                {
+                    id: "betPreset3",
+                    name: "3x",
+                    value: 0
+                },
+                {
+                    id: "betPreset4",
+                    name: "Max",
+                    value: 0
+                }
+            ]
         }
 
         // Refs
@@ -40,23 +62,15 @@ class Table extends React.Component {
         this.handleCheck = this.handleCheck.bind(this);
         this.handleCall = this.handleCall.bind(this);
         this.handleBet = this.handleBet.bind(this);
+
+        this.handleBetPreset = this.handleBetPreset.bind(this);
+
+        // Updates
+        this.update = this.update.bind(this);
     }
 
     componentDidUpdate(_) { /*prevProps*/
         //this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-        let [min, max] = this.getBetMinMax(this.props.gameState);
-        this.betSlider.current.min = min;
-        this.betSlider.current.max = max;
-
-        this.betSize.current.min = min;
-        this.betSize.current.max = max;
-
-        if (this.state.betSize < min) {
-            this.setState({ betSize: min });
-        } else if (this.state.betSize > max) {
-            this.setState({ betSize: max });
-        }
     }
 
     getBetMinMax(gameState) {
@@ -149,7 +163,7 @@ class Table extends React.Component {
         let data = {
             "msg_type": "player_action",
             "action": "bet",
-            "amount": this.state.betSize
+            "amount": Math.floor(this.state.betSize).toString()
         };
 
         this.sendToWS(data);
@@ -157,6 +171,23 @@ class Table extends React.Component {
 
     handleBetChange(event) {
         this.setState({ betSize: event.target.value });
+    }
+
+    handleBetPreset(event) {
+        let id = event.target.id;
+
+        let bet = 0;
+        if (id === "betPreset1") {
+            bet = this.state.betPresets[0].value;
+        } else if (id === "betPreset2") {
+            bet = this.state.betPresets[1].value;
+        } else if (id === "betPreset3") {
+            bet = this.state.betPresets[2].value;
+        } else if (id === "betPreset4") {
+            bet = this.state.betPresets[3].value;
+        }
+
+        this.setState({ betSize: bet });
     }
 
     handleLeave(_) {
@@ -187,14 +218,70 @@ class Table extends React.Component {
     }
 
     handleMessageChange(event) {
-        this.setState({ chatMessage: event.target.value });
+        this.setState({ chatMessage: parseInt(event.target.value) });
     }
 
-    render() {
-        let isSittingOut = this.isSittingOut(this.props.gameState);
+    // Updates
+    update() {
+        let gameState = this.props.gameState;
+
+        if (gameState === null) return;
+
+        // Update sitting out
+        let isSittingOut = this.isSittingOut(gameState);
         if (isSittingOut !== this.state.sittingOut) {
             this.setState({ sittingOut: isSittingOut });
         }
+
+        // Update bet
+        let [min, max] = this.getBetMinMax(gameState);
+        if (this.betSlider.current) {
+            this.betSlider.current.min = min;
+            this.betSlider.current.max = max;
+        }
+
+        if (this.betSize.current) {
+            this.betSize.current.min = min;
+            this.betSize.current.max = max;
+        }
+
+        if (this.state.betSize < min) {
+            this.setState({ betSize: min });
+        } else if (this.state.betSize > max) {
+            this.setState({ betSize: max });
+        }
+
+        // Update bet presets
+        let betPresets = this.state.betPresets;
+        // Update min and max
+        betPresets[0].value = min;
+        betPresets[3].value = max;
+
+        // Update other presets
+        let potSize = 0;
+        potSize = gameState.pots?.reduce((partialSum, a) => partialSum + a, 0);
+        let smallBlind = gameState.small_blind;
+        let bigBlind = gameState.big_blind;
+
+        // No bets
+        if (potSize <= (smallBlind + bigBlind)) {
+            betPresets[1].name = "2x";
+            betPresets[1].value = 2 * bigBlind;
+
+            betPresets[2].name = "3x";
+            betPresets[2].value = 3 * bigBlind;
+        } else {
+            betPresets[1].name = "0.5";
+            betPresets[1].value = Math.floor(0.5 * potSize);
+
+            betPresets[2].name = "Pot";
+            betPresets[2].value = potSize;
+        }
+    }
+
+    render() {
+        // Update Sit Out State
+        this.update();
 
         let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
         let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
@@ -398,17 +485,29 @@ class Table extends React.Component {
                                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-1">
                                     <div></div>
                                     <div className="mt-4 grid grid-cols-4 gap-1">
-                                        <MiniActionButton>
-                                            Min
+                                        <MiniActionButton
+                                            id="betPreset1"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[0].name}
                                         </MiniActionButton>
-                                        <MiniActionButton>
-                                            2
+                                        <MiniActionButton
+                                            id="betPreset2"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[1].name}
                                         </MiniActionButton>
-                                        <MiniActionButton>
-                                            3
+                                        <MiniActionButton
+                                            id="betPreset3"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[2].name}
                                         </MiniActionButton>
-                                        <MiniActionButton>
-                                            Max
+                                        <MiniActionButton
+                                            id="betPreset4"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[3].name}
                                         </MiniActionButton>
                                     </div>
                                 </div>
