@@ -14,6 +14,7 @@ class Table extends React.Component {
         this.state = {
             betSize: 0,
             leaving: false,
+            sittingOut: false,
             selectedTextWindow: "chat",
             chatMessage: ""
         }
@@ -40,8 +41,8 @@ class Table extends React.Component {
         this.handleBet = this.handleBet.bind(this);
     }
 
-    componentDidUpdate(_) {
-        this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    componentDidUpdate(_) { /*prevProps*/
+        //this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
         let [min, max] = this.getBetMinMax(this.props.gameState);
         this.betSlider.current.min = min;
@@ -96,19 +97,24 @@ class Table extends React.Component {
         }
     }
 
-    handleSittingOutChange(event) {
+    handleSittingOutChange(_) {
         let data = {};
-        if (event.target.checked) {
+        let isSittingOut = this.state.sittingOut;
+        if (isSittingOut) {
             data = {
-                "msg_type": "sitout",
+                "msg_type": "imback",
             };
         } else {
             data = {
-                "msg_type": "imback",
+                "msg_type": "sitout",
             };
         }
 
         this.sendToWS(data);
+
+        console.log(`${isSittingOut} - ${data}`);
+        this.setState({ sittingOut: !isSittingOut });
+        console.log(this.state);
     }
 
     handleFold(_) {
@@ -174,10 +180,7 @@ class Table extends React.Component {
                 };
             }
 
-            console.log(data);
-
             this.sendToWS(data);
-
             this.setState({ chatMessage: "" });
         }
     }
@@ -187,6 +190,11 @@ class Table extends React.Component {
     }
 
     render() {
+        let isSittingOut = this.isSittingOut(this.props.gameState);
+        if (isSittingOut !== this.state.sittingOut) {
+            this.setState({ sittingOut: isSittingOut });
+        }
+
         let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
         let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
 
@@ -253,17 +261,6 @@ class Table extends React.Component {
                         <p className="text-gray-200">
                             Table:  {this.props.gameState && this.props.gameState.name}
                         </p>
-                    </div>
-                    <div className="absolute bottom-80 left-0 p-4">
-                        <label className="block mt-4 mb-2">
-                            <span className="text-gray-200 mr-4">
-                                Sit Out
-                            </span>
-                            <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
-                                checked={this.isSittingOut(this.props.gameState)}
-                                onChange={this.handleSittingOutChange}
-                            />
-                        </label>
                     </div>
 
                     <div className="absolute p-4 top-0 right-0">
@@ -429,8 +426,16 @@ class Table extends React.Component {
                                     </ActionButton>
                                 </div>
                             </div>
-                            <div className="flex flex-row w-full justify-between">
-                                <div></div>
+                            <div className="flex flex-row w-full justify-between space-x-1">
+                                <div className="grow"></div>
+                                <ActionButton className="mb-4 x-auto text-gray-200 text-center" onClick={this.handleSittingOutChange}>
+                                    {
+                                        this.state.sittingOut ?
+                                            "I am Back"
+                                            :
+                                            "Sit Out"
+                                    }
+                                </ActionButton>
                                 <ActionButton className="mb-4 x-auto text-gray-200 text-center"
                                     onClick={this.props.soundToggleCallback}>
                                     {this.props.soundEnabled ? <SpeakerXMarkIcon className="w-8 h-8 text-gray-200" /> : <SpeakerWaveIcon className="w-8 h-8 text-gray-200" />}
