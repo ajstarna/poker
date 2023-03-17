@@ -368,91 +368,56 @@ impl HandResult {
     }
 }
 
-/// trait to define behaviour that you would expect out of a deck of cards
-/// in unit tests, we may want to provide a rigged deck, wherease in a normal game
-/// we just want a standard random deck of cards
-pub trait Deck: Send + std::fmt::Debug {
-    /// shuffle the deck to randomize (possibly) the output of future cards
-    fn shuffle(&mut self);
+    /// Given a player, we need to determine which 5 cards make the best hand for this player
+    fn determine_best_hand(&self, player: &Player, gamehand: &mut GameHand) -> Option<HandResult> {
+        if !player.is_active {
+            // if the player isn't active, then can't have a best hand
+            return None;
+        }
 
-    /// give us a single card. Optional, because the deck may be exhausted
-    fn draw_card(&mut self) -> Option<Card>;
-}
-
-#[derive(Debug)]
-pub struct StandardDeck {
-    cards: Vec<Card>,
-    top: usize, // index that we deal the next card from
-}
-
-impl StandardDeck {
-    pub fn new() -> Self {
-        // returns a new unshuffled deck of 52 cards
-        let mut cards = Vec::<Card>::with_capacity(52);
-        for rank in Rank::iter() {
-            for suit in Suit::iter() {
-                cards.push(Card { rank, suit });
+        if let Street::ShowDown = gamehand.street {
+            // we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
+            let mut best_result: Option<HandResult> = None;
+            let mut hand_count = 0;
+            for exclude_idx1 in 0..7 {
+                //println!("exclude 1 = {}", exclude_idx1);
+                for exclude_idx2 in exclude_idx1 + 1..7 {
+                    //println!("exclude 2 = {}", exclude_idx2);
+                    let mut possible_hand = Vec::with_capacity(5);
+                    hand_count += 1;
+                    for (idx, card) in player
+                        .hole_cards
+                        .iter()
+                        .chain(gamehand.flop.as_ref().unwrap().iter())
+                        .chain(iter::once(&gamehand.turn.unwrap()))
+                        .chain(iter::once(&gamehand.river.unwrap()))
+                        .enumerate()
+                    {
+                        if idx != exclude_idx1 && idx != exclude_idx2 {
+                            //println!("pushing!");
+                            possible_hand.push(*card);
+                        }
+                    }
+                    // we have built a hand of five cards, now evaluate it
+                    let current_result = HandResult::analyze_hand(possible_hand);
+                    match best_result {
+                        None => best_result = Some(current_result),
+                        Some(result) if current_result > result => {
+                            best_result = Some(current_result)
+                        }
+                        _ => (),
+                    }
+                }
             }
-        }
-        Self { cards, top: 0 }
-    }
-}
-
-impl Deck for StandardDeck {
-    fn shuffle(&mut self) {
-        // shuffle the deck of cards
-        self.cards.shuffle(&mut rand::thread_rng());
-        self.top = 0;
-    }
-
-    fn draw_card(&mut self) -> Option<Card> {
-        // take the top card from the deck and move the index of the top of the deck
-        if self.top == self.cards.len() {
-            // the deck is exhausted, no card to give
-            None
+            assert!(hand_count == 21); // 7 choose 5
+            println!("player = {:?}", player.id);
+            println!("best result = {:?}", best_result);
+            best_result
         } else {
-            let card = self.cards[self.top];
-            self.top += 1;
-            Some(card)
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct RiggedDeck {
-    cards: Vec<Card>,
-    top: usize, // index that we deal the next card from
-}
-
-impl RiggedDeck {
-    pub fn new() -> Self {
-        let cards = Vec::<Card>::new();
-        Self { cards, top: 0 }
-    }
-
-    /// push a card into the deck.
-    /// we can set the order exactly how we want
-    pub fn push(&mut self, card: Card) {
-        self.cards.push(card);
-    }
-}
-
-impl Deck for RiggedDeck {
-    /// shuffle does nothing
-    fn shuffle(&mut self) {}
-
-    fn draw_card(&mut self) -> Option<Card> {
-        // take the top card from the deck and move the index of the top of the deck
-        if self.top == self.cards.len() {
-            // the deck is exhausted, no card to give
             None
-        } else {
-            let card = self.cards[self.top];
-            self.top += 1;
-            Some(card)
         }
     }
-}
+
 
 #[cfg(test)]
 mod tests {

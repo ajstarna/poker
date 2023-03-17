@@ -1,4 +1,6 @@
 mod card;
+mod pots;
+
 pub mod game;
 pub mod player;
 
