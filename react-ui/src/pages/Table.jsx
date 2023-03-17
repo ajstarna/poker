@@ -2,6 +2,7 @@ import React, { createRef } from "react";
 import { SpeakerWaveIcon, SpeakerXMarkIcon } from "@heroicons/react/24/outline";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
+import MiniActionButton from "../components/button/MiniActionButton";
 import "../components/table/chat.css";
 import TextInput from "../components/input/TextInput";
 import { handleAdminCommands, ADMIN_PREFIX } from "../utils/admin-actions";
@@ -394,6 +395,23 @@ class Table extends React.Component {
                     <div className="bg-stone-700 px-4 md:px-10">
                         <div className="flex flex-col h-full justify-between">
                             <div>
+                                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-1">
+                                    <div></div>
+                                    <div className="mt-4 grid grid-cols-4 gap-1">
+                                        <MiniActionButton>
+                                            Min
+                                        </MiniActionButton>
+                                        <MiniActionButton>
+                                            2
+                                        </MiniActionButton>
+                                        <MiniActionButton>
+                                            3
+                                        </MiniActionButton>
+                                        <MiniActionButton>
+                                            Max
+                                        </MiniActionButton>
+                                    </div>
+                                </div>
                                 <div className="mt-4 grid grid-cols-4 gap-2">
                                     <p className="text-gray-200 font-bold w-full" >Bet:</p>
                                     <input
