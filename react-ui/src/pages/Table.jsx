@@ -2,6 +2,7 @@ import React, { createRef } from "react";
 import { SpeakerWaveIcon, SpeakerXMarkIcon } from "@heroicons/react/24/outline";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
+import MiniActionButton from "../components/button/MiniActionButton";
 import "../components/table/chat.css";
 import TextInput from "../components/input/TextInput";
 import { handleAdminCommands, ADMIN_PREFIX } from "../utils/admin-actions";
@@ -14,8 +15,31 @@ class Table extends React.Component {
         this.state = {
             betSize: 0,
             leaving: false,
+            sittingOut: false,
             selectedTextWindow: "chat",
-            chatMessage: ""
+            chatMessage: "",
+            betPresets: [
+                {
+                    id: "betPreset1",
+                    name: "Min",
+                    value: 0
+                },
+                {
+                    id: "betPreset2",
+                    name: "2x",
+                    value: 0
+                },
+                {
+                    id: "betPreset3",
+                    name: "3x",
+                    value: 0
+                },
+                {
+                    id: "betPreset4",
+                    name: "Max",
+                    value: 0
+                }
+            ]
         }
 
         // Refs
@@ -38,23 +62,15 @@ class Table extends React.Component {
         this.handleCheck = this.handleCheck.bind(this);
         this.handleCall = this.handleCall.bind(this);
         this.handleBet = this.handleBet.bind(this);
+
+        this.handleBetPreset = this.handleBetPreset.bind(this);
+
+        // Updates
+        this.update = this.update.bind(this);
     }
 
-    componentDidUpdate(_) {
-        this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-        let [min, max] = this.getBetMinMax(this.props.gameState);
-        this.betSlider.current.min = min;
-        this.betSlider.current.max = max;
-
-        this.betSize.current.min = min;
-        this.betSize.current.max = max;
-
-        if (this.state.betSize < min) {
-            this.setState({ betSize: min });
-        } else if (this.state.betSize > max) {
-            this.setState({ betSize: max });
-        }
+    componentDidUpdate(_) { /*prevProps*/
+        //this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
 
     getBetMinMax(gameState) {
@@ -96,19 +112,24 @@ class Table extends React.Component {
         }
     }
 
-    handleSittingOutChange(event) {
+    handleSittingOutChange(_) {
         let data = {};
-        if (event.target.checked) {
+        let isSittingOut = this.state.sittingOut;
+        if (isSittingOut) {
             data = {
-                "msg_type": "sitout",
+                "msg_type": "imback",
             };
         } else {
             data = {
-                "msg_type": "imback",
+                "msg_type": "sitout",
             };
         }
 
         this.sendToWS(data);
+
+        console.log(`${isSittingOut} - ${data}`);
+        this.setState({ sittingOut: !isSittingOut });
+        console.log(this.state);
     }
 
     handleFold(_) {
@@ -142,7 +163,7 @@ class Table extends React.Component {
         let data = {
             "msg_type": "player_action",
             "action": "bet",
-            "amount": this.state.betSize
+            "amount": Math.floor(this.state.betSize).toString()
         };
 
         this.sendToWS(data);
@@ -150,6 +171,23 @@ class Table extends React.Component {
 
     handleBetChange(event) {
         this.setState({ betSize: event.target.value });
+    }
+
+    handleBetPreset(event) {
+        let id = event.target.id;
+
+        let bet = 0;
+        if (id === "betPreset1") {
+            bet = this.state.betPresets[0].value;
+        } else if (id === "betPreset2") {
+            bet = this.state.betPresets[1].value;
+        } else if (id === "betPreset3") {
+            bet = this.state.betPresets[2].value;
+        } else if (id === "betPreset4") {
+            bet = this.state.betPresets[3].value;
+        }
+
+        this.setState({ betSize: bet });
     }
 
     handleLeave(_) {
@@ -174,19 +212,77 @@ class Table extends React.Component {
                 };
             }
 
-            console.log(data);
-
             this.sendToWS(data);
-
             this.setState({ chatMessage: "" });
         }
     }
 
     handleMessageChange(event) {
-        this.setState({ chatMessage: event.target.value });
+        this.setState({ chatMessage: parseInt(event.target.value) });
+    }
+
+    // Updates
+    update() {
+        let gameState = this.props.gameState;
+
+        if (gameState === null) return;
+
+        // Update sitting out
+        let isSittingOut = this.isSittingOut(gameState);
+        if (isSittingOut !== this.state.sittingOut) {
+            this.setState({ sittingOut: isSittingOut });
+        }
+
+        // Update bet
+        let [min, max] = this.getBetMinMax(gameState);
+        if (this.betSlider.current) {
+            this.betSlider.current.min = min;
+            this.betSlider.current.max = max;
+        }
+
+        if (this.betSize.current) {
+            this.betSize.current.min = min;
+            this.betSize.current.max = max;
+        }
+
+        if (this.state.betSize < min) {
+            this.setState({ betSize: min });
+        } else if (this.state.betSize > max) {
+            this.setState({ betSize: max });
+        }
+
+        // Update bet presets
+        let betPresets = this.state.betPresets;
+        // Update min and max
+        betPresets[0].value = min;
+        betPresets[3].value = max;
+
+        // Update other presets
+        let potSize = 0;
+        potSize = gameState.pots?.reduce((partialSum, a) => partialSum + a, 0);
+        let smallBlind = gameState.small_blind;
+        let bigBlind = gameState.big_blind;
+
+        // No bets
+        if (potSize <= (smallBlind + bigBlind)) {
+            betPresets[1].name = "2x";
+            betPresets[1].value = 2 * bigBlind;
+
+            betPresets[2].name = "3x";
+            betPresets[2].value = 3 * bigBlind;
+        } else {
+            betPresets[1].name = "0.5";
+            betPresets[1].value = Math.floor(0.5 * potSize);
+
+            betPresets[2].name = "Pot";
+            betPresets[2].value = potSize;
+        }
     }
 
     render() {
+        // Update Sit Out State
+        this.update();
+
         let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
         let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
 
@@ -216,6 +312,32 @@ class Table extends React.Component {
             );
         }
 
+        let playerOrder = [];
+        if (this.props.gameState?.players) {
+            for (let player of this.props.gameState.players) {
+                playerOrder.push({
+                    index: player?.index,
+                    money: player?.money
+                })
+            }
+        }
+
+        playerOrder.sort((x, y) => y.money - x.money);
+
+        let yourPosition = playerOrder.length;
+        for (let i = 0; i < playerOrder.length; i++) {
+            if (playerOrder[i].index === this.props.gameState?.your_index) {
+                yourPosition = i + 1;
+                break;
+            }
+        }
+
+        let stats = {
+            yourPosition: yourPosition,
+            numPlayers: playerOrder.length,
+            handsPlayed: this.props.gameState?.hands_played
+        }
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -227,17 +349,6 @@ class Table extends React.Component {
                         <p className="text-gray-200">
                             Table:  {this.props.gameState && this.props.gameState.name}
                         </p>
-                    </div>
-                    <div className="absolute bottom-80 left-0 p-4">
-                        <label className="block mt-4 mb-2">
-                            <span className="text-gray-200 mr-4">
-                                Sit Out
-                            </span>
-                            <input className="leading-tight w-4 h-4 accent-gray-200" type="checkbox" name="sittingOut"
-                                checked={this.isSittingOut(this.props.gameState)}
-                                onChange={this.handleSittingOutChange}
-                            />
-                        </label>
                     </div>
 
                     <div className="absolute p-4 top-0 right-0">
@@ -284,6 +395,13 @@ class Table extends React.Component {
                                         Hands
                                     </p>
                                 </li>
+                                <li className="mr-2">
+                                    <p id="stats"
+                                        onClick={this.handleTextWindowChange}
+                                        className={this.state.selectedTextWindow === "stats" ? textWindowTabActive : textWindowTab}>
+                                        Stats
+                                    </p>
+                                </li>
                             </ul>
                         </div>
 
@@ -291,8 +409,8 @@ class Table extends React.Component {
                         <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
                             {
                                 this.state.selectedTextWindow === "chat" &&
-                                this.props.chatMessages?.map((message) => (
-                                    <p className="text-stone-200 msg">
+                                this.props.chatMessages?.map((message, index) => (
+                                    <p key={`chatMessage${index}`} className="text-stone-200 msg">
                                         <strong>{message.user}: </strong>
                                         {message.msg}
                                     </p>
@@ -334,6 +452,18 @@ class Table extends React.Component {
                                 </>
                                 )
                             }
+                            {
+                                this.state.selectedTextWindow === "stats" &&
+                                (<div className="p-4">
+                                    <p>
+                                        <strong>Position:</strong> {stats.yourPosition} out of {stats.numPlayers}
+                                    </p>
+                                    <p className="mt-2">
+                                        <strong>Hands Played:</strong> {stats.handsPlayed}
+                                    </p>
+                                </div>
+                                )
+                            }
                             <div ref={this.chatEndRef} />
                         </div>
                         <div className="w-full flex flex-row mt-2">
@@ -352,6 +482,35 @@ class Table extends React.Component {
                     <div className="bg-stone-700 px-4 md:px-10">
                         <div className="flex flex-col h-full justify-between">
                             <div>
+                                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-1">
+                                    <div></div>
+                                    <div className="mt-4 grid grid-cols-4 gap-1">
+                                        <MiniActionButton
+                                            id="betPreset1"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[0].name}
+                                        </MiniActionButton>
+                                        <MiniActionButton
+                                            id="betPreset2"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[1].name}
+                                        </MiniActionButton>
+                                        <MiniActionButton
+                                            id="betPreset3"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[2].name}
+                                        </MiniActionButton>
+                                        <MiniActionButton
+                                            id="betPreset4"
+                                            onClick={this.handleBetPreset}
+                                        >
+                                            {this.state.betPresets[3].name}
+                                        </MiniActionButton>
+                                    </div>
+                                </div>
                                 <div className="mt-4 grid grid-cols-4 gap-2">
                                     <p className="text-gray-200 font-bold w-full" >Bet:</p>
                                     <input
@@ -384,8 +543,16 @@ class Table extends React.Component {
                                     </ActionButton>
                                 </div>
                             </div>
-                            <div className="flex flex-row w-full justify-between">
-                                <div></div>
+                            <div className="flex flex-row w-full justify-between space-x-1">
+                                <div className="grow"></div>
+                                <ActionButton className="mb-4 x-auto text-gray-200 text-center" onClick={this.handleSittingOutChange}>
+                                    {
+                                        this.state.sittingOut ?
+                                            "I am Back"
+                                            :
+                                            "Sit Out"
+                                    }
+                                </ActionButton>
                                 <ActionButton className="mb-4 x-auto text-gray-200 text-center"
                                     onClick={this.props.soundToggleCallback}>
                                     {this.props.soundEnabled ? <SpeakerXMarkIcon className="w-8 h-8 text-gray-200" /> : <SpeakerWaveIcon className="w-8 h-8 text-gray-200" />}
