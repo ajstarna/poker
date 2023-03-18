@@ -19,11 +19,13 @@ mod hub;
 mod messages;
 mod session;
 
+const LOCAL_HOST: &str = "localhost";
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// ip address
-    #[arg(short, long, default_value_t = ("localhost".to_string()))]
+    #[arg(short, long, default_value_t = LOCAL_HOST.to_string())]
     ip: String,
 
     /// port
@@ -86,7 +88,7 @@ async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(AtomicUsize::new(0));
 
     // start main hub actor
-    let hub = hub::GameHub::new(app_state.clone()).start();
+    let hub = hub::GameHub::new().start();
 
     log::info!("starting HTTP server at http://{}:{}", args.ip, args.port);
 

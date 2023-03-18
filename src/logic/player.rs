@@ -1,7 +1,9 @@
-use super::card::Card;
+use super::card::{Card, HandResult};
+use super::game_hand::GameHand;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;
+use std::iter;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use std::fmt;
@@ -170,4 +172,53 @@ impl Player {
     pub fn is_all_in(&self) -> bool {
         self.is_active && self.money == 0
     }
+
+    /// Given a gamehand (usually with a full run-out to the river),
+    /// we need to determine which 5 cards make the best hand for this player
+    /// If the player is not active, or if the hand never made it to showdown, then we simply
+    /// return None as the optional best hand.
+    pub fn determine_best_hand(&self, gamehand: &GameHand) -> Option<HandResult> {
+        if !self.is_active {
+            // if the player isn't active, then can't have a best hand
+            return None;
+        }
+	if !gamehand.is_showdown() {
+	    // there is no "best hand" if we didn't even make it to showdown
+	    return None;
+	}
+	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
+	let mut best_result: Option<HandResult> = None;
+	let mut hand_count = 0;
+	for exclude_idx1 in 0..7 {
+	    for exclude_idx2 in exclude_idx1 + 1..7 {
+		let mut possible_hand = Vec::with_capacity(5);
+		hand_count += 1;
+		for (idx, card) in self
+		    .hole_cards
+		    .iter()
+		    .chain(gamehand.flop.as_ref().unwrap().iter())
+		    .chain(iter::once(&gamehand.turn.unwrap()))
+		    .chain(iter::once(&gamehand.river.unwrap()))
+		    .enumerate()
+		{
+		    if idx != exclude_idx1 && idx != exclude_idx2 {
+			//println!("pushing!");
+			possible_hand.push(*card);
+		    }
+		}
+		// we have built a hand of five cards, now evaluate it
+		let current_result = HandResult::analyze_hand(possible_hand);
+		match best_result {
+		    None => best_result = Some(current_result),
+		    Some(result) if current_result > result => {
+			best_result = Some(current_result)
+		    }
+		    _ => (),
+		}
+	    }
+	}
+	assert!(hand_count == 21); // 7 choose 5
+	best_result
+    }
+    
 }

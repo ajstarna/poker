@@ -1,222 +1,21 @@
 use actix::Addr;
 use json::object;
 use rand::Rng;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
-use super::card::{Card, Deck, HandResult, StandardDeck};
+use super::card::Card;
+use super::deck::{Deck, StandardDeck};
+use super::game_hand::{GameHand, Street};
+
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 
 use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{cmp, fmt, iter, sync::Arc, thread, time};
+use std::{cmp, sync::Arc, thread, time};
 
 use uuid::Uuid;
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-enum Street {
-    Preflop,
-    Flop,
-    Turn,
-    River,
-    ShowDown,
-}
-
-impl fmt::Display for Street {
-    // This trait requires `fmt` with this exact signature.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-	let output = match self {
-	    Street::Preflop => "preflop".to_owned(),
-	    Street::Flop => "flop".to_owned(),
-	    Street::Turn => "turn".to_owned(),
-	    Street::River => "river".to_owned(),
-	    Street::ShowDown => "showdown".to_owned(),
-	};
-        write!(f, "{}", output)
-    }
-}
-
-			
-/// A pot keeps track of the total money, and which player (indices) contributed
-/// A game hand can have multiple pots, when players go all-in, and betting continues
-#[derive(Debug)]
-struct Pot {
-    money: u32,                        // total amount in this pot
-    contributions: HashMap<Uuid, u32>, // which players have contributed to the pot, and how much
-    // the most that any one player can put in. If a player goes all-in into a pot,
-    // then the cap is the amount that player has put in
-    cap: Option<u32>,
-}
-
-impl Pot {
-    fn new() -> Self {
-        Self {
-            money: 0,
-            contributions: HashMap::new(),
-            cap: None,
-        }
-    }
-}
-
-/// The pot manager keeps track of how many pots there are and which players
-/// how contributed how much to each.
-#[derive(Debug)]
-struct PotManager {
-    pots: Vec<Pot>,
-}
-
-impl PotManager {
-    fn new() -> Self {
-        // the pot manager starts with a single main pot
-        Self {
-            pots: vec![Pot::new()],
-        }
-    }
-
-    /// returns a vec of each pot.money for the all pots
-    /// useful to pass to the front end
-    fn simple_repr(&self) -> Vec<u32> {
-        self.pots.iter().map(|x| x.money).collect()
-    }
-
-    /// given a player id and an amount they need to contribute to the pot
-    /// and whether this is putting them all-in), this method puts the proper
-    /// amount into the proper pot(s), and possibly create and redistribute into a new side pot
-    fn contribute(&mut self, player_id: Uuid, amount: u32, all_in: bool) {
-        println!(
-            "inside contribute: {:?}, {:?}, all_in={:?}",
-            player_id, amount, all_in
-        );
-        let mut to_contribute = amount;
-        // insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
-        // and the new cap for the pot at that index
-        let mut insert_pot: Option<(usize, u32)> = None;
-        for (i, pot) in self.pots.iter_mut().enumerate() {
-            let so_far = pot.contributions.entry(player_id).or_insert(0);
-            if let Some(cap) = pot.cap {
-                println!("cap of {}", cap);
-                if *so_far > cap {
-                    panic!(
-                        "somehow player {} put in more than the cap for \
-				    the the pot at index {}",
-                        player_id, i
-                    );
-                } else if *so_far == cap {
-                    println!("we have already filled up this pot");
-                    continue;
-                }
-                // else, we need to put more into the pot
-                let remaining = cap - *so_far; // amount left before the cap
-                if remaining >= to_contribute {
-                    println!(
-                        "the new contribution fits since {} > {}",
-                        remaining, to_contribute
-                    );
-                    *so_far += to_contribute;
-                    pot.money += to_contribute;
-                    if all_in {
-                        // our all-in is smaller than the previous all-in
-                        println!("our all-in is smaller than the previous all-in");
-                        //pot.cap = Some(pot.contributions[&player_id]);
-                        insert_pot = Some((i, pot.contributions[&player_id]));
-                    }
-                    break;
-                } else {
-                    // we need to contribute to the cap, then put more in the next pot
-                    println!("we need to contribute to the cap, then put more in the next pot");
-                    *so_far += remaining;
-                    pot.money += remaining;
-                    assert!(*so_far == cap);
-                    to_contribute -= remaining;
-                    println!("still need to contribute {}", to_contribute)
-                }
-            } else {
-                // there is not cap on this pot, so simply put the new money in for this player
-                println!("no cap");
-                *so_far += to_contribute;
-                pot.money += to_contribute;
-                if all_in {
-                    //pot.cap = Some(pot.contributions[&player_id]);
-                    insert_pot = Some((i, pot.contributions[&player_id]));
-                }
-                break;
-            }
-        }
-        if let Some((index, new_cap)) = insert_pot {
-            println!(
-                "inserting a pot at index {} and capping the previous pot at {}",
-                index + 1,
-                new_cap
-            );
-            self.pots.insert(index + 1, Pot::new());
-            self.transfer_excess(index, new_cap)
-        }
-    }
-
-    /// give the index of a newly-capped pot, we move any excess contributions from the pot
-    /// to the next one in the vecdeque. We also move the existing cap-differential into the pot at index+1
-    /// and set the new_cap in the pot at index.
-    /// This happens when a all-in happens and makes the pot at index newly-capped
-    /// Note: if none of the contributions to the previous pot were higher than the new cap, then no money
-    /// will need to be transfered into the new pot at index+1
-    fn transfer_excess(&mut self, index: usize, new_cap: u32) {
-        let prev_pot = self.pots.get_mut(index).unwrap();
-        println!("prev_pot = {:?}", prev_pot);
-        let mut transfers = HashMap::<Uuid, u32>::new();
-        let prev_cap_opt = prev_pot.cap; // move the previous cap to the new pot (if needed)
-        prev_pot.cap = Some(new_cap);
-        for (id, amount) in prev_pot.contributions.iter_mut() {
-            //let b: bool = id;
-            if *amount > new_cap {
-                // we need to move the excess above the cap of the pot to the new pot
-                let excess = *amount - new_cap;
-                transfers.insert(*id, excess);
-                *amount = new_cap;
-                prev_pot.money -= excess;
-            }
-        }
-        println!("after taking = {:?}", prev_pot);
-        println!("transfers = {:?}", transfers);
-        let mut new_pot = self.pots.get_mut(index + 1).unwrap();
-        new_pot.money = transfers.values().sum();
-        new_pot.contributions = transfers;
-
-        if let Some(prev_cap) = prev_cap_opt {
-            // if the old pot had a cap already, then the new pot is capped at the difference.
-            // e.g. if someone was all-in with 750, then someone calls to go all-in with 500,
-            // the the prev_pot is NOW capped at 500, and the next pot is capped at 250
-            new_pot.cap = Some(prev_cap - new_cap);
-        }
-    }
-}
-
-#[derive(Debug)]
-struct GameHand {
-    street: Street,
-    pot_manager: PotManager,
-    street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
-    current_bet: u32, // the current street bet at any moment
-    flop: Option<Vec<Card>>,
-    turn: Option<Card>,
-    river: Option<Card>,
-    index_to_act: Option<usize>,
-}
-
-impl GameHand {
-    fn default() -> Self {
-        GameHand {
-            street: Street::Preflop,
-            pot_manager: PotManager::new(),
-            street_contributions: HashMap::new(),
-	    current_bet: 0,
-            flop: None,
-            turn: None,
-            river: None,
-	    index_to_act: None,
-        }
-    }
-}
 
 // any game that runs for too long without a human will end, rather than looping indefinitely
 const NON_HUMAN_HANDS_LIMIT: u32 = 3;
@@ -401,8 +200,7 @@ impl Game {
 	    if let Some(river) = &gamehand.river {
             state_message["river"] = format!("{}", river).into();
             }
-
-            state_message["pots"] = gamehand.pot_manager.simple_repr().into();
+            state_message["pots"] = gamehand.pot_repr().into();
 
 	    if let Some(index_to_act) = gamehand.index_to_act {
 		state_message["index_to_act"] = index_to_act.into();
@@ -967,7 +765,6 @@ impl Game {
     }
 
     fn finish_hand(&mut self, gamehand: &mut GameHand) {
-        // pause for a second for dramatic effect heh
         if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
             return;
@@ -977,218 +774,15 @@ impl Game {
             msg_type: "finish_hand".to_owned()
         };
 
-        let hand_results: HashMap<Uuid, Option<HandResult>> = self
-            .players
-            .iter()
-            .flatten()
-            .map(|player| (player.id, self.determine_best_hand(player, gamehand)))
-            .collect();
-        let is_showdown = gamehand.street == Street::ShowDown;
-        println!("hand results = {:?}", hand_results);
-        if let Street::ShowDown = gamehand.street {
-            // if we made it to show down, there are multiple players left, so we need to see who
-            // has the best hand.
-            println!("Multiple active players made it to showdown!");
-            println!("{:?}", gamehand.pot_manager);
-            for pot in gamehand.pot_manager.pots.iter() {
-                // for each pot, we determine who should get paid out
-                // a player can only get paid for a pot that they contributed to
-                // so each pot has its own best_hand calculation
-                println!("Looking at pot {:?}", pot);
-                let mut best_ids = HashSet::<Uuid>::new();
-                let mut best_hand: Option<&HandResult> = None;
-                for (id, current_opt) in hand_results.iter() {
-                    if pot.contributions.get(id).is_none() {
-                        println!("player id {} did not contribute to this pot!", id);
-                        continue;
-                    }
-                    if current_opt.is_none() {
-                        continue;
-                    }
-                    if !self.player_ids_to_configs.contains_key(id) {
-                        println!(
-                            "player id {} no longer exists in the configs, they must have left!",
-                            id
-                        );
-                        continue;
-                    }
-                    let current_result = current_opt.as_ref().unwrap();
-                    if best_hand.is_none() || current_result > best_hand.unwrap() {
-                        println!("new best hand for id {:?}", id);
-                        best_hand = Some(current_result);
-                        best_ids.clear();
-                        best_ids.insert(*id); // only one best hand now
-                    } else if current_result == best_hand.unwrap() {
-                        println!("equally good hand for id {:?}", id);
-                        best_ids.insert(*id); // another index that also has the best hand
-                    } else {
-                        println!("hand worse for id {:?}", id);
-                        continue;
-                    }
-                }
-                // divy the pot to all the winners
-                let num_winners = best_ids.len();
-                let payout = (pot.money as f64 / num_winners as f64) as u32;
-                //self.pot_manager.pots.first_mut().unwrap().money = 0;
-                let pay_outs = self.pay_players(best_ids, payout, &hand_results, is_showdown);
-                finish_hand_message["pay_outs"] = pay_outs.into();
-            }
-        } else {
-            // the hand ended before Showdown, so we simple find the one active player remaining
-            let mut best_ids = HashSet::<Uuid>::new();
-            for player in self.players.iter().flatten() {
-                if player.is_active {
-                    //println!("found an active player remaining");
-                    best_ids.insert(player.id);
-                } else {
-                    println!("found an NON active player remaining");
-                }
-            }
-            // if we didn't make it to show down, there better be only one player left
-            assert!(best_ids.len() == 1);
-            let pay_outs = self.pay_players(
-                best_ids,
-                gamehand.pot_manager.pots.first().unwrap().money,
-                &hand_results,
-                is_showdown,
-            );
-            finish_hand_message["pay_outs"] = pay_outs.into();
-        }
-
+	let pay_outs = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs);
+        finish_hand_message["pay_outs"] = pay_outs.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
 
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);	
         // take the players' cards
         for player in self.players.iter_mut().flatten() {
-            // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
-        }
-    }
-
-    fn pay_players(
-        &mut self,
-        best_ids: HashSet<Uuid>,
-        payout: u32,
-        hand_results: &HashMap<Uuid, Option<HandResult>>,
-        is_showdown: bool,
-    ) -> Vec<json::JsonValue> {
-        let mut pay_outs: Vec<json::JsonValue> = vec![];
-
-        println!("best_indices = {:?}", best_ids);
-        for (i, player_spot) in self.players.iter_mut().enumerate() {
-            if player_spot.is_some() {
-                let player = player_spot.as_mut().unwrap();
-                if best_ids.contains(&player.id) {
-                    // get the name for messages
-                    let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id)
-                    {
-                        config.name.as_ref().unwrap().clone()
-                    } else {
-                        // it is a bit weird if we made it all the way to the pay stage for a left player
-                        "Player who left".to_string()
-                    };
-                    let ranking_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.to_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let hand_ranking_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.hand_ranking_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let constituent_cards_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.constituent_cards_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let kickers_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.kickers_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    println!(
-                        "paying out {:?} to {:?}, with hand result = {:?}",
-                        payout, name, ranking_string
-                    );
-                    let hole_string = if is_showdown {
-                        format!("{}{}", player.hole_cards[0], player.hole_cards[1])
-                    } else {
-                        "Unknown".to_string()
-                    };
-
-                    let message = object! {
-                        payout: payout,
-                        index: i,
-                        player_name: name,
-                        hole_cards: hole_string,
-                        hand_result: hand_ranking_string,
-                        constituent_cards: constituent_cards_string,
-                        kickers: kickers_string,
-                        is_showdown: is_showdown,
-                    };
-
-                    pay_outs.push(message);
-                    player.pay(payout);
-                    println!("after payment: {:?}", player);
-                }
-            }
-        }
-        pay_outs
-    }
-
-    /// Given a player, we need to determine which 5 cards make the best hand for this player
-    fn determine_best_hand(&self, player: &Player, gamehand: &mut GameHand) -> Option<HandResult> {
-        if !player.is_active {
-            // if the player isn't active, then can't have a best hand
-            return None;
-        }
-
-        if let Street::ShowDown = gamehand.street {
-            // we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
-            let mut best_result: Option<HandResult> = None;
-            let mut hand_count = 0;
-            for exclude_idx1 in 0..7 {
-                //println!("exclude 1 = {}", exclude_idx1);
-                for exclude_idx2 in exclude_idx1 + 1..7 {
-                    //println!("exclude 2 = {}", exclude_idx2);
-                    let mut possible_hand = Vec::with_capacity(5);
-                    hand_count += 1;
-                    for (idx, card) in player
-                        .hole_cards
-                        .iter()
-                        .chain(gamehand.flop.as_ref().unwrap().iter())
-                        .chain(iter::once(&gamehand.turn.unwrap()))
-                        .chain(iter::once(&gamehand.river.unwrap()))
-                        .enumerate()
-                    {
-                        if idx != exclude_idx1 && idx != exclude_idx2 {
-                            //println!("pushing!");
-                            possible_hand.push(*card);
-                        }
-                    }
-                    // we have built a hand of five cards, now evaluate it
-                    let current_result = HandResult::analyze_hand(possible_hand);
-                    match best_result {
-                        None => best_result = Some(current_result),
-                        Some(result) if current_result > result => {
-                            best_result = Some(current_result)
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            assert!(hand_count == 21); // 7 choose 5
-            println!("player = {:?}", player.id);
-            println!("best result = {:?}", best_result);
-            best_result
-        } else {
-            None
         }
     }
 
@@ -1354,9 +948,6 @@ impl Game {
             }
 
 	    if let Some(player) = &self.players[i]  {
-		println!("Current pot = {:?}, Current size of the bet = {:?}",
-			 gamehand.pot_manager,
-			 gamehand.current_bet);
 		println!("Player = {:?}, i = {}", player, i);		
 		if !(player.is_active && player.money > 0) {
 		    // if the player is not active with money, they can't do anything.
@@ -1378,18 +969,15 @@ impl Game {
             );
 
 	    println!("action = {:?}", action);
-	    let current_contributions = gamehand.street_contributions.get_mut(&gamehand.street).unwrap();
-            let player_cumulative = current_contributions[i];
-	    
+	    let player_cumulative = gamehand.street_contributions.get_mut(&gamehand.street).unwrap()[i];
             // now that we have gotten the current player's action and handled
             // any meta actions, we are free to respond and mutate the player
             // so we re-borrow it as mutable
             let player = self.players[i].as_mut().unwrap();
 	    player.last_action = Some(action);
             match action {
-                PlayerAction::PostSmallBlind(amount) => {
-                    current_contributions[i] += amount;
-                    player.money -= amount;
+                PlayerAction::PostSmallBlind(amount) => {	
+                    player.money -= amount;		    	    
                     // regardless if the player couldn't afford it, the new street bet is the big blind
                     gamehand.current_bet = self.small_blind;
                     let all_in = if player.is_all_in() {
@@ -1398,11 +986,10 @@ impl Game {
                     } else {
                         false
                     };
-                    gamehand.pot_manager.contribute(player.id, amount, all_in);
+                    gamehand.contribute(i, player.id, amount, all_in);
                 }
                 PlayerAction::PostBigBlind(amount) => {
-                    current_contributions[i] += amount;
-                    player.money -= amount;
+                    player.money -= amount;		    		    
                     // regardless if the player couldn't afford it, the new street bet is the big blind
                     gamehand.current_bet = self.big_blind;
                     let all_in = if player.is_all_in() {
@@ -1411,7 +998,7 @@ impl Game {
                     } else {
                         false
                     };
-                    gamehand.pot_manager.contribute(player.id, amount, all_in);
+                    gamehand.contribute(i, player.id, amount, all_in);
                     // note: we dont count the big blind as a "settled" player,
                     // since they still get a chance to act after the small blind
                 }
@@ -1436,20 +1023,15 @@ impl Game {
                         num_settled += 1;
 			(difference, false)
                     };
-                    gamehand
-                        .pot_manager
-                        .contribute(player.id, amount, all_in);
-                    current_contributions[i] += amount;
-                    player.money -= amount;
+                    player.money -= amount;		    
+                    gamehand.contribute(i, player.id, amount, all_in);
 		    
                 }
                 PlayerAction::Bet(new_bet) => {
                     let difference = new_bet - player_cumulative;
                     println!("difference = {}", difference);
-                    player.money -= difference;
                     gamehand.current_bet = new_bet;
-                    current_contributions[i] += difference;
-                    println!("sup {:?}", player);
+                    player.money -= difference;		    		    
                     let all_in = if player.is_all_in() {
                         println!("Just bet the rest of our money!");
                         num_all_in += 1;
@@ -1459,9 +1041,7 @@ impl Game {
                         num_settled = 1;
                         false
                     };
-                    gamehand
-                        .pot_manager
-                        .contribute(player.id, difference, all_in);
+                    gamehand.contribute(i, player.id, difference, all_in);
                 }
             }
         };
@@ -1719,7 +1299,8 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::card::{Card, Rank, RiggedDeck, Suit};
+    use crate::logic::card::{Rank, Suit};
+    use crate::logic::deck::RiggedDeck;    
     use std::collections::HashMap;
 
     #[test]
@@ -2096,7 +1677,7 @@ mod tests {
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
-        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
 	
         // set the action that player (small blind) bets,
         // even though player1 is already all-in, so the BB can only 3 win bucks
