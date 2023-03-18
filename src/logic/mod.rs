@@ -1,9 +1,10 @@
 mod card;
 mod pots;
+mod game_hand;
 
-pub mod game;
 pub mod player;
 pub mod deck;
+pub mod game;
 
 pub use game::Game;
 pub use player::PlayerAction;

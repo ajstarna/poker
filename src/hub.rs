@@ -6,7 +6,7 @@
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -41,20 +41,17 @@ pub struct GameHub {
 
     private_tables: HashSet<String>, // which games do not show up in the loby
 
-    visitor_count: Arc<AtomicUsize>,
+    //visitor_count: Arc<AtomicUsize>,
 }
 
 impl GameHub {
-    pub fn new(visitor_count: Arc<AtomicUsize>) -> GameHub {
+    pub fn new() -> GameHub {
         GameHub {
-            //sessions: HashMap::new(),
-            //tables_to_session_ids: HashMap::new(),
             main_lobby_connections: HashMap::new(),
             players_to_table: HashMap::new(),
             tables_to_actions: HashMap::new(),
             tables_to_meta_actions: HashMap::new(),
             private_tables: HashSet::new(),
-            visitor_count,
         }
     }    
 }

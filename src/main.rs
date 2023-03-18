@@ -86,7 +86,7 @@ async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(AtomicUsize::new(0));
 
     // start main hub actor
-    let hub = hub::GameHub::new(app_state.clone()).start();
+    let hub = hub::GameHub::new().start();
 
     log::info!("starting HTTP server at http://{}:{}", args.ip, args.port);
 

@@ -1,5 +1,5 @@
 use super::card::{Card, HandResult};
-use super::game::{GameHand};
+use super::game_hand::GameHand;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;

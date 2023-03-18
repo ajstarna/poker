@@ -61,7 +61,7 @@ impl PotManager {
     /// returns a vec of each pot.money for the all pots
     /// useful to pass to the front end
     pub fn simple_repr(&self) -> Vec<u32> {
-        self.pots.iter().map(|x| x.money).collect()
+        self.pots.iter().filter(|x| x.money > 0).map(|x| x.money).collect()
     }
 
     /// given a player id and an amount they need to contribute to the pot
