@@ -56,8 +56,8 @@ class Login extends React.Component {
                     Please enter your name.
                 </p>
                 <form onSubmit={this.handleSubmit}>
-                    <label htmlFor="username" className="block mt-10 mb-2 text-lg font-medium text-gray-200">Username:</label>
-                    <TextInput type="text" id="username" value={this.state.value} onChange={this.handleChange} placeholder="Username" required />
+                    <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Display Name:</label>
+                    <TextInput type="text" id="displayName" value={this.state.value} onChange={this.handleChange} placeholder="Display Name" required />
                     <MenuButton className="mt-10" type="submit">Next</MenuButton>
                 </form>
             </MenuBody>

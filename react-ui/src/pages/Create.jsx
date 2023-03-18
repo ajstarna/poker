@@ -8,11 +8,11 @@ class Create extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            maxPlayers: 2,
+            maxPlayers: 9,
             numBots: 0,
             smallBlind: 1,
             bigBlind: 2,
-            startingStack: 1000,
+            startingStack: 200,
             private: false,
             password: ""
         };

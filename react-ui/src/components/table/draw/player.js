@@ -1,3 +1,4 @@
+import { drawChips } from "./drawChips";
 import { roundRect } from "./drawFunctions";
 import { getPlayerPostion, getChipsPostion, getButtonPostion } from "./mappedPositions";
 
@@ -28,7 +29,7 @@ export class Player {
         ];
     }
 
-    drawChips(ctx, width, height) {
+    drawPlayerChips(ctx, width, height) {
         var size = 0.1*Math.min(width, height);
         let [x, y] = getChipsPostion(this.index, width, height);
 
@@ -37,44 +38,12 @@ export class Player {
         let w = size;
         let h = 0.25*size;
 
-        let chip_size = 0.15*size;
-
         if (this.street_contributions > 0) {
-            // Draw boarder for text
-            ctx.fillStyle = "#00000066";
-            ctx.strokeStyle = "black";
-            roundRect(ctx, x0-w/2, y0-h/2, w, h, 5);
-            ctx.stroke();
-            ctx.fill();
-
-            // Draw text (street contributions)
-            ctx.font = `${0.2*size}px arial`;
-            ctx.textAlign = "start";
-            ctx.fillStyle = "white";
-            ctx.fillText(this.street_contributions, x0-w/2 + 0.3*size, y0-h/2 + 0.2*size);
-
-            // Draw chips
-            ctx.beginPath();
-            ctx.fillStyle = "yellow";
-            ctx.strokeStyle = "black";
-            ctx.arc(x0-w/2, y0+0.1*chip_size, chip_size, 0, Math.PI * 2, true);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.fillStyle = "yellow";
-            ctx.strokeStyle = "black";
-            ctx.arc(x0-w/2, y0, chip_size, 0, Math.PI * 2, true);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.fillStyle = "white";
-            ctx.strokeStyle = "black";
-            ctx.arc(x0-w/2, y0, 0.6*chip_size, 0, Math.PI * 2, true);
-            ctx.fill();
-            ctx.stroke();
-            
+            drawChips(
+                ctx,
+                this.street_contributions,
+                x0, y0, w, h, size
+            )
         }
     }
 
@@ -175,9 +144,14 @@ export class Player {
             ctx.fillStyle = "#206E28";
         }
 
+        let moneyText = this.money;
+        if (this.money === 0 && this.is_active) {
+            moneyText = "All In"
+        }
+        
         ctx.font = `bold ${0.15*info_size}px arial`;
         ctx.textAlign = "center";
-        ctx.fillText(this.money, info_x0+info_offset, info_y0 + 3*info_size/8);
+        ctx.fillText(moneyText, info_x0+info_offset, info_y0 + 3*info_size/8);
 
         if (this.action) {
 
