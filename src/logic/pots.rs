@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::ops::Deref;
+
 use uuid::Uuid;
 
 /// A pot keeps track of the total money, and which player (indices) contributed
 /// A game hand can have multiple pots, when players go all-in, and betting continues
 #[derive(Debug)]
-struct Pot {
+pub struct Pot {
     money: u32,                        // total amount in this pot
     contributions: HashMap<Uuid, u32>, // which players have contributed to the pot, and how much
     // the most that any one player can put in. If a player goes all-in into a pot,
@@ -20,6 +22,17 @@ impl Pot {
             cap: None,
         }
     }
+
+    /// a public getter, since we don't want people outside the pot manager to be chaning the field
+    pub fn get_money(&self) -> u32 {
+	self.money
+    }
+    
+    /// is the given player id elligible to win the pot?
+    /// i.e. have they contributed to it
+    pub fn is_elligible(&self, id: &Uuid) -> bool {
+	self.contributions.contains_key(id)
+    }
 }
 
 /// The pot manager keeps track of how many pots there are and which players
@@ -29,6 +42,14 @@ pub struct PotManager {
     pots: Vec<Pot>,
 }
 
+/// this lets us call .iter() right on the PotManager itself to get access to self.pots
+impl Deref for PotManager {
+    type Target = Vec<Pot>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pots
+    }
+}
 impl PotManager {
     pub fn new() -> Self {
         // the pot manager starts with a single main pot
@@ -151,5 +172,6 @@ impl PotManager {
             // the the prev_pot is NOW capped at 500, and the next pot is capped at 250
             new_pot.cap = Some(prev_cap - new_cap);
         }
-    }
+    }    
+    
 }

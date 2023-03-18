@@ -1,11 +1,9 @@
-use rand::seq::SliceRandom; // for shuffling a vec
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 ///
 /// This file contains structs/enums/methods for defining, using, and comparing cards and hands of cards
 ///
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter, Hash)]
@@ -368,55 +366,6 @@ impl HandResult {
     }
 }
 
-    /// Given a player, we need to determine which 5 cards make the best hand for this player
-    fn determine_best_hand(&self, player: &Player, gamehand: &mut GameHand) -> Option<HandResult> {
-        if !player.is_active {
-            // if the player isn't active, then can't have a best hand
-            return None;
-        }
-
-        if let Street::ShowDown = gamehand.street {
-            // we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
-            let mut best_result: Option<HandResult> = None;
-            let mut hand_count = 0;
-            for exclude_idx1 in 0..7 {
-                //println!("exclude 1 = {}", exclude_idx1);
-                for exclude_idx2 in exclude_idx1 + 1..7 {
-                    //println!("exclude 2 = {}", exclude_idx2);
-                    let mut possible_hand = Vec::with_capacity(5);
-                    hand_count += 1;
-                    for (idx, card) in player
-                        .hole_cards
-                        .iter()
-                        .chain(gamehand.flop.as_ref().unwrap().iter())
-                        .chain(iter::once(&gamehand.turn.unwrap()))
-                        .chain(iter::once(&gamehand.river.unwrap()))
-                        .enumerate()
-                    {
-                        if idx != exclude_idx1 && idx != exclude_idx2 {
-                            //println!("pushing!");
-                            possible_hand.push(*card);
-                        }
-                    }
-                    // we have built a hand of five cards, now evaluate it
-                    let current_result = HandResult::analyze_hand(possible_hand);
-                    match best_result {
-                        None => best_result = Some(current_result),
-                        Some(result) if current_result > result => {
-                            best_result = Some(current_result)
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            assert!(hand_count == 21); // 7 choose 5
-            println!("player = {:?}", player.id);
-            println!("best result = {:?}", best_result);
-            best_result
-        } else {
-            None
-        }
-    }
 
 
 #[cfg(test)]

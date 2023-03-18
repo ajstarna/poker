@@ -4,14 +4,15 @@ use rand::Rng;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
-use super::card::{Card, Deck, HandResult, StandardDeck};
-use super::pots::{PotManager};
+use super::card::{Card, HandResult};
+use super::deck::{Deck, StandardDeck};
+use super::pots::PotManager;
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 
 use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
 
-use std::{cmp, fmt, iter, sync::Arc, thread, time};
+use std::{cmp, fmt, sync::Arc, thread, time};
 
 use uuid::Uuid;
 
@@ -39,14 +40,14 @@ impl fmt::Display for Street {
 }
 			
 #[derive(Debug)]
-struct GameHand {
+pub struct GameHand {
     street: Street,
     pot_manager: PotManager,
     street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
     current_bet: u32, // the current street bet at any moment
-    flop: Option<Vec<Card>>,
-    turn: Option<Card>,
-    river: Option<Card>,
+    pub flop: Option<Vec<Card>>,
+    pub turn: Option<Card>,
+    pub river: Option<Card>,
     index_to_act: Option<usize>,
 }
 
@@ -63,6 +64,135 @@ impl GameHand {
 	    index_to_act: None,
         }
     }
+    pub fn is_showdown(&self) -> bool {
+	Street::ShowDown == self.street
+    }
+    /// The hand is over, so give all money within each pot to the player who deserves it
+    /// If we did not get to show down, then there is one active player who deserves all the money.
+    /// Otherwise, we need to figure out who has the best hand.
+    /// Each pot needs its own calculation
+    fn divvy_pots(&self,
+		  players: &mut [Option<Player>; 9],
+		  player_ids_to_configs: &HashMap::<Uuid, PlayerConfig>)
+    -> Vec<json::JsonValue> {
+        let hand_results: HashMap<Uuid, Option<HandResult>> = players
+            .iter()
+            .flatten()
+            .filter(|player| player_ids_to_configs.contains_key(&player.id)) // make sure still in the game
+            .map(|player| (player.id, player.determine_best_hand(self)))
+            .collect();
+        let is_showdown = self.is_showdown();
+        let mut pay_outs: Vec<json::JsonValue> = vec![];	
+        println!("hand results = {:?}", hand_results);
+        if is_showdown {
+            // if we made it to show down, there are multiple players left, so we need to see who
+            // has the best hand.
+            println!("Multiple active players made it to showdown!");
+            println!("{:?}", self.pot_manager);
+            for pot in self.pot_manager.iter() {
+                // for each pot, we determine who should get paid out
+                // a player can only get paid for a pot that they contributed to
+                // so each pot has its own best_hand calculation
+                println!("Looking at pot {:?}", pot);
+                let mut best_ids = HashSet::<Uuid>::new();
+                let mut best_hand: Option<&HandResult> = None;
+                for (id, current_opt) in hand_results
+		    .iter()
+		    .filter(|(id, opt)| pot.is_elligible(&id) && opt.is_some()) {
+                    let current_result = current_opt.as_ref().unwrap();
+                    if best_hand.is_none() || current_result > best_hand.unwrap() {
+                        println!("new best hand for id {:?}", id);
+                        best_hand = Some(current_result);
+                        best_ids.clear();
+                        best_ids.insert(*id); // only one best hand now
+                    } else if current_result == best_hand.unwrap() {
+                        println!("equally good hand for id {:?}", id);
+                        best_ids.insert(*id); // another index that also has the best hand
+                    } else {
+                        println!("hand worse for id {:?}", id);
+                        continue;
+                    }
+                }
+                // divy the pot to all the winners
+                let num_winners = best_ids.len();
+                let amount = (pot.get_money() as f64 / num_winners as f64) as u32;
+                //self.pot_manager.pots.first_mut().unwrap().money = 0;
+                GameHand::pay_players(&mut pay_outs, players, player_ids_to_configs, best_ids, amount, best_hand, is_showdown);
+            }
+        } else {
+            // the hand ended before Showdown, so we simple find the one active player remaining
+	    // TODO: is this weird? Is it possible that there could be more than one pot...?
+            let best_ids:  HashSet::<Uuid> = players
+		.iter()
+		.flatten()
+		.filter(|player| player.is_active)
+		.map(|player| player.id).collect();
+            // if we didn't make it to show down, there better be only one player left
+            assert!(best_ids.len() == 1);
+            GameHand::pay_players(
+		&mut pay_outs,
+                players,
+		player_ids_to_configs,
+                best_ids,
+                self.pot_manager.iter().next().unwrap().get_money(),
+                None, // no hand result if not at showdown
+                is_showdown,
+            );
+        }
+	pay_outs
+    }
+
+    /// iterate through the players, and any with an id in best_ids gets thei money increaed by amount
+    /// Moreover, construct a json payout message for each one of these payouts, and add it to the given pay_outs vec
+    fn pay_players(
+	pay_outs: &mut Vec<json::JsonValue>,
+	players: &mut [Option<Player>; 9],
+	player_ids_to_configs: &HashMap::<Uuid, PlayerConfig>,
+        best_ids: HashSet<Uuid>,
+        amount: u32,
+        best_hand: Option<&HandResult>,
+        is_showdown: bool,
+    ) {
+        for (i, player_spot) in players.iter_mut().enumerate() {
+            if player_spot.is_some() {
+                let player = player_spot.as_mut().unwrap();
+                if best_ids.contains(&player.id) {
+                    // get the name for messages
+                    let name: String = if let Some(config) = &player_ids_to_configs.get(&player.id)
+                    {
+                        config.name.as_ref().unwrap().clone()
+                    } else {
+                        // it is a bit weird if we made it all the way to the pay stage for a left player
+                        "Player who left".to_string()
+                    };
+
+                    let mut message = object! {
+                        payout: amount,
+                        index: i,
+                        player_name: name,
+                        is_showdown: is_showdown,
+                    };
+		    
+		    if let Some(hand_result) = best_hand {
+                        message["hand_result"] = hand_result.to_string().into();
+			message["constituent_cards"] = hand_result.constituent_cards_string().into();
+			message["kickers"] = hand_result.kickers_string().into();						
+		    }
+                    println!(
+                        "paying out {:?} to {:?}, with hand result = {:?}",
+                        amount, player.id, best_hand
+                    );
+		    if is_showdown {
+			let hole_string = format!("{}{}", player.hole_cards[0], player.hole_cards[1]);
+                        message["hole_cards"] = hole_string.into();			
+		    }
+                    pay_outs.push(message);
+                    player.pay(amount);
+                }
+            }
+        }
+    }
+    
 }
 
 // any game that runs for too long without a human will end, rather than looping indefinitely
@@ -814,7 +944,6 @@ impl Game {
     }
 
     fn finish_hand(&mut self, gamehand: &mut GameHand) {
-        // pause for a second for dramatic effect heh
         if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
             return;
@@ -824,169 +953,16 @@ impl Game {
             msg_type: "finish_hand".to_owned()
         };
 
-        let hand_results: HashMap<Uuid, Option<HandResult>> = self
-            .players
-            .iter()
-            .flatten()
-            .map(|player| (player.id, self.determine_best_hand(player, gamehand)))
-            .collect();
-        let is_showdown = gamehand.street == Street::ShowDown;
-        println!("hand results = {:?}", hand_results);
-        if let Street::ShowDown = gamehand.street {
-            // if we made it to show down, there are multiple players left, so we need to see who
-            // has the best hand.
-            println!("Multiple active players made it to showdown!");
-            println!("{:?}", gamehand.pot_manager);
-            for pot in gamehand.pot_manager.pots.iter() {
-                // for each pot, we determine who should get paid out
-                // a player can only get paid for a pot that they contributed to
-                // so each pot has its own best_hand calculation
-                println!("Looking at pot {:?}", pot);
-                let mut best_ids = HashSet::<Uuid>::new();
-                let mut best_hand: Option<&HandResult> = None;
-                for (id, current_opt) in hand_results.iter() {
-                    if pot.contributions.get(id).is_none() {
-                        println!("player id {} did not contribute to this pot!", id);
-                        continue;
-                    }
-                    if current_opt.is_none() {
-                        continue;
-                    }
-                    if !self.player_ids_to_configs.contains_key(id) {
-                        println!(
-                            "player id {} no longer exists in the configs, they must have left!",
-                            id
-                        );
-                        continue;
-                    }
-                    let current_result = current_opt.as_ref().unwrap();
-                    if best_hand.is_none() || current_result > best_hand.unwrap() {
-                        println!("new best hand for id {:?}", id);
-                        best_hand = Some(current_result);
-                        best_ids.clear();
-                        best_ids.insert(*id); // only one best hand now
-                    } else if current_result == best_hand.unwrap() {
-                        println!("equally good hand for id {:?}", id);
-                        best_ids.insert(*id); // another index that also has the best hand
-                    } else {
-                        println!("hand worse for id {:?}", id);
-                        continue;
-                    }
-                }
-                // divy the pot to all the winners
-                let num_winners = best_ids.len();
-                let payout = (pot.money as f64 / num_winners as f64) as u32;
-                //self.pot_manager.pots.first_mut().unwrap().money = 0;
-                let pay_outs = self.pay_players(best_ids, payout, &hand_results, is_showdown);
-                finish_hand_message["pay_outs"] = pay_outs.into();
-            }
-        } else {
-            // the hand ended before Showdown, so we simple find the one active player remaining
-            let mut best_ids = HashSet::<Uuid>::new();
-            for player in self.players.iter().flatten() {
-                if player.is_active {
-                    //println!("found an active player remaining");
-                    best_ids.insert(player.id);
-                } else {
-                    println!("found an NON active player remaining");
-                }
-            }
-            // if we didn't make it to show down, there better be only one player left
-            assert!(best_ids.len() == 1);
-            let pay_outs = self.pay_players(
-                best_ids,
-                gamehand.pot_manager.pots.first().unwrap().money,
-                &hand_results,
-                is_showdown,
-            );
-            finish_hand_message["pay_outs"] = pay_outs.into();
-        }
-
+	let pay_outs = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs);
+        finish_hand_message["pay_outs"] = pay_outs.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
 
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);	
         // take the players' cards
         for player in self.players.iter_mut().flatten() {
-            // todo: is there any issue with calling drain if they dont have any cards?
             player.hole_cards.drain(..);
         }
-    }
-
-    fn pay_players(
-        &mut self,
-        best_ids: HashSet<Uuid>,
-        payout: u32,
-        hand_results: &HashMap<Uuid, Option<HandResult>>,
-        is_showdown: bool,
-    ) -> Vec<json::JsonValue> {
-        let mut pay_outs: Vec<json::JsonValue> = vec![];
-
-        println!("best_indices = {:?}", best_ids);
-        for (i, player_spot) in self.players.iter_mut().enumerate() {
-            if player_spot.is_some() {
-                let player = player_spot.as_mut().unwrap();
-                if best_ids.contains(&player.id) {
-                    // get the name for messages
-                    let name: String = if let Some(config) = &self.player_ids_to_configs.get(&player.id)
-                    {
-                        config.name.as_ref().unwrap().clone()
-                    } else {
-                        // it is a bit weird if we made it all the way to the pay stage for a left player
-                        "Player who left".to_string()
-                    };
-                    let ranking_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.to_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let hand_ranking_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.hand_ranking_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let constituent_cards_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.constituent_cards_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    let kickers_string =
-                        if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
-                            hand_result.kickers_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                    println!(
-                        "paying out {:?} to {:?}, with hand result = {:?}",
-                        payout, name, ranking_string
-                    );
-                    let hole_string = if is_showdown {
-                        format!("{}{}", player.hole_cards[0], player.hole_cards[1])
-                    } else {
-                        "Unknown".to_string()
-                    };
-
-                    let message = object! {
-                        payout: payout,
-                        index: i,
-                        player_name: name,
-                        hole_cards: hole_string,
-                        hand_result: hand_ranking_string,
-                        constituent_cards: constituent_cards_string,
-                        kickers: kickers_string,
-                        is_showdown: is_showdown,
-                    };
-
-                    pay_outs.push(message);
-                    player.pay(payout);
-                    println!("after payment: {:?}", player);
-                }
-            }
-        }
-        pay_outs
     }
 
     fn play_one_hand(
@@ -1516,7 +1492,8 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::card::{Card, Rank, RiggedDeck, Suit};
+    use crate::logic::card::{Rank, Suit};
+    use crate::logic::deck::RiggedDeck;    
     use std::collections::HashMap;
 
     #[test]

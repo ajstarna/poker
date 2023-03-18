@@ -1,3 +1,11 @@
+use rand::seq::SliceRandom; // for shuffling a vec
+
+use super::card::{Card, Rank, Suit};
+
+///
+/// This file contains structs/enums/methods for defining, using, and comparing cards and hands of cards
+///
+use strum::IntoEnumIterator;
 
 /// trait to define behaviour that you would expect out of a deck of cards
 /// in unit tests, we may want to provide a rigged deck, wherease in a normal game
