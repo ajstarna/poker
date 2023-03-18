@@ -149,6 +149,8 @@ const TableCanvas = props => {
             // Draw pots
             if ("pots" in props.gameState) {
                 let pots = props.gameState.pots;
+                pots = pots.filter(pot => pot > 0);
+
                 let size = 0.1 * Math.min(canvasW, canvasH);
 
                 let x = canvasW / 2;
