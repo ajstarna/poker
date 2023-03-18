@@ -144,9 +144,14 @@ export class Player {
             ctx.fillStyle = "#206E28";
         }
 
+        let moneyText = this.money;
+        if (this.money === 0 && this.is_active) {
+            moneyText = "All In"
+        }
+        
         ctx.font = `bold ${0.15*info_size}px arial`;
         ctx.textAlign = "center";
-        ctx.fillText(this.money, info_x0+info_offset, info_y0 + 3*info_size/8);
+        ctx.fillText(moneyText, info_x0+info_offset, info_y0 + 3*info_size/8);
 
         if (this.action) {
 
