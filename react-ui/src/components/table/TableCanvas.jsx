@@ -3,6 +3,7 @@ import { drawTable, drawBackground } from "./draw/drawTable";
 import { Player } from "./draw/player";
 import { PlayerCard } from "./draw/playerCard";
 import { drawFrontCard } from "./draw/drawCard";
+import { drawChips } from "./draw/drawChips";
 
 const TableCanvas = props => {
     const canvasRef = useRef(null);
@@ -81,7 +82,7 @@ const TableCanvas = props => {
                 }
 
                 player.draw(context, canvasW, canvasH);
-                player.drawChips(context, canvasW, canvasH);
+                player.drawPlayerChips(context, canvasW, canvasH);
 
                 if (props.gameState.button_idx === playerState.index) {
                     // Draw Button
@@ -147,20 +148,31 @@ const TableCanvas = props => {
 
             // Draw pots
             if ("pots" in props.gameState) {
-                context.font = `bold ${0.03 * size}px arial`;
-                context.textAlign = "center";
-                context.fillStyle = "white";
-                context.fillText("Pot(s): " + props.gameState.pots, canvasW / 2, canvasH / 2 + 0.1 * size);
-            }
+                let pots = props.gameState.pots;
+                let size = 0.1 * Math.min(canvasW, canvasH);
 
-            if ("current_bet" in props.gameState) {
-                context.font = `bold ${0.025 * size}px arial`;
+                let x = canvasW / 2;
+                let y = canvasH / 2 + 1.3 * size;
+                let w = size;
+                let h = 0.25 * size;
+
+                context.font = `bold ${0.2 * size}px arial`;
                 context.textAlign = "center";
                 context.fillStyle = "white";
-                context.fillText(
-                    "Current Bet: " + props.gameState.current_bet,
-                    canvasW / 2, canvasH / 2 + 0.15 * size
-                );
+                context.fillText("Pot", canvasW / 2, canvasH / 2 + 0.8 * size);
+
+
+                let numPots = pots.length;
+
+                for (let i = 0; i < numPots; i++) {
+                    let pot = pots[i];
+                    let x0 = x + i * 1.25 * size - 1.25 * size * (numPots - 1) / 2
+                    drawChips(
+                        context,
+                        pot,
+                        x0, y, w, h, size
+                    );
+                }
             }
         }
     }
