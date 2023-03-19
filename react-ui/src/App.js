@@ -10,6 +10,7 @@ import Lobby from './pages/Lobby';
 import Login from "./pages/Login";
 import Menu from './pages/Menu';
 import Table from "./pages/Table";
+import { TableInfo } from './utils/table-info';
 import { ADMIN_PREFIX } from './utils/admin-actions';
 
 class App extends React.Component {
@@ -26,7 +27,7 @@ class App extends React.Component {
         soundEnabled: false,
         chatMessages: [],
         handHistory: [],
-        tables: [],
+        tables: {},
         showErrorModal: false,
         errorMessage: ''
     };
@@ -127,7 +128,9 @@ class App extends React.Component {
             ws.send(JSON.stringify(data)); //send data to the server
           }
         } else if (json.msg_type === "tables_list") {
-          that.setState({ tables: json.tables });
+          that.handleTableList(json.tables);
+        } else if (json.msg_type === "table_info") {
+          that.updateTableInfo(json);
         } else if (json.msg_type === "created_game") {
           let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
           that.chat("Dealer", output);	
@@ -205,6 +208,40 @@ class App extends React.Component {
     }));
   }
 
+  handleTableList(tables) {
+    let currentTables = this.state.tables;
+
+    // Add new tables
+    for (const table of tables) {
+      if (!(table in currentTables)) {
+        currentTables[table] = new TableInfo(table);
+      }
+    }
+
+    // Remove old tables
+    for (const table of Object.keys(currentTables)) {
+      if (!tables.includes(table)) {
+        delete currentTables[table];
+      }
+    }
+
+    this.setState({ tables: currentTables });
+  }
+
+  updateTableInfo(tableInfo) {
+    let table = this.state.tables[tableInfo.table_name];
+    table.setInformation(
+      tableInfo.small_blind,
+      tableInfo.big_blind,
+      tableInfo.buy_in,
+      tableInfo.max_players,
+      tableInfo.num_humans,
+      tableInfo.num_bots,
+    );
+
+    this.forceUpdate();
+  }
+
   saveHandHistory(payOuts) {
     let { gameState } = this.state;
 
@@ -270,7 +307,6 @@ class App extends React.Component {
       handHistory: [...this.state.handHistory, history]
     });
   }
-
 
   soundToggleCallback(event) {
     this.setState({ soundEnabled: !this.state.soundEnabled });
