@@ -21,6 +21,7 @@ class App extends React.Component {
  
     this.state = {
         ws: null,
+        reconnecting: true,
         playerName: playerName,
         creatingTable: false,
         gameState: null,
@@ -75,7 +76,7 @@ class App extends React.Component {
     ws.onopen = () => {
       console.log("Connected websocket App component");
 
-      this.setState({ ws: ws });
+      this.setState({ ws: ws,  reconnecting: false });
 
       that.timeout = 250; // reset timer to 250 on open of websocket connection 
       clearTimeout(connectInterval); // clear Interval on on open of websocket connection
@@ -199,7 +200,10 @@ class App extends React.Component {
    */
   check = () => {
       const { ws } = this.state;
-      if (!ws || ws.readyState === WebSocket.CLOSED) this.connect(); //check if websocket instance is closed, if so call `connect` function.
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        this.setState({ reconnecting: true });
+        this.connect(); //check if websocket instance is closed, if so call `connect` function.
+      }
   };
 
   chat(user, msg) {
@@ -313,6 +317,17 @@ class App extends React.Component {
   }
 
   render() {
+
+    if (this.state.reconnecting) {
+      return (
+        <MenuBody>
+                <Spinner>
+                  Trying to Reconnect to Server...
+                </Spinner>
+              </MenuBody>
+      );
+    }
+
     return (
       <>
       {this.state.showErrorModal ? (
