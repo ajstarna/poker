@@ -513,6 +513,7 @@ impl Game {
                 MetaAction::TableInfo(addr) => {
 		    println!("about to send table info to {:?}", addr);
 		    let message = object! {
+			"msg_type": "table_info".to_owned(),
 			"table_name": self.name.to_owned(),
 			"small_blind": self.small_blind,
 			"big_blind": self.big_blind,
