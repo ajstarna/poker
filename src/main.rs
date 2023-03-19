@@ -42,7 +42,7 @@ async fn index() -> impl Responder {
 async fn new_connection(
     req: HttpRequest,
     stream: web::Payload,
-    hub_addr: web::Data<Addr<hub::GameHub>>,
+    hub_addr: web::Data<Addr<hub::TableHub>>,
 ) -> Result<HttpResponse, Error> {
     log::info!("inside new_connection()");
     ws::start(
@@ -61,7 +61,7 @@ async fn reconnect(
     path: web::Path<Uuid>,
     req: HttpRequest,
     stream: web::Payload,
-    hub_addr: web::Data<Addr<hub::GameHub>>,
+    hub_addr: web::Data<Addr<hub::TableHub>>,
 ) -> Result<HttpResponse, Error> {
     let uuid = path.into_inner();
     ws::start(
@@ -88,7 +88,7 @@ async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(AtomicUsize::new(0));
 
     // start main hub actor
-    let hub = hub::GameHub::new().start();
+    let hub = hub::TableHub::new().start();
 
     log::info!("starting HTTP server at http://{}:{}", args.ip, args.port);
 
