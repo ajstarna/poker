@@ -65,7 +65,6 @@ class Counter extends React.Component {
                     name="custom-input-number"
                     min={this.props.min}
                     max={this.props.max}
-                    step={this.props.step}
                     value={this.state.value}
                     onChange={this.handleChange}
                 ></input>
