@@ -1,21 +1,23 @@
-import React from "react";
+import React, { createRef } from "react";
 import { useNavigate } from "react-router-dom";
 import MenuButton from "../components/button/MenuButton";
 import TextInput from "../components/input/TextInput";
+import Counter from "../components/input/Counter";
 import MenuBody from "../components/layout/MenuBody";
 
 class Create extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            maxPlayers: 9,
-            numBots: 0,
-            smallBlind: 1,
-            bigBlind: 2,
-            startingStack: 200,
             private: false,
             password: ""
         };
+
+        this.maxPlayersRef = createRef();
+        this.numBotsRef = createRef();
+        this.smallBlindRef = createRef();
+        this.bigBlindRef = createRef();
+        this.startingStackRef = createRef();
 
         this.handleChange = this.handleChange.bind(this);
         this.handleSubmit = this.handleSubmit.bind(this);
@@ -50,16 +52,17 @@ class Create extends React.Component {
         try {
             let data = {
                 "msg_type": "create",
-                "max_players": this.state.maxPlayers,
-                "num_bots": this.state.numBots,
-                "small_blind": this.state.smallBlind,
-                "big_blind": this.state.bigBlind,
-                "buy_in": this.state.startingStack,
+                "max_players": this.maxPlayersRef.current.getValue(),
+                "num_bots": this.numBotsRef.current.getValue(),
+                "small_blind": this.smallBlindRef.current.getValue(),
+                "big_blind": this.bigBlindRef.current.getValue(),
+                "buy_in": this.startingStackRef.current.getValue(),
             };
 
             if (this.state.private) {
                 data["password"] = this.state.password;
             }
+
 
             websocket.send(JSON.stringify(data)); //send data to the server
             this.props.onCreate();
@@ -79,15 +82,15 @@ class Create extends React.Component {
                 </p>
                 <form onSubmit={this.handleSubmit}>
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Max Players:</label>
-                    <TextInput type="number" min="2" max="9" step="1" name="maxPlayers" value={this.state.maxPlayers} onChange={this.handleChange} required />
+                    <Counter ref={this.maxPlayersRef} min="2" max="9" step="1" name="maxPlayers" value="9" />
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Number of Bots:</label>
-                    <TextInput type="number" min="0" max="8" step="1" name="numBots" value={this.state.numBots} onChange={this.handleChange} required />
+                    <Counter ref={this.numBotsRef} min="0" max="8" step="1" name="numBots" value="0" />
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Small Blind:</label>
-                    <TextInput type="number" min="1" step="1" name="smallBlind" value={this.state.smallBlind} onChange={this.handleChange} required />
+                    <Counter ref={this.smallBlindRef} min="0" max="10000" step="1" name="smallBlind" value="1" />
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Big Blind:</label>
-                    <TextInput type="number" min="1" step="1" name="bigBlind" value={this.state.bigBlind} onChange={this.handleChange} required />
+                    <Counter ref={this.bigBlindRef} min="0" max="10000" step="1" name="bigBlind" value="2" />
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Starting Stack:</label>
-                    <TextInput type="number" min="0" step="100" name="startingStack" value={this.state.startingStack} onChange={this.handleChange} required />
+                    <Counter ref={this.startingStackRef} min="0" max="10000" step="100" name="startingStack" value="200" />
                     <label className="block mt-10 mb-2">
                         <input className="mr-4 leading-tight w-4 h-4" type="checkbox" name="private" value={this.state.private} onChange={this.handleChange} />
                         <span className="text-lg font-medium text-gray-200">
