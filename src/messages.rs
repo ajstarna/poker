@@ -17,6 +17,7 @@ pub enum MetaAction {
     SendPlayerName(Uuid),    
     Chat(Uuid, String),
     Admin(Uuid, AdminCommand),
+    TableInfo(Recipient<WsMessage>), // send the table info to the given address
 }
 
 /// these admin commands can be taken by the owner of a PRIVATE game.
@@ -54,8 +55,8 @@ pub struct Disconnect {
     pub id: Uuid,
 }
 
-/// List of available tables
-pub struct ListTables;
+/// List available tables and send info to the provided address
+pub struct ListTables(pub Recipient<WsMessage>);
 
 impl actix::Message for ListTables {
     type Result = Vec<String>;

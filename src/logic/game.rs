@@ -11,7 +11,7 @@ use super::game_hand::{GameHand, Street};
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::GameHub;
 
-use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason};
+use crate::messages::{AdminCommand, GameOver, JoinGameError, MetaAction, Returned, ReturnedReason, WsMessage};
 
 use std::{cmp, sync::Arc, thread, time};
 
@@ -507,9 +507,21 @@ impl Game {
 		    }
                 }
                 MetaAction::UpdateAddress(id, new_addr) => {
-		    println!("Inside game, updating player address for uuid = {id}");
                     PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
 		    self.send_game_state(gamehand);		    
+                }
+                MetaAction::TableInfo(addr) => {
+		    println!("about to send table info to {:?}", addr);
+		    let message = object! {
+			"table_name": self.name.to_owned(),
+			"small_blind": self.small_blind,
+			"big_blind": self.big_blind,
+			"buy_in": self.buy_in,
+			"max_players": self.max_players,
+			"num_humans": self.players.iter().flatten().filter(|p| p.human_controlled).count(),
+			"num_bots": self.players.iter().flatten().filter(|p| !p.human_controlled).count(),
+		    };
+                    addr.do_send(WsMessage(message.dump()));		    
                 }
                 MetaAction::ImBack(id) => {
                     for player in self.players.iter_mut().flatten() {
