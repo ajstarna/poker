@@ -16,8 +16,8 @@ class App extends React.Component {
   constructor(props) {
     super(props);
 
-    const playerName = localStorage.getItem('poker-player-name');
-
+    const playerName = localStorage.getItem('poker-player-name') || "";
+ 
     this.state = {
         ws: null,
         playerName: playerName,
@@ -72,7 +72,7 @@ class App extends React.Component {
 
     // websocket onopen event listener
     ws.onopen = () => {
-      console.log("connected websocket App component");
+      console.log("Connected websocket App component");
 
       this.setState({ ws: ws });
 
