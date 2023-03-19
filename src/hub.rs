@@ -112,6 +112,7 @@ impl Handler<Connect> for GameHub {
                     .unwrap()
                     .push_back(MetaAction::UpdateAddress(id, addr));
 		// also tell the table to send the player its current name
+		// useful especially on a rejoin
                 meta_actions
                     .lock()
                     .unwrap()
@@ -144,16 +145,19 @@ impl Handler<Connect> for GameHub {
 impl Handler<ListTables> for GameHub {
     type Result = MessageResult<ListTables>;
 
-    fn handle(&mut self, _: ListTables, _: &mut Context<Self>) -> Self::Result {
+    /// we return a vec of table names of public tables now and also
+    /// send a message to each public table, telling them to send their info to the given id
+    fn handle(&mut self, msg: ListTables, _: &mut Context<Self>) -> Self::Result {
         let mut tables = Vec::new();
-
-        for key in self.tables_to_actions.keys() {
-            if self.private_tables.contains(key) {
-                // don't return private tables
-                continue;
-            }
-            tables.push(key.to_owned())
-        }
+        for (table_name, meta_actions) in self.tables_to_meta_actions
+	    .iter()
+            .filter(|&(table_name, _)| !self.private_tables.contains(table_name)) {
+		tables.push(table_name.to_owned());
+                meta_actions
+                    .lock()
+                    .unwrap()
+                    .push_back(MetaAction::TableInfo(msg.0.clone()))
+	    }
 
         MessageResult(tables)
     }

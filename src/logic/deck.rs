@@ -57,6 +57,7 @@ impl Deck for StandardDeck {
     }
 }
 
+/// the rigged deck is useful for unit testing
 #[derive(Debug)]
 pub struct RiggedDeck {
     cards: Vec<Card>,
@@ -64,6 +65,7 @@ pub struct RiggedDeck {
 }
 
 impl RiggedDeck {
+    #[allow(dead_code)]    
     pub fn new() -> Self {
         let cards = Vec::<Card>::new();
         Self { cards, top: 0 }
@@ -71,6 +73,7 @@ impl RiggedDeck {
 
     /// push a card into the deck.
     /// we can set the order exactly how we want
+    #[allow(dead_code)]        
     pub fn push(&mut self, card: Card) {
         self.cards.push(card);
     }

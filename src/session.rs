@@ -322,8 +322,9 @@ impl WsPlayerSession {
         // Send ListTables message to game server and wait for
         // response
         println!("List tables");
+        let addr = ctx.address();	
         self.hub_addr
-            .send(messages::ListTables)
+            .send(messages::ListTables(addr.recipient()))
             .into_actor(self)
             .then(|res, _, ctx| {
                 match res {

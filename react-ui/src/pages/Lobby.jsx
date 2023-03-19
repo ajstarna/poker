@@ -50,6 +50,16 @@ class Lobby extends React.Component {
     }
 
     render() {
+        console.log(this.props.tables);
+
+        let tableList = [];
+
+        for (const table of Object.values(this.props.tables)) {
+            if (table.hasInformation) {
+                tableList.push(table);
+            }
+        }
+
         return (
             <MenuBody>
                 <p className="text-3xl text-gray-200 font-bold mb-5">
@@ -59,12 +69,48 @@ class Lobby extends React.Component {
                     <MenuButton onClick={() => this.props.navigate("/menu")}>Back</MenuButton>
                     <MenuButton onClick={this.refresh} >Refresh List</MenuButton>
                 </div>
-                <div className="mt-10">
-                    {this.props.tables.length > 0 ? this.props.tables?.map((table) => (
-                        <p key={table} onClick={() => this.join(table)} className="text-stone-200 p-4 mt-2 w-full bg-gray-700 hover:bg-gray-800 active:bg-gray-900 border-gray-600 border-2">
-                            {table}
-                        </p>
-                    )) : (
+                <div className="mt-10 shadow-md sm:rounded-lg">
+                    {tableList.length > 0 ? (
+                        <table className="relative w-full text-sm text-left">
+                            <thead className="text-xs uppercase">
+                                <tr>
+                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Table Name</th>
+                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Blinds</th>
+                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Buy In</th>
+                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Players</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y text-stone-200">
+                                {
+                                    tableList.map((table) => (
+                                        <tr onClick={() => this.join(table.tableName)} className="hover:bg-gray-700 active:bg-gray-900">
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-row space-x-1">
+                                                    {table.tableName}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-row space-x-1">
+                                                    {table.smallBlind}/{table.bigBlind}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-row space-x-1">
+                                                    {table.buyIn}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-row space-x-1">
+                                                    {table.numHumans + table.numBots}/{table.maxPlayers}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                }
+                            </tbody>
+                        </table>
+
+                    ) : (
                         <p className="text-stone-200 p-4 mt-2 w-full bg-gray-700 border-gray-600 border-2 text-center" >
                             There are currenly no public tables listed.
                         </p>
