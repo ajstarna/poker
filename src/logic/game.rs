@@ -358,17 +358,17 @@ impl Game {
                 // the game ends no matter what if we haven't had a human after too many turns
                 break;
             }
-            if self.player_ids_to_configs.len() > 1 {
-		// only bother playing a hand if there are more than 1 players.
-		let was_played = self.play_one_hand(&incoming_actions, &incoming_meta_actions);
-		if was_played {
-		    self.hands_played += 1;
-		}
+
+	    // only bother playing a hand if there are more than 1 players.
+	    let was_played = self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+	    if was_played {
+		self.hands_played += 1;
 		// attempt to set the next button
 		self.button_idx = self
-                    .find_next_button()
-                    .expect("we could not find a valid button index!");
+		    .find_next_button()
+		    .expect("we could not find a valid button index!");
             }
+	    
             // wait for next hand
 	    // this is especially needed when there is only one player in the game
             let wait_duration = time::Duration::from_secs(1);
@@ -805,7 +805,12 @@ impl Game {
 		num_active += 1;
             }
         }
-        if num_active < 2 {
+        if self.player_ids_to_configs.len() < 1 || num_active < 2 {
+	    // not enough players or active players to play a hand,
+	    // send a game state indicating that the same is suspended,
+	    // and return false to the main loop.
+	    let game_suspended = true;
+	    self.send_game_state(Some(&gamehand), game_suspended);		    
             return false;
         }
 

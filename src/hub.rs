@@ -68,11 +68,9 @@ impl Actor for GameHub {
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.run_interval(Duration::from_secs(10), |this_actor, _ctx| {
             // check client heartbeats
-	    println!("checking heart beats in the game hub");
 	    this_actor.main_lobby_connections.retain(|_uuid, config| {
 		config.has_active_heart_beat()
 	    });
-	    println!("self.main_lobby_connections = {:?}", this_actor.main_lobby_connections);	    
 	});
     }
 }
