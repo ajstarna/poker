@@ -425,7 +425,7 @@ class Table extends React.Component {
                                                 <tr>
                                                     <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">My Cards</th>
                                                     <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Board</th>
-                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Winnings</th>
+                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Returns</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y">
@@ -442,7 +442,7 @@ class Table extends React.Component {
                                                                     {stringToCards(hand.board)}
                                                                 </div>
                                                             </td>
-                                                            <td className={`${hand.color} px-6 py-4`}>{hand.winnings}</td>
+                                                            <td className={`${hand.color} px-6 py-4`}>{hand.returns}</td>
                                                         </tr>
                                                     ))
                                                 }
