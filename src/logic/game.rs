@@ -94,8 +94,8 @@ impl Game {
         }
     }
 
-    fn send_game_state(&self, gamehand_opt: Option<&GameHand>) {
-	let mut state_message = self.get_game_state_json(gamehand_opt);
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, game_suspended: bool) {
+	let mut state_message = self.get_game_state_json(gamehand_opt, game_suspended);
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
@@ -124,6 +124,7 @@ impl Game {
     fn get_game_state_json(
 	&self,
 	gamehand_opt: Option<&GameHand>,
+	game_suspended: bool,
     ) -> json::JsonValue {
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
@@ -135,6 +136,7 @@ impl Game {
             password: self.password.to_owned(),	    
             button_idx: self.button_idx,
             hands_played: self.hands_played,
+	    game_suspended: game_suspended,
 	};
 
 	// add a list of player infos
@@ -328,7 +330,6 @@ impl Game {
 		}
 	    }
  	    
-            self.hands_played += 1;
             if let Some(limit) = hand_limit {
                 if self.hands_played > limit {
                     println!("hand limit has been reached");
@@ -357,20 +358,19 @@ impl Game {
                 // the game ends no matter what if we haven't had a human after too many turns
                 break;
             }
-            if self.player_ids_to_configs.len() > 1 {
-		// only bother playing a hand if there are more than 1 players.
-		let message = object! {
-		    msg_type: "new_hand".to_owned(),
-		    hand_num: self.hands_played,
-		    button_index: self.button_idx,
-                };
-		PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
-		self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+
+	    let was_played = self.play_one_hand(&incoming_actions, &incoming_meta_actions);
+	    if was_played {
+		// only increment the hand num and find a new button if we indeed played a hand.
+		// if there are not enough players and/or active players, a hand is not dealt/played
+		self.hands_played += 1;
+		
 		// attempt to set the next button
 		self.button_idx = self
-                    .find_next_button()
-                    .expect("we could not find a valid button index!");
+		    .find_next_button()
+		    .expect("we could not find a valid button index!");
             }
+	    
             // wait for next hand
 	    // this is especially needed when there is only one player in the game
             let wait_duration = time::Duration::from_secs(1);
@@ -446,7 +446,7 @@ impl Game {
                     match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining game at index: {}", index);
-			    self.send_game_state(gamehand);
+			    self.send_game_state(gamehand, false);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -508,7 +508,7 @@ impl Game {
                 }
                 MetaAction::UpdateAddress(id, new_addr) => {
                     PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
-		    self.send_game_state(gamehand);		    
+		    self.send_game_state(gamehand, false);		    
                 }
                 MetaAction::TableInfo(addr) => {
 		    println!("about to send table info to {:?}", addr);
@@ -533,7 +533,7 @@ impl Game {
 		    if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
 			player_config.heart_beat = time::Instant::now(); // this counts as activity
 		    }
-		    self.send_game_state(gamehand);		    		    
+		    self.send_game_state(gamehand, false);		    		    
                 }
                 MetaAction::SitOut(id) => {
                     for player in self.players.iter_mut().flatten() {
@@ -542,7 +542,7 @@ impl Game {
                             player.is_sitting_out = true;
                         }
                     }
-		    self.send_game_state(gamehand);		    		    
+		    self.send_game_state(gamehand, false);		    		    
                 }
 		MetaAction::Admin(id, admin_command) => {
 		    if !between_hands {
@@ -739,7 +739,7 @@ impl Game {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
-	self.send_game_state(Some(gamehand));	
+	self.send_game_state(Some(gamehand), false);	
     }
 
     fn deal_hands(&mut self) {
@@ -798,13 +798,17 @@ impl Game {
         }
     }
 
+    /// play a single hand of poker
+    /// returns a bool indicating if the hand was "actually" played.
+    /// because if there are < 2 active players, there is nothing to play
     fn play_one_hand(
         &mut self,
         incoming_actions: &Arc<Mutex<HashMap<Uuid, PlayerAction>>>,
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
-    ) {
+    ) -> bool {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
         let mut gamehand = GameHand::default();
+	let mut num_active = 0;
         for player in self.players.iter_mut().flatten() {
             if player.money == 0 {
                 player.is_active = false;
@@ -812,15 +816,31 @@ impl Game {
 		// note: even sitting_out players start as active
 		// since they might need to pay their blinds still
                 player.is_active = true;
+		num_active += 1;
             }
         }
+        if self.player_ids_to_configs.len() < 1 || num_active < 2 {
+	    // not enough players or active players to play a hand,
+	    // send a game state indicating that the same is suspended,
+	    // and return false to the main loop.
+	    let game_suspended = true;
+	    self.send_game_state(Some(&gamehand), game_suspended);		    
+            return false;
+        }
 
+	let message = object! {
+	    msg_type: "new_hand".to_owned(),
+	    hand_num: self.hands_played,
+	    button_index: self.button_idx,
+        };
+	PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
+	
 	// drain any lingering actions from a previous hand
         let mut actions = incoming_actions.lock().unwrap();
 	actions.drain();
 	std::mem::drop(actions); // give back the lock
 	
-	self.send_game_state(Some(&gamehand));	
+	self.send_game_state(Some(&gamehand), false);	
         self.deck.shuffle();
         self.deal_hands();
 
@@ -848,6 +868,7 @@ impl Game {
         }
         // now we finish up and pay the pot to the winner
         self.finish_hand(&mut gamehand);
+	true // the hand was indeed played
     }
 
     fn get_starting_idx(&self) -> usize {
@@ -971,7 +992,7 @@ impl Game {
 	    }
 	    
 	    gamehand.index_to_act = Some(i);
-	    self.send_game_state(Some(&gamehand));
+	    self.send_game_state(Some(&gamehand), false);
 	    	    
             let action = self.get_and_validate_action(
                 incoming_actions,
@@ -1057,7 +1078,7 @@ impl Game {
                 }
             }
         };
-	self.send_game_state(Some(&gamehand));	
+	self.send_game_state(Some(&gamehand), false);	
 	hand_over
     }
     

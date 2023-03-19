@@ -16,8 +16,8 @@ class App extends React.Component {
   constructor(props) {
     super(props);
 
-    const playerName = localStorage.getItem('poker-player-name');
-
+    const playerName = localStorage.getItem('poker-player-name') || "";
+ 
     this.state = {
         ws: null,
         playerName: playerName,
@@ -72,7 +72,7 @@ class App extends React.Component {
 
     // websocket onopen event listener
     ws.onopen = () => {
-      console.log("connected websocket App component");
+      console.log("Connected websocket App component");
 
       this.setState({ ws: ws });
 
@@ -224,45 +224,45 @@ class App extends React.Component {
       board += gameState.river;
     }
 
-    let winnings = 0;
+    let returns = 0;
     let player = gameState.players[playerIndex];
     
     for (let payOut of payOuts) {
       if (payOut.index === playerIndex) {
-        winnings = payOut.payout;
+        returns = payOut.payout;
         break;
       }
     }
 
     if ("preflop_cont" in player) {
-      winnings -= player.preflop_cont;
+      returns -= player.preflop_cont;
     }
 
     if ("flop_cont" in player) {
-      winnings -= player.flop_cont;
+      returns -= player.flop_cont;
     }
 
     if ("turn_cont" in player) {
-      winnings -= player.turn_cont;
+      returns -= player.turn_cont;
     }
 
     if ("river_cont" in player) {
-      winnings -= player.river_cont;
+      returns -= player.river_cont;
     }
 
     let color = "text-gray-200";
 
-    if (winnings > 0) {
+    if (returns > 0) {
       color = "text-green-500";
-    } else if (winnings < 0) {
+    } else if (returns < 0) {
       color = "text-red-500";
     }
 
     let history = {
       holeCards: holeCards,
       board: board,
-      winnings: Math.abs(winnings),
-      loss: winnings < 0,
+      returns: Math.abs(returns),
+      loss: returns < 0,
       color: color
     }
 

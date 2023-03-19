@@ -16,8 +16,6 @@ class Login extends React.Component {
     componentDidMount() {
         const { player_name } = this.props // name passed as props to the child component.
 
-        console.log(player_name);
-
         if (player_name) {
             this.setState({ value: player_name });
         }

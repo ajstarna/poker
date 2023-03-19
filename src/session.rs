@@ -173,7 +173,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsPlayerSession {
         };
 
         log::debug!("WEBSOCKET MESSAGE: {msg:?}");
-        println!("WEBSOCKET MESSAGE: {:?}", msg);
         match msg {
             ws::Message::Ping(msg) => {
                 self.client_hb = Instant::now();
