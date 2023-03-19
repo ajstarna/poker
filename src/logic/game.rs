@@ -359,10 +359,12 @@ impl Game {
                 break;
             }
 
-	    // only bother playing a hand if there are more than 1 players.
 	    let was_played = self.play_one_hand(&incoming_actions, &incoming_meta_actions);
 	    if was_played {
+		// only increment the hand num and find a new button if we indeed played a hand.
+		// if there are not enough players and/or active players, a hand is not dealt/played
 		self.hands_played += 1;
+		
 		// attempt to set the next button
 		self.button_idx = self
 		    .find_next_button()
