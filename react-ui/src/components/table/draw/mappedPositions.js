@@ -61,9 +61,9 @@ export function getChipsPostion(index, width, height) {
         case 6:
             return [cw + offset, ch - offset/2]
         case 7:
-            return [cw + offset, ch + 0.4*offset]
+            return [cw + 1.15*offset, ch + 0.4*offset]
         case 8:
-            return [cw + 0.9*offset, ch + 0.85*offset]
+            return [cw + 0.9*offset, ch + 0.9*offset]
         default:
             console.error(`Invalid index given for getChipsPostion: ${index}. Needs to be between 0 and 8.`);
             break;

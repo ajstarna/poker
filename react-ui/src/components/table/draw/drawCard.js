@@ -240,16 +240,16 @@ export function drawBackCard(ctx, x, y, size=55) {
     let offset = 0.1*size;
 
     // Draw card base
-    drawCardBase(ctx, x, y, width, height, 'rgb(95, 100, 100)');
+    drawCardBase(ctx, x, y, width, height, 'rgb(60, 100, 100)');
 
     ctx.save();
-    ctx.strokeStyle = 'rgb(115, 110, 110)';
+    ctx.strokeStyle = 'rgb(90, 130, 130)';
     roundRect(ctx, x + offset, y + offset, width - 2*offset, height - 2*offset, 5);
     ctx.stroke();
     ctx.restore();
 
     ctx.save();
-    ctx.strokeStyle = 'rgb(85, 90, 90)';
+    ctx.strokeStyle = 'rgb(20, 80, 80)';
     roundRect(ctx, x + 3*offset, y + 3*offset, width - 6*offset, height - 6*offset, 5);
     ctx.stroke();
     ctx.restore();

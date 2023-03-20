@@ -13,7 +13,7 @@ function drawChip(ctx, x, y, chip_size, color) {
     ctx.save();
     ctx.beginPath();
     ctx.fillStyle = color;
-    ctx.strokeStyle = newShade(color, -50);
+    ctx.strokeStyle = newShade(color, 50);
     ctx.arc(x, y, chip_size, 0, Math.PI * 2, true);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 2;
@@ -49,7 +49,7 @@ export function drawChips(ctx, value, x, y, w, h, size) {
 
     // Draw chips
     const chipValues = [1000, 500, 100, 25, 20, 10, 5, 1];
-    const chipColors = ["#800000", "#800080", "#000000", "#008000", "#FFFF00", "#FFA500", "#FF0000", "#FFFFFF"];
+    const chipColors = ["#800000", "#800080", "#111111", "#008000", "#FFFF00", "#FFA500", "#FF0000", "#FFFFFF"];
 
     let remaining = value;
     let totalNumChips = 0;

@@ -154,25 +154,29 @@ const TableCanvas = props => {
                 let size = 0.1 * Math.min(canvasW, canvasH);
 
                 let x = canvasW / 2;
-                let y = canvasH / 2 + 1.3 * size;
+                let y = canvasH / 2 + 1.0 * size;
                 let w = size;
                 let h = 0.25 * size;
 
-                context.font = `bold ${0.2 * size}px arial`;
-                context.textAlign = "center";
-                context.fillStyle = "white";
-                context.fillText("Pot", canvasW / 2, canvasH / 2 + 0.8 * size);
-
-
-                let numPots = pots.length;
-
-                for (let i = 0; i < numPots; i++) {
-                    let pot = pots[i];
-                    let x0 = x + i * 1.25 * size - 1.25 * size * (numPots - 1) / 2
+                let total = pots.reduce((partialSum, a) => partialSum + a, 0);
+                if (pots.length > 1) {
                     drawChips(
                         context,
-                        pot,
-                        x0, y, w, h, size
+                        total,
+                        x - 0.9 * size, y, w, h, size
+                    );
+
+                    let side = pots.slice(-1);
+                    drawChips(
+                        context,
+                        side,
+                        x + 0.9 * size, y, w, h, size
+                    );
+                } else {
+                    drawChips(
+                        context,
+                        total,
+                        x, y, w, h, size
                     );
                 }
             }
