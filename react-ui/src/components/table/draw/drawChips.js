@@ -13,12 +13,12 @@ function drawChip(ctx, x, y, chip_size, color) {
     ctx.save();
     ctx.beginPath();
     ctx.fillStyle = color;
-    ctx.strokeStyle = newShade(color, -120);
+    ctx.strokeStyle = newShade(color, -50);
     ctx.arc(x, y, chip_size, 0, Math.PI * 2, true);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 1;
+    ctx.shadowOffsetY = 2;
     ctx.fill();
     ctx.stroke();
     ctx.restore();
