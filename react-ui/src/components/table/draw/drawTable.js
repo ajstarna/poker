@@ -32,20 +32,49 @@ export function drawTable(ctx, width, height) {
     var y1 = h;
 
     var borderSize = 0.025 * size;
+    var innerLine = 0.05 * size;
 
     var r = size / 3 - borderSize;
 
     // Draw table
     // Draw border
+    ctx.save();
+    var grdBorder = ctx.createRadialGradient(x0, y0, 20, x0, y0, Math.floor(w/2));
+    grdBorder.addColorStop(0, "rgb(100, 100, 100)");
+    grdBorder.addColorStop(0.8, "#322F2E");
+
     ctx.strokeStyle = "rgb(0, 0, 0)";
-    ctx.fillStyle = "#1c1917";
+    ctx.fillStyle = grdBorder;
     roundRect(ctx, x0, y0, x1, y1, r);
-    ctx.stroke();
+    ctx.shadowColor = '#1c1917';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetX = 5;
+    ctx.shadowOffsetY = 5;
     ctx.fill();
+    ctx.stroke();
+    ctx.restore();
 
     // Draw cloth
-    ctx.fillStyle = "rgb(0, 100, 0)";
+    ctx.save();
+    var grdCloth = ctx.createRadialGradient(cw, 1.1*ch, 20, cw, ch, Math.floor(w/2));
+    grdCloth.addColorStop(0, "rgb(0, 150, 0)");
+    grdCloth.addColorStop(0.8, "rgb(0, 100, 0)");
+
+    ctx.fillStyle = grdCloth;
     roundRect(ctx, x0 + borderSize, y0 + borderSize, x1 - 2 * borderSize, y1 - 2 * borderSize, r - borderSize);
+    ctx.shadowColor = '#1c1917';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.globalCompositeOperation='source-atop';
     ctx.stroke();
     ctx.fill();
+    ctx.restore();
+
+    // Draw cloth
+    ctx.save();
+    ctx.strokeStyle = "rgb(0, 150, 0)";
+    roundRect(ctx, x0 + innerLine, y0 + innerLine, x1 - 2 * innerLine, y1 - 2 * innerLine, r - innerLine);
+    ctx.stroke();
+    ctx.restore();
 }

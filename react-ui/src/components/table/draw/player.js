@@ -52,7 +52,7 @@ export class Player {
 
         let btn_position = getButtonPostion(this.index, width, height);
         ctx.fillStyle = "white";
-        ctx.strokeStyle = "black";
+        ctx.strokeStyle = "#999999";
     
         ctx.beginPath();
         ctx.arc(
@@ -105,6 +105,7 @@ export class Player {
 
         // Draw player boarder
         if (this.is_players_turn_to_act) {
+            ctx.save();
             // Draw green boarder if it is the players turn
             ctx.fillStyle = "#3AC547";
             roundRect(ctx,
@@ -113,14 +114,28 @@ export class Player {
                 info_x1 + 2 * boarder_size,
                 info_y1 + 2 * boarder_size,
                 0.05*(info_size + 2 * boarder_size));
+            ctx.shadowColor = '#1c1917';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
             ctx.fill();
+            ctx.restore();
         }
-
+        
+        ctx.save();
         ctx.fillStyle = "#202020";
         ctx.strokeStyle = "black";
         roundRect(ctx, info_x0, info_y0, info_x1, info_y1, 0.05*info_size);
-        ctx.stroke();
+        if (!this.is_players_turn_to_act) {
+            ctx.shadowColor = '#1c1917';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+        }
         ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        
 
         // Draw name
         if (this.is_active && this.action !== "fold") {
@@ -175,7 +190,6 @@ export class Player {
 
             // Save the default state
             ctx.save();
-
             // Draw boarder
             ctx.lineWidth = 3;
             ctx.fillStyle = action_fill_color;
