@@ -92,7 +92,7 @@ impl GameHand {
 	    // for each pot, we determine who should get paid out
 	    // a player can only get paid for a pot that they contributed to
 	    // so each pot has its own best_hand calculation
-            if is_showdown {
+            let (best_ids, best_hand, amount) = if is_showdown {
 		// if we made it to show down, there are multiple players left, so we need to see who
 		// has the best hand.
 		println!("Multiple active players made it to showdown!");
@@ -119,10 +119,9 @@ impl GameHand {
 		// divy the pot to all the winners
 		let num_winners = best_ids.len();
 		let amount = (pot.get_money() as f64 / num_winners as f64) as u32;
-		GameHand::pay_players(&mut pay_outs, players, player_ids_to_configs,
-				      best_ids, amount, best_hand, is_showdown);
+		(best_ids, best_hand, amount)
             } else {
-            // the hand ended before Showdown, so we simple find the one active player remaining
+		// the hand ended before Showdown, so we simple find the one active player remaining
 		let best_ids:  HashSet::<Uuid> = players
 		    .iter()
 		    .flatten()
@@ -130,16 +129,13 @@ impl GameHand {
 		    .map(|player| player.id).collect();
 		// if we didn't make it to show down, there better be only one player left
 		assert!(best_ids.len() == 1);
-		GameHand::pay_players(
-		    &mut pay_outs,
-                    players,
-		    player_ids_to_configs,
-                    best_ids,
-                    self.pot_manager.iter().next().unwrap().get_money(),
-                    None, // no hand result if not at showdown
-                    is_showdown,
-		);
-            }
+		let best_hand = None;
+		let amount = self.pot_manager.iter().next().unwrap().get_money();
+		(best_ids, best_hand, amount)
+            };
+	    GameHand::pay_players(&mut pay_outs, players, player_ids_to_configs,
+				  best_ids, amount, best_hand, is_showdown);
+	    
 	}
 	pay_outs
     }
