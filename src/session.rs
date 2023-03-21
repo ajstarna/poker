@@ -44,12 +44,12 @@ pub struct WsPlayerSession {
     // Note: the hub also checks for a command heart beat to clear the player config itself from the lobby
     pub command_hb: Instant,
     
-    /// Game hub address
-    pub hub_addr: Addr<hub::GameHub>,
+    /// Table hub address
+    pub hub_addr: Addr<hub::TableHub>,
 }
 
 impl WsPlayerSession {
-    pub fn new(hub_addr: Addr<hub::GameHub>) -> Self {
+    pub fn new(hub_addr: Addr<hub::TableHub>) -> Self {
         let id = Uuid::new_v4();
 	println!("brand new uuid = {id}");
         Self {
@@ -61,7 +61,7 @@ impl WsPlayerSession {
     }
 
     /// if the client wants to reconnect with an existing uuid
-    pub fn from_existing(uuid: Uuid, hub_addr: Addr<hub::GameHub>) -> Self {
+    pub fn from_existing(uuid: Uuid, hub_addr: Addr<hub::TableHub>) -> Self {
         Self {
             id: uuid,
             client_hb: Instant::now(),
@@ -97,7 +97,7 @@ impl WsPlayerSession {
             if client_gap > CLIENT_TIMEOUT {
                 // client heartbeat timed out
                 println!("Websocket Client heartbeat failed, disconnecting!");
-		// Note: here we do NOT tell the hub that we want to leave the game.
+		// Note: here we do NOT tell the hub that we want to leave the table.
 		// This allows for the client to rejoin with the same UUID and a new session
 		// (Up to the PLAYER_TIMEOUT)
 		
@@ -117,12 +117,12 @@ impl Actor for WsPlayerSession {
     type Context = ws::WebsocketContext<Self>;
 
     /// Method is called on actor start.
-    /// We register ws session with GameServer
+    /// We register ws session with the hub
     fn started(&mut self, ctx: &mut Self::Context) {
         // we'll start heartbeat process on session start.
         self.hb(ctx);
 
-        // register self in game server. `AsyncContext::wait` register
+        // register self in hub. `AsyncContext::wait` register
         // future within context, but context waits until this future resolves
         // before processing any other events.
         // HttpContext::state() is instance of WsPlayerSessionState, state is shared
@@ -139,7 +139,7 @@ impl Actor for WsPlayerSession {
                     Ok(res) => {
 			act.id = res;
 		    },
-                    // something is wrong with game server
+                    // something is wrong with the hub
                     _ => ctx.stop(),
                 }
                 fut::ready(())
@@ -152,7 +152,7 @@ impl Actor for WsPlayerSession {
     }
 }
 
-/// Handle messages from game server, we simply send it to peer websocket
+/// Handle messages from hub, we simply send it to peer websocket
 impl Handler<messages::WsMessage> for WsPlayerSession {
     type Result = ();
 
@@ -289,11 +289,11 @@ impl WsPlayerSession {
             .into_actor(self)
             .then(|res, _, ctx| {
                 match res {
-                    Ok(create_game_result) => match create_game_result {
+                    Ok(create_table_result) => match create_table_result {
                         Ok(table_name) => {
-                            println!("created game = {}", table_name);
+                            println!("created table = {}", table_name);
                             let message = json::object! {
-                                msg_type: "created_game".to_owned(),
+                                msg_type: "created_table".to_owned(),
                                 table_name: table_name,
                             };
                             ctx.text(message.dump());
@@ -319,8 +319,7 @@ impl WsPlayerSession {
     }
     
     fn handle_list_tables(&self, ctx: &mut <WsPlayerSession as Actor>::Context) {
-        // Send ListTables message to game server and wait for
-        // response
+        // Send ListTables message to the hub and wait for response
         println!("List tables");
         let addr = ctx.address();	
         self.hub_addr

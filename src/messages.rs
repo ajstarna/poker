@@ -63,22 +63,22 @@ impl actix::Message for ListTables {
 }
 
 #[derive(Debug)]
-pub enum JoinGameError {
+pub enum JoinTableError {
     GameIsFull,
     InvalidPassword,
     MissingPassword
 }
 
-impl fmt::Display for JoinGameError {
+impl fmt::Display for JoinTableError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            JoinGameError::GameIsFull => {
+            JoinTableError::GameIsFull => {
                 write!(f, "Game is full.",)
             }
-            JoinGameError::InvalidPassword => {
+            JoinTableError::InvalidPassword => {
                 write!(f, "Invalid password.")
             }
-            JoinGameError::MissingPassword => {
+            JoinTableError::MissingPassword => {
                 write!(f, "Password is required.")
             }
         }
@@ -101,7 +101,7 @@ pub struct Join {
 pub enum ReturnedReason {
     Left, // the player left
     HeartBeatFailed,
-    FailureToJoin(JoinGameError),
+    FailureToJoin(JoinTableError),
 }
 
 /// the game sends this message when a player config has been returned to the hub
@@ -121,7 +121,7 @@ pub struct PlayerName {
     pub name: String,
 }
 
-pub enum CreateGameError {
+pub enum CreateTableError {
     NameNotSet,
     UnableToParseJson(String),
     PlayerDoesNotExist, // cannot be found in the lobby or at a table
@@ -130,25 +130,25 @@ pub enum CreateGameError {
     TooLargeBlinds,
 }
 
-impl fmt::Display for CreateGameError {
+impl fmt::Display for CreateTableError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            CreateGameError::NameNotSet => {
+            CreateTableError::NameNotSet => {
                 write!(f, "You have not set your name")
             }
-            CreateGameError::UnableToParseJson(error_msg) => {
+            CreateTableError::UnableToParseJson(error_msg) => {
                 write!(f, "Unable to parse json: {:?}", error_msg)
 	    }
-            CreateGameError::AlreadyAtTable(table_name) => {
+            CreateTableError::AlreadyAtTable(table_name) => {
                 write!(f, "You are already at the table {}", table_name)
             }
-            CreateGameError::PlayerDoesNotExist => {
+            CreateTableError::PlayerDoesNotExist => {
                 write!(f, "The game is unaware of you. Please try refreshing your browser.")
             }
-            CreateGameError::TooManyBots => {
+            CreateTableError::TooManyBots => {
                 write!(f, "Too many bots selected")
             }
-            CreateGameError::TooLargeBlinds => {
+            CreateTableError::TooLargeBlinds => {
                 write!(f, "Blinds must be smaller than the starting stacks.")
             }
         }
@@ -167,7 +167,7 @@ pub struct CreateFields {
 
 /// Session wants to create a game
 #[derive(Message)]
-#[rtype(result = "Result<String, CreateGameError>")]
+#[rtype(result = "Result<String, CreateTableError>")]
 pub struct Create {
     /// Client ID
     pub id: Uuid,

@@ -10,9 +10,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::logic::{Game, PlayerAction, PlayerConfig};
+use crate::logic::{Table, PlayerAction, PlayerConfig};
 use crate::messages::{
-    Connect, Create, CreateFields, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
+    Connect, Create, CreateFields, CreateTableError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -25,7 +25,7 @@ use uuid::Uuid;
 const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const GAME_NAME_LEN: usize = 4;
 
-/// `Gamelobby` manages chat tables and responsible for coordinating chat session.
+/// `Tablelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
 pub struct TableHub {
     // map from session id to the PlayerConfig for players that have connected but are not at a table
@@ -313,9 +313,9 @@ impl Handler<Returned> for TableHub {
 
 /// create table, cannot already be at a table
 impl Handler<Create> for TableHub {
-    type Result = Result<String, CreateGameError>;
+    type Result = Result<String, CreateTableError>;
 
-    /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
+    /// creates a game and returns either Ok(table_name) or an Er(CreateTableError)
     /// if the player is not in the lobby or does not have their name set
     fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
         let Create { id, create_msg } = msg;
@@ -326,12 +326,12 @@ impl Handler<Create> for TableHub {
             // so we must be waiting for the game to remove the player still
             println!("player config not in the main lobby, so they must already be at a game");
             if let Some(table_name) = self.players_to_table.get(&id) {
-                return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
+                return Err(CreateTableError::AlreadyAtTable(table_name.to_string()));
             } else {
                 println!("player not at lobby nor at a table");
 		// TODO: I think this should stop the session actor that sent this message, otherwise
 		// we can have a session actor living indefinitely with no corresponding playerconfig?		
-                return Err(CreateGameError::PlayerDoesNotExist);
+                return Err(CreateTableError::PlayerDoesNotExist);
             }
         }
         let mut player_config = player_config_option.unwrap();
@@ -342,7 +342,7 @@ impl Handler<Create> for TableHub {
             // put them back in the lobby
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
-            return Err(CreateGameError::NameNotSet);
+            return Err(CreateTableError::NameNotSet);
         }
 
 	match serde_json::from_str(&create_msg) {
@@ -359,12 +359,12 @@ impl Handler<Create> for TableHub {
 		
 		if num_bots >= max_players {
 		    self.main_lobby_connections.insert(player_config.id, player_config);
-		    return Err(CreateGameError::TooManyBots);
+		    return Err(CreateTableError::TooManyBots);
 		}
 		
 		if big_blind > buy_in || small_blind > buy_in {
 		    self.main_lobby_connections.insert(player_config.id, player_config);
-		    return Err(CreateGameError::TooLargeBlinds);		
+		    return Err(CreateTableError::TooLargeBlinds);		
 		}
 		
 		let mut rng = rand::thread_rng();
@@ -389,7 +389,7 @@ impl Handler<Create> for TableHub {
 		let cloned_actions = actions.clone();
 		let cloned_meta_actions = meta_actions.clone();
 		
-		let mut game = Game::new(
+		let mut game = Table::new(
                     ctx.address(),
                     table_name.clone(),
                     None, // no deck needed to pass in
@@ -438,7 +438,7 @@ impl Handler<Create> for TableHub {
 		println!("create message unable to deserialize");
 		println!("{:?}", e);
 		self.main_lobby_connections.insert(player_config.id, player_config);	    
-		return Err(CreateGameError::UnableToParseJson(e.to_string()));
+		return Err(CreateTableError::UnableToParseJson(e.to_string()));
             }
 	}
     }
@@ -452,7 +452,7 @@ impl Handler<PlayerActionMessage> for TableHub {
     /// so we need to relay that to the game
     fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
-            // the player was at a table, so tell the Game this player's message
+            // the player was at a table, so tell the Table this player's message
             if let Some(actions_map) = self.tables_to_actions.get_mut(table_name) {
                 println!("handling player action in the hub!");
                 actions_map
