@@ -344,6 +344,15 @@ class Table extends React.Component {
             handsPlayed: this.props.gameState?.hands_played
         }
 
+        let yourTurnToAction = false;
+
+        if (this.props.gameState !== null) {
+            let indexToAct = this.props.gameState.index_to_act;
+            let yourIndex = this.props.gameState.your_index;
+
+            yourTurnToAction = yourIndex === indexToAct;
+        }
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -543,7 +552,7 @@ class Table extends React.Component {
                                         name="betSize"
                                         className="w-full bg-stone-500 text-center text-gray-200 font-bold" />
                                 </div>
-                                <div className="mt-4 grid grid-cols-4 gap-1">
+                                <div className={(yourTurnToAction ? "block" : "hidden") + " mt-4 grid grid-cols-4 gap-1"}>
                                     <ActionButton onClick={this.handleFold}>
                                         Fold
                                     </ActionButton>
