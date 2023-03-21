@@ -193,22 +193,22 @@ function getSuitColor(suit) {
 
 function drawSuit(ctx, x, y, size, suit, color) {
     if (suit === 'c') {
-        drawClub(ctx, x, y, size, 3*size/2, color);
+        drawClub(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 's') {
-        drawSpade(ctx, x, y, size, 3*size/2, color);
+        drawSpade(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 'h') {
-        drawHeart(ctx, x, y, size, 3*size/2, color);
+        drawHeart(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 'd') {
-        drawDiamond(ctx, x, y, size, 3*size/2, color);
+        drawDiamond(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
@@ -218,20 +218,21 @@ function drawSuit(ctx, x, y, size, suit, color) {
 export function drawFrontCard(ctx, x, y, value, suit, size=55) {
     let width = size;
     let height = 3*size/2;
+    let suitSize = 0.4*size;
     let suitColor = getSuitColor(suit);
 
     // Draw card base
-    drawCardBase(ctx, x, y, width, height, suitColor);
+    drawCardBase(ctx, x, y, width, height, 'white');
 
     // Draw value
     if (value === 'T') value = '10';
-    ctx.font = `bold ${0.4*size}px arial`;
-    ctx.textAlign = 'start';
-    ctx.fillStyle = 'white';
-    ctx.fillText(value, x+0.1*size, y+0.41*size);
+    ctx.font = `900 ${0.4*size}px arial`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = suitColor;
+    ctx.fillText(value, x+0.5*size, y+0.5*size);
 
     // Draw suit
-    drawSuit(ctx, x + width/2, y + width/2, width/2, suit, 'white');
+    drawSuit(ctx, x + size/2, y + size/2 + 0.75*suitSize, suitSize, suit, suitColor);
 }
 
 export function drawBackCard(ctx, x, y, size=55) {
