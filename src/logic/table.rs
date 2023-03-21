@@ -34,7 +34,7 @@ pub struct Table {
     password: Option<String>,
     admin_id: Uuid,
     button_idx: usize, // index of the player with the button
-    hands_played: u32, // keeps track of how many hands were played
+    hand_num: u32, // keeps track of the current hand number
 }
 
 /// useful for unit tests, for example
@@ -53,7 +53,7 @@ impl Default for Table {
             password: None,
 	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
             button_idx: 0,
-            hands_played: 0,
+            hand_num: 1,
         }
     }
 }
@@ -90,7 +90,7 @@ impl Table {
             password,
 	    admin_id,
             button_idx: 0,
-            hands_played: 0,
+            hand_num: 1,
         }
     }
 
@@ -135,7 +135,7 @@ impl Table {
             buy_in: self.buy_in,
             password: self.password.to_owned(),	    
             button_idx: self.button_idx,
-            hands_played: self.hands_played,
+            hand_num: self.hand_num,
 	    game_suspended: game_suspended,
 	};
 
@@ -316,7 +316,6 @@ impl Table {
 
 	    ////
 	    self.handle_meta_actions(&incoming_meta_actions, between_hands, None);
-            println!("checking heart beats in the table play()");
 	    self.handle_player_heart_beats();
             // check if any player left with a meta action or timed out due to heart beat.                 
             // if so, their config will be gone, so now remove the player struct as well.
@@ -331,14 +330,14 @@ impl Table {
 	    }
  	    
             if let Some(limit) = hand_limit {
-                if self.hands_played > limit {
+                if self.hand_num > limit {
                     println!("hand limit has been reached");
                     break;
                 }
             }
             println!(
                 "\n\n\nPlaying hand {}, button_idx = {}",
-                self.hands_played, self.button_idx
+                self.hand_num, self.button_idx
             );	    
             let num_human_players = self
                 .players
@@ -363,7 +362,7 @@ impl Table {
 	    if was_played {
 		// only increment the hand num and find a new button if we indeed played a hand.
 		// if there are not enough players and/or active players, a hand is not dealt/played
-		self.hands_played += 1;
+		self.hand_num += 1;
 		
 		// attempt to set the next button
 		self.button_idx = self
@@ -831,7 +830,7 @@ impl Table {
 
 	let message = object! {
 	    msg_type: "new_hand".to_owned(),
-	    hand_num: self.hands_played,
+	    hand_num: self.hand_num,
 	    button_index: self.button_idx,
         };
 	PlayerConfig::send_group_message(&message.dump(), &self.player_ids_to_configs);
@@ -1495,7 +1494,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
         // set the action that player2 folds
@@ -1505,7 +1504,7 @@ mod tests {
             .insert(id2, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 1004);
@@ -1540,7 +1539,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
         // set the action that player2 calls
@@ -1571,7 +1570,7 @@ mod tests {
             .insert(id1, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 992);
@@ -1605,7 +1604,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -1623,7 +1622,7 @@ mod tests {
             .insert(id1, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 992);
@@ -1702,7 +1701,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -1716,7 +1715,7 @@ mod tests {
             .insert(id2, PlayerAction::Bet(22));
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 6);
@@ -1751,7 +1750,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 	
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -1785,7 +1784,7 @@ mod tests {
             .insert(id1, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 978);
@@ -1864,7 +1863,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -1882,7 +1881,7 @@ mod tests {
             .insert(id1, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the small blind won
         assert_eq!(table.players[0].as_ref().unwrap().money, 0);
@@ -1964,7 +1963,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -1982,7 +1981,7 @@ mod tests {
             .insert(id1, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the small blind won
         assert_eq!(table.players[0].as_ref().unwrap().money, 0);
@@ -2066,7 +2065,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2084,7 +2083,7 @@ mod tests {
             .insert(id1, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the big blind caller won, but only doubles its money
         assert_eq!(table.players[0].as_ref().unwrap().money, 1000);
@@ -2189,7 +2188,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2212,7 +2211,7 @@ mod tests {
             .insert(id3, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(table.players[0].as_ref().unwrap().money, 1500);
@@ -2320,7 +2319,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2343,7 +2342,7 @@ mod tests {
             .insert(id3, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(table.players[0].as_ref().unwrap().money, 750);
@@ -2471,7 +2470,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2499,7 +2498,7 @@ mod tests {
             .insert(id3, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // the button won the side pot
         assert_eq!(table.players[0].as_ref().unwrap().money, 2000);
@@ -2541,11 +2540,11 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play(&cloned_actions, &cloned_meta_actions, Some(2));
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
-        thread::sleep(time::Duration::from_secs_f32(1.1)); 
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
 	
         // set the action that player2 folds
         incoming_actions
@@ -2554,7 +2553,7 @@ mod tests {
             .insert(id2, PlayerAction::Fold);
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
-        thread::sleep(time::Duration::from_secs_f32(9.5)); 
+        thread::sleep(time::Duration::from_secs_f32(10.5)); 
 	println!("ADDING THE FOLD OUTSIDE GAME\n\n");	
         // then player1 folds next hand
         incoming_actions
@@ -2563,12 +2562,13 @@ mod tests {
             .insert(id1, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the money balances out
         assert_eq!(table.players[0].as_ref().unwrap().money, 1000);
         assert_eq!(table.players[1].as_ref().unwrap().money, 1000);
     }
+    
     /// the game should end after N hands if there are no human players in the game
     /// even if there is no hand limit or a high hand limit
     /// Note: in this test there are no players period, but the game will still count each check
@@ -2581,17 +2581,23 @@ mod tests {
         let cloned_actions = incoming_actions.clone();
         let cloned_meta_actions = incoming_meta_actions.clone();
 
+        for i in 0..2 {
+            let name = format!("Bot {}", i);
+            let index = table.add_bot(name);
+	    assert!(index.is_ok());
+        }
+	
         let handler = std::thread::spawn(move || {
             // we start the game with None hand limit!
             table.play(&cloned_actions, &cloned_meta_actions, None);
-            game // return the game back
+            table // return the table back
         });
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // check that the game ended with 1 more than the limit turns "played"
-        assert_eq!(table.hands_played, NON_HUMAN_HANDS_LIMIT + 1);
+        assert_eq!(table.hand_num, NON_HUMAN_HANDS_LIMIT + 1);
     }
 
     /// check that the button moves around properly
@@ -2631,7 +2637,7 @@ mod tests {
         let num_hands = 4;
         let handler = std::thread::spawn(move || {
             table.play(&cloned_actions, &cloned_meta_actions, Some(num_hands));
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2694,7 +2700,7 @@ mod tests {
             .insert(id2, PlayerAction::Fold);
         //incoming_actions.lock().unwrap().insert(id4, PlayerAction::Fold);
 
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // Everyone lost their small blind and won someone else's small blind
         // then in the last hand, id3 won the small blind from id2
@@ -2732,7 +2738,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2776,7 +2782,7 @@ mod tests {
             .insert(id1, PlayerAction::Fold);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // there is another player now
         let some_players = table.players.iter().flatten().count();
@@ -2855,7 +2861,7 @@ mod tests {
         assert!(table.players[0].as_ref().unwrap().human_controlled);
 
         // both players not sitting out to start
-        let not_sitting_out = game
+        let not_sitting_out = table
             .players
             .iter()
             .flatten()
@@ -2865,7 +2871,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -2900,10 +2906,10 @@ mod tests {
             .push_back(MetaAction::SitOut(id1));
 	
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // one player sitting out
-        let not_sitting_out = game
+        let not_sitting_out = table
             .players
             .iter()
             .flatten()
@@ -2983,7 +2989,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we wait before adding the leave meta action
@@ -3002,7 +3008,7 @@ mod tests {
             .push_back(MetaAction::Leave(id1));
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
         // flatten to get all the Some() players
         // now there are only one
@@ -3304,7 +3310,7 @@ mod tests {
 
         let handler = std::thread::spawn(move || {
             table.play_one_hand(&cloned_actions, &cloned_meta_actions);
-            game // return the game back
+            table // return the table back
         });
 
 	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
@@ -3317,7 +3323,7 @@ mod tests {
             .insert(id1, PlayerAction::Call);
 
         // get the game back from the thread
-        let game = handler.join().unwrap();
+        let table = handler.join().unwrap();
 
 	// each sitting out player should pay their blinds and then fold,
 	// and player1 will win the blinds
