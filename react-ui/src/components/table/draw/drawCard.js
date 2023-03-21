@@ -217,8 +217,9 @@ export function drawFrontCard(ctx, x, y, value, suit, size=55) {
     drawCardBase(ctx, x, y, width, height, suitColor);
 
     // Draw value
+    if (value === 'T') value = '10';
     ctx.font = `bold ${0.4*size}px arial`;
-    ctx.textAlign = "start";
+    ctx.textAlign = 'start';
     ctx.fillStyle = 'white';
     ctx.fillText(value, x+0.1*size, y+0.41*size);
 
