@@ -42,7 +42,7 @@ export function drawChips(ctx, value, x, y, w, h, size) {
     ctx.fill();
 
     // Draw text (street contributions)
-    ctx.font = `${0.2*size}px arial`;
+    ctx.font = `${0.19*size}px arial`;
     ctx.textAlign = "start";
     ctx.fillStyle = "white";
     ctx.fillText(value, x-w/2 + 0.3*size, y-h/2 + 0.2*size);
@@ -60,7 +60,8 @@ export function drawChips(ctx, value, x, y, w, h, size) {
 
     let maxHeight = 3;
     let stacks = Math.floor(totalNumChips / maxHeight);
-    stacks = Math.max(stacks, 3);
+    stacks = Math.min(stacks, 3);
+    maxHeight = Math.ceil(totalNumChips / stacks);
 
     remaining = value;
     let y0 = y;

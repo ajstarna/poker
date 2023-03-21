@@ -22,8 +22,8 @@ export function drawTable(ctx, width, height) {
     var cw = width/2;
     var ch = height/2;
 
-    var w = 0.8*size;
-    var h = 0.6*size;
+    var w = 0.85*size;
+    var h = 0.65*size;
 
     var x0 = cw - w/2;
     var y0 = ch - h/2;
@@ -32,7 +32,8 @@ export function drawTable(ctx, width, height) {
     var y1 = h;
 
     var borderSize = 0.025 * size;
-    var innerLine = 0.05 * size;
+    var clothSize = 0.04 * size;
+    var innerLine = 0.07 * size;
 
     var r = size / 3 - borderSize;
 
@@ -43,9 +44,26 @@ export function drawTable(ctx, width, height) {
     grdBorder.addColorStop(0, "rgb(100, 100, 100)");
     grdBorder.addColorStop(0.8, "#322F2E");
 
-    ctx.strokeStyle = "rgb(0, 0, 0)";
+    ctx.strokeStyle = "rgb(25, 25, 25)";
     ctx.fillStyle = grdBorder;
     roundRect(ctx, x0, y0, x1, y1, r);
+    ctx.shadowColor = '#1c1917';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetX = 5;
+    ctx.shadowOffsetY = 5;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw inner edge
+    ctx.save();
+    var grdBorder = ctx.createRadialGradient(x0, y0, 20, x0, y0, Math.floor(w/2));
+    grdBorder.addColorStop(0, "rgb(50, 50, 50)");
+    grdBorder.addColorStop(0.8, "rgb(20, 20, 20)");
+
+    ctx.strokeStyle = "rgb(25, 25, 25)";
+    ctx.fillStyle = grdBorder;
+    roundRect(ctx, x0 + borderSize, y0 + borderSize, x1 - 2 * borderSize, y1 - 2 * borderSize, r - borderSize);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 20;
     ctx.shadowOffsetX = 5;
@@ -60,8 +78,9 @@ export function drawTable(ctx, width, height) {
     grdCloth.addColorStop(0, "rgb(0, 150, 0)");
     grdCloth.addColorStop(0.8, "rgb(0, 100, 0)");
 
+    ctx.strokeStyle = "rgb(100, 100, 100)";
     ctx.fillStyle = grdCloth;
-    roundRect(ctx, x0 + borderSize, y0 + borderSize, x1 - 2 * borderSize, y1 - 2 * borderSize, r - borderSize);
+    roundRect(ctx, x0 + clothSize, y0 + clothSize, x1 - 2 * clothSize, y1 - 2 * clothSize, r - clothSize);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 20;
     ctx.shadowOffsetX = 0;

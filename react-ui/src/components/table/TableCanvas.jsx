@@ -91,7 +91,8 @@ const TableCanvas = props => {
             }
 
             var size = Math.min(canvasW, canvasH);
-            let card_size = 0.075 * size;
+            let card_size = 0.06 * size;
+            let card_offset_y = 0.05 * size;
             let card_margin = card_size / 4;
             let card_start = canvasW / 2 - (6 * card_margin + 5 * card_size) / 2;
 
@@ -101,7 +102,7 @@ const TableCanvas = props => {
                 drawFrontCard(
                     context,
                     card_start + card_margin,
-                    canvasH / 2 - card_size,
+                    canvasH / 2 - card_size - card_offset_y,
                     chars[0],
                     chars[1],
                     card_size
@@ -109,7 +110,7 @@ const TableCanvas = props => {
                 drawFrontCard(
                     context,
                     card_start + 2 * card_margin + card_size,
-                    canvasH / 2 - card_size,
+                    canvasH / 2 - card_size - card_offset_y,
                     chars[2],
                     chars[3],
                     card_size
@@ -117,7 +118,7 @@ const TableCanvas = props => {
                 drawFrontCard(
                     context,
                     card_start + 3 * card_margin + 2 * card_size,
-                    canvasH / 2 - card_size,
+                    canvasH / 2 - card_size - card_offset_y,
                     chars[4],
                     chars[5],
                     card_size
@@ -128,7 +129,7 @@ const TableCanvas = props => {
                 drawFrontCard(
                     context,
                     card_start + 4 * card_margin + 3 * card_size,
-                    canvasH / 2 - card_size,
+                    canvasH / 2 - card_size - card_offset_y,
                     chars[0],
                     chars[1],
                     card_size
@@ -139,7 +140,7 @@ const TableCanvas = props => {
                 drawFrontCard(
                     context,
                     card_start + 5 * card_margin + 4 * card_size,
-                    canvasH / 2 - card_size,
+                    canvasH / 2 - card_size - card_offset_y,
                     chars[0],
                     chars[1],
                     card_size
@@ -154,7 +155,7 @@ const TableCanvas = props => {
                 let size = 0.1 * Math.min(canvasW, canvasH);
 
                 let x = canvasW / 2;
-                let y = canvasH / 2 + 1.0 * size;
+                let y = canvasH / 2 + 0.4 * size;
                 let w = size;
                 let h = 0.25 * size;
 
