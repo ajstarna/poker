@@ -786,8 +786,10 @@ impl Table {
             msg_type: "finish_hand".to_owned()
         };
 
-	let pay_outs = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs);
-        finish_hand_message["pay_outs"] = pay_outs.into();	
+	let starting_idx = self.get_starting_idx();
+	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
+	println!("blah settlements = {:?}", settlements);
+        finish_hand_message["settlements"] = settlements.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
 
         let pause_duration = time::Duration::from_secs(1);
@@ -847,12 +849,13 @@ impl Table {
         println!("players = {:?}", self.players);
 
         while gamehand.street != Street::ShowDown {
-            let finished =
-                self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
-	    // after each street, set the player's last action to None again
+	    // before each street, set the player's last action to None
             for player in self.players.iter_mut().flatten() {
 		player.last_action = None;
             }
+	    
+            let finished =
+                self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
             // pause for a second for dramatic effect heh
             let pause_duration = time::Duration::from_secs(2);
             thread::sleep(pause_duration);
@@ -920,7 +923,6 @@ impl Table {
         let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
         println!("num active players = {}", num_active);
 
-        //println!("player at index {} starts the betting", starting_idx);
         if num_settled > 0 {
             println!("num settled (i.e. all in players) = {}", num_settled);
             PlayerConfig::send_group_message(
@@ -2358,7 +2360,6 @@ mod tests {
     /// even if other players keep playing and betting during this hand
     /// In this test, the main pot is won by the small stack, then medium stack wins a separate
     /// side pot, and finally, the rest of the chips are won by a third player
-
     #[test]
     fn multiple_side_pots() {
         let mut deck = RiggedDeck::new();

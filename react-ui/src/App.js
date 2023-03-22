@@ -160,15 +160,15 @@ class App extends React.Component {
             that.chat("Dealer", `Your turn to act. There is currently no bet.`);
           }
         } else if (json.msg_type === "finish_hand") {
-          that.saveHandHistory(json.pay_outs);
+          that.saveHandHistory(json.settlements);
 
-          for (let payOut of json.pay_outs) {
+          for (let settlement of json.settlements) {
             let showdown = "";
-            if (payOut.is_showdown) {
-              showdown = ` in a showdown with ${payOut.hand_result}: ${payOut.constituent_cards} and ${payOut.kickers} kicker.`;
+            if (settlement.is_showdown) {
+              showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
             }
 
-            that.chat("Dealer", `${payOut.player_name} won ${payOut.payout}${showdown}`);
+            that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
           }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
