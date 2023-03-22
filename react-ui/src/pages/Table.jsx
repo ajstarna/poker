@@ -1,5 +1,5 @@
 import React, { createRef } from "react";
-import { SpeakerWaveIcon, SpeakerXMarkIcon } from "@heroicons/react/24/outline";
+import { SpeakerWaveIcon, SpeakerXMarkIcon, ChevronLeftIcon } from "@heroicons/react/24/outline";
 import TableCanvas from "../components/table/TableCanvas";
 import ActionButton from "../components/button/ActionButton"
 import MiniActionButton from "../components/button/MiniActionButton";
@@ -16,6 +16,7 @@ class Table extends React.Component {
             betSize: 0,
             leaving: false,
             sittingOut: false,
+            showChat: false,
             selectedTextWindow: "chat",
             chatMessage: "",
             betPresets: [
@@ -50,6 +51,7 @@ class Table extends React.Component {
 
         // Handlers
         this.handleTextWindowChange = this.handleTextWindowChange.bind(this);
+        this.handleShowChatChange = this.handleShowChatChange.bind(this);
 
         this.handleMessage = this.handleMessage.bind(this);
         this.handleMessageChange = this.handleMessageChange.bind(this);
@@ -200,6 +202,10 @@ class Table extends React.Component {
         this.setState({ selectedTextWindow: event.target.id });
     }
 
+    handleShowChatChange(event) {
+        this.setState({ showChat: event.target.value });
+    }
+
     handleMessage(_) {
         if (this.state.chatMessage.length > 0) {
             let data = {};
@@ -338,6 +344,15 @@ class Table extends React.Component {
             handsPlayed: this.props.gameState?.hands_played
         }
 
+        let yourTurnToAction = false;
+
+        if (this.props.gameState !== null) {
+            let indexToAct = this.props.gameState.index_to_act;
+            let yourIndex = this.props.gameState.your_index;
+
+            yourTurnToAction = yourIndex === indexToAct;
+        }
+
         return (
             <div className="h-screen flex flex-col justify-between">
                 <div className="flex-1 flex flex-grow flex-col md:flex-row">
@@ -377,109 +392,118 @@ class Table extends React.Component {
                     <aside className="lg:w-24 xl:w-48 bg-stone-700"></aside>
                 </div>
 
-                <footer className="grid grid-cols-2 h-70 border-t-2 border-stone-600">
-                    <div className="bg-stone-700 p-2 flex flex-col">
-                        <div className="text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700">
-                            <ul className="flex flex-wrap -mb-px">
-                                <li className="mr-2">
-                                    <p id="chat"
-                                        onClick={this.handleTextWindowChange}
-                                        className={this.state.selectedTextWindow === "chat" ? textWindowTabActive : textWindowTab}>
-                                        Chat
-                                    </p>
-                                </li>
-                                <li className="mr-2">
-                                    <p id="handHistory"
-                                        onClick={this.handleTextWindowChange}
-                                        className={this.state.selectedTextWindow === "handHistory" ? textWindowTabActive : textWindowTab}>
-                                        Hands
-                                    </p>
-                                </li>
-                                <li className="mr-2">
-                                    <p id="stats"
-                                        onClick={this.handleTextWindowChange}
-                                        className={this.state.selectedTextWindow === "stats" ? textWindowTabActive : textWindowTab}>
-                                        Stats
-                                    </p>
-                                </li>
-                            </ul>
-                        </div>
+                <footer className="grid grid-cols-1 md:grid-cols-2 h-72 border-t-2 border-stone-600 bg-stone-700 ">
+                    <div className={(this.state.showChat ? "block" : "hidden md:block") + " flex flex-row"}>
+                        <div className="bg-stone-700 p-2 grow flex flex-col">
+                            <div className="text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700">
+                                <ul className="flex flex-wrap -mb-px">
+                                    <li className="mr-2">
+                                        <p id="chat"
+                                            onClick={this.handleTextWindowChange}
+                                            className={this.state.selectedTextWindow === "chat" ? textWindowTabActive : textWindowTab}>
+                                            Chat
+                                        </p>
+                                    </li>
+                                    <li className="mr-2">
+                                        <p id="handHistory"
+                                            onClick={this.handleTextWindowChange}
+                                            className={this.state.selectedTextWindow === "handHistory" ? textWindowTabActive : textWindowTab}>
+                                            Hands
+                                        </p>
+                                    </li>
+                                    <li className="mr-2">
+                                        <p id="stats"
+                                            onClick={this.handleTextWindowChange}
+                                            className={this.state.selectedTextWindow === "stats" ? textWindowTabActive : textWindowTab}>
+                                            Stats
+                                        </p>
+                                    </li>
+                                </ul>
+                            </div>
 
 
-                        <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
-                            {
-                                this.state.selectedTextWindow === "chat" &&
-                                this.props.chatMessages?.map((message, index) => (
-                                    <p key={`chatMessage${index}`} className="text-stone-200 msg">
-                                        <strong>{message.user}: </strong>
-                                        {message.msg}
-                                    </p>
-                                ))
-                            }
-                            {
-                                this.state.selectedTextWindow === "handHistory" &&
-                                (<>
-                                    <div className="shadow-md sm:rounded-lg">
-                                        <table className="relative w-full text-sm text-left">
-                                            <thead className="text-xs uppercase">
-                                                <tr>
-                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">My Cards</th>
-                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Board</th>
-                                                    <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Returns</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y">
-                                                {
-                                                    this.props.handHistory?.map((hand) => (
-                                                        <tr>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex flex-row space-x-1">
-                                                                    {stringToCards(hand.holeCards)}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex flex-row space-x-1">
-                                                                    {stringToCards(hand.board)}
-                                                                </div>
-                                                            </td>
-                                                            <td className={`${hand.color} px-6 py-4`}>{hand.returns}</td>
-                                                        </tr>
-                                                    ))
-                                                }
-                                            </tbody>
-                                        </table>
+                            <div name="chatLog" className="bg-gray-700 text-gray-200 w-full h-40 overflow-scroll scrollbar scrollbar-thumb-gray-100 scrollbar-track-gray-900">
+                                {
+                                    this.state.selectedTextWindow === "chat" &&
+                                    this.props.chatMessages?.map((message, index) => (
+                                        <p key={`chatMessage${index}`} className="text-stone-200 msg">
+                                            <strong>{message.user}: </strong>
+                                            {message.msg}
+                                        </p>
+                                    ))
+                                }
+                                {
+                                    this.state.selectedTextWindow === "handHistory" &&
+                                    (<>
+                                        <div className="shadow-md sm:rounded-lg">
+                                            <table className="relative w-full text-sm text-left">
+                                                <thead className="text-xs uppercase">
+                                                    <tr>
+                                                        <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">My Cards</th>
+                                                        <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Board</th>
+                                                        <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Returns</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y">
+                                                    {
+                                                        this.props.handHistory?.map((hand) => (
+                                                            <tr>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex flex-row space-x-1">
+                                                                        {stringToCards(hand.holeCards)}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex flex-row space-x-1">
+                                                                        {stringToCards(hand.board)}
+                                                                    </div>
+                                                                </td>
+                                                                <td className={`${hand.color} px-6 py-4`}>{hand.returns}</td>
+                                                            </tr>
+                                                        ))
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                    )
+                                }
+                                {
+                                    this.state.selectedTextWindow === "stats" &&
+                                    (<div className="p-4">
+                                        <p>
+                                            <strong>Position:</strong> {stats.yourPosition} out of {stats.numPlayers}
+                                        </p>
+                                        <p className="mt-2">
+                                            <strong>Hands Played:</strong> {stats.handsPlayed}
+                                        </p>
                                     </div>
-                                </>
-                                )
-                            }
-                            {
-                                this.state.selectedTextWindow === "stats" &&
-                                (<div className="p-4">
-                                    <p>
-                                        <strong>Position:</strong> {stats.yourPosition} out of {stats.numPlayers}
-                                    </p>
-                                    <p className="mt-2">
-                                        <strong>Hands Played:</strong> {stats.handsPlayed}
-                                    </p>
-                                </div>
-                                )
-                            }
-                            <div ref={this.chatEndRef} />
+                                    )
+                                }
+                                <div ref={this.chatEndRef} />
+                            </div>
+                            <div className="w-full flex flex-row mt-2">
+                                < TextInput
+                                    type="text"
+                                    name="textMessage"
+                                    value={this.state.chatMessage}
+                                    onChange={this.handleMessageChange}
+                                    onKeyDown={(event) => { if (event.key === 'Enter') this.handleMessage(null); }}
+                                    className="w-full mr-2 p-2" />
+                                <ActionButton className="ml-2" onClick={this.handleMessage}>
+                                    Send
+                                </ActionButton>
+                            </div>
                         </div>
-                        <div className="w-full flex flex-row mt-2">
-                            < TextInput
-                                type="text"
-                                name="textMessage"
-                                value={this.state.chatMessage}
-                                onChange={this.handleMessageChange}
-                                onKeyDown={(event) => { if (event.key === 'Enter') this.handleMessage(null); }}
-                                className="w-full mr-2 p-2" />
-                            <ActionButton className="ml-2" onClick={this.handleMessage}>
-                                Send
-                            </ActionButton>
+                        <div
+                            onClick={this.handleShowChatChange}
+                            value="false"
+                            className="block md:hidden flex place-items-center px-3 py-3 text-gray-200 hover:bg-slate-600 active:bg-stone-800"
+                        >
+                            <ChevronLeftIcon className="w-4 h-4 text-gray-200" />
                         </div>
                     </div>
-                    <div className="bg-stone-700 px-4 md:px-10">
+                    <div className={(!this.state.showChat ? "block" : "hidden md:block") + " bg-stone-700 px-4 md:px-10"}>
                         <div className="flex flex-col h-full justify-between">
                             <div>
                                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-1">
@@ -528,7 +552,7 @@ class Table extends React.Component {
                                         name="betSize"
                                         className="w-full bg-stone-500 text-center text-gray-200 font-bold" />
                                 </div>
-                                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-1">
+                                <div className={(yourTurnToAction ? "block" : "hidden") + " mt-4 grid grid-cols-4 gap-1"}>
                                     <ActionButton onClick={this.handleFold}>
                                         Fold
                                     </ActionButton>
@@ -545,6 +569,13 @@ class Table extends React.Component {
                             </div>
                             <div className="flex flex-row w-full justify-between space-x-1">
                                 <div className="grow"></div>
+                                <ActionButton
+                                    className="block md:hidden mb-4 x-auto text-gray-200 text-center"
+                                    onClick={this.handleShowChatChange}
+                                    value="true"
+                                >
+                                    Show Chat
+                                </ActionButton>
                                 <ActionButton className="mb-4 x-auto text-gray-200 text-center" onClick={this.handleSittingOutChange}>
                                     {
                                         this.state.sittingOut ?

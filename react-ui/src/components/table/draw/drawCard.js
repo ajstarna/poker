@@ -1,17 +1,24 @@
 import { roundRect } from "./drawFunctions";
+import { newShade } from "./utils";
 
 function drawCardBase(ctx, x, y, width, height, color) {
-    var grd = ctx.createRadialGradient(x + width/2, y + height/2, 5, x + width, y + width, 2*width);
+    ctx.save();
+    var grd = ctx.createRadialGradient(x + width/2, y + height/2, 5, x + width, y + height, 2*width);
     grd.addColorStop(0, color);
-    grd.addColorStop(1, "rgb(0, 0, 0)");
+    grd.addColorStop(0.8, newShade(color, -100));
 
     // Draw using 5px for border radius on all sides
     // stroke it but no fill
     ctx.fillStyle = grd;
-    ctx.strokeStyle = "black";
+    ctx.strokeStyle = newShade(color, 100);
     roundRect(ctx, x, y, width, height, 5);
-    ctx.stroke();
+    ctx.shadowColor = '#1c1917';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
     ctx.fill();
+    ctx.stroke();
+    ctx.restore();
 }
 
 function drawClub(ctx, x, y, width, height, color) {
@@ -186,22 +193,22 @@ function getSuitColor(suit) {
 
 function drawSuit(ctx, x, y, size, suit, color) {
     if (suit === 'c') {
-        drawClub(ctx, x, y, size, 3*size/2, color);
+        drawClub(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 's') {
-        drawSpade(ctx, x, y, size, 3*size/2, color);
+        drawSpade(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 'h') {
-        drawHeart(ctx, x, y, size, 3*size/2, color);
+        drawHeart(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
     if (suit === 'd') {
-        drawDiamond(ctx, x, y, size, 3*size/2, color);
+        drawDiamond(ctx, x, y, size, 1.2*size, color);
         return;
     }
 
@@ -209,29 +216,43 @@ function drawSuit(ctx, x, y, size, suit, color) {
 }
 
 export function drawFrontCard(ctx, x, y, value, suit, size=55) {
-    var width = size;
-    var height = 3*size/2;
-    var suitColor = getSuitColor(suit);
+    let width = size;
+    let height = 3*size/2;
+    let suitSize = 0.4*size;
+    let suitColor = getSuitColor(suit);
 
     // Draw card base
-    drawCardBase(ctx, x, y, width, height, suitColor);
+    drawCardBase(ctx, x, y, width, height, 'white');
 
     // Draw value
     if (value === 'T') value = '10';
-    ctx.font = `bold ${0.4*size}px arial`;
-    ctx.textAlign = 'start';
-    ctx.fillStyle = 'white';
-    ctx.fillText(value, x+0.1*size, y+0.41*size);
+    ctx.font = `900 ${0.4*size}px arial`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = suitColor;
+    ctx.fillText(value, x+0.5*size, y+0.5*size);
 
     // Draw suit
-    drawSuit(ctx, x + width/2, y + width/2, width/2, suit, 'white');
+    drawSuit(ctx, x + size/2, y + size/2 + 0.75*suitSize, suitSize, suit, suitColor);
 }
 
 export function drawBackCard(ctx, x, y, size=55) {
-    var width = size;
-    var height = 3*size/2;
+    let width = size;
+    let height = 3*size/2;
+    let offset = 0.1*size;
 
     // Draw card base
-    drawCardBase(ctx, x, y, width, height, 'rgb(100, 100, 100)');
+    drawCardBase(ctx, x, y, width, height, 'rgb(60, 100, 100)');
+
+    ctx.save();
+    ctx.strokeStyle = 'rgb(90, 130, 130)';
+    roundRect(ctx, x + offset, y + offset, width - 2*offset, height - 2*offset, 5);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = 'rgb(20, 80, 80)';
+    roundRect(ctx, x + 3*offset, y + 3*offset, width - 6*offset, height - 6*offset, 5);
+    ctx.stroke();
+    ctx.restore();
 }
 
