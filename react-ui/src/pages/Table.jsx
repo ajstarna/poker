@@ -14,6 +14,8 @@ class Table extends React.Component {
 
         this.state = {
             betSize: 0,
+            minBetSize: 0,
+            maxBetSize: 1000,
             leaving: false,
             sittingOut: false,
             showChat: false,
@@ -66,16 +68,67 @@ class Table extends React.Component {
         this.handleBet = this.handleBet.bind(this);
 
         this.handleBetPreset = this.handleBetPreset.bind(this);
-
-        // Updates
-        this.update = this.update.bind(this);
     }
 
     componentDidUpdate(_) { /*prevProps*/
         //this.chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
 
-    getBetMinMax(gameState) {
+    static getDerivedStateFromProps(props, state) {
+        if (state === null || state === undefined) return null;
+
+        let gameState = props.gameState;
+
+        if (gameState === null) return state;
+
+        // Update sitting out
+        let isSittingOut = Table.isSittingOut(gameState);
+        if (isSittingOut !== state.sittingOut) {
+            state.sittingOut = isSittingOut;
+        }
+
+        // Update bet
+        let [min, max] = Table.getBetMinMax(gameState);
+        state.minBetSize = min;
+        state.maxBetSize = max;
+
+        if (state.betSize < min) {
+            state.betSize = min;
+        } else if (state.betSize > max) {
+            state.betSize = max;
+        }
+
+        // Update bet presets
+        let betPresets = state.betPresets;
+        // Update min and max
+        betPresets[0].value = min;
+        betPresets[3].value = max;
+
+        // Update other presets
+        let potSize = 0;
+        potSize = gameState.pots?.reduce((partialSum, a) => partialSum + a, 0);
+        let smallBlind = gameState.small_blind;
+        let bigBlind = gameState.big_blind;
+
+        // No bets
+        if (potSize <= (smallBlind + bigBlind)) {
+            betPresets[1].name = "2x";
+            betPresets[1].value = 2 * bigBlind;
+
+            betPresets[2].name = "3x";
+            betPresets[2].value = 3 * bigBlind;
+        } else {
+            betPresets[1].name = "0.5";
+            betPresets[1].value = Math.floor(0.5 * potSize);
+
+            betPresets[2].name = "Pot";
+            betPresets[2].value = potSize;
+        }
+
+        return state;
+    }
+
+    static getBetMinMax(gameState) {
         if (gameState === null) return [0, 0];
 
         let main_player = gameState.players[gameState.your_index];
@@ -95,7 +148,7 @@ class Table extends React.Component {
         return [0, max];
     }
 
-    isSittingOut(gameState) {
+    static isSittingOut(gameState) {
         if (gameState === null) return true;
 
         let main_player = gameState.players[gameState.your_index];
@@ -128,10 +181,7 @@ class Table extends React.Component {
         }
 
         this.sendToWS(data);
-
-        console.log(`${isSittingOut} - ${data}`);
         this.setState({ sittingOut: !isSittingOut });
-        console.log(this.state);
     }
 
     handleFold(_) {
@@ -227,68 +277,7 @@ class Table extends React.Component {
         this.setState({ chatMessage: parseInt(event.target.value) });
     }
 
-    // Updates
-    update() {
-        let gameState = this.props.gameState;
-
-        if (gameState === null) return;
-
-        // Update sitting out
-        let isSittingOut = this.isSittingOut(gameState);
-        if (isSittingOut !== this.state.sittingOut) {
-            this.setState({ sittingOut: isSittingOut });
-        }
-
-        // Update bet
-        let [min, max] = this.getBetMinMax(gameState);
-        if (this.betSlider.current) {
-            this.betSlider.current.min = min;
-            this.betSlider.current.max = max;
-        }
-
-        if (this.betSize.current) {
-            this.betSize.current.min = min;
-            this.betSize.current.max = max;
-        }
-
-        if (this.state.betSize < min) {
-            this.setState({ betSize: min });
-        } else if (this.state.betSize > max) {
-            this.setState({ betSize: max });
-        }
-
-        // Update bet presets
-        let betPresets = this.state.betPresets;
-        // Update min and max
-        betPresets[0].value = min;
-        betPresets[3].value = max;
-
-        // Update other presets
-        let potSize = 0;
-        potSize = gameState.pots?.reduce((partialSum, a) => partialSum + a, 0);
-        let smallBlind = gameState.small_blind;
-        let bigBlind = gameState.big_blind;
-
-        // No bets
-        if (potSize <= (smallBlind + bigBlind)) {
-            betPresets[1].name = "2x";
-            betPresets[1].value = 2 * bigBlind;
-
-            betPresets[2].name = "3x";
-            betPresets[2].value = 3 * bigBlind;
-        } else {
-            betPresets[1].name = "0.5";
-            betPresets[1].value = Math.floor(0.5 * potSize);
-
-            betPresets[2].name = "Pot";
-            betPresets[2].value = potSize;
-        }
-    }
-
     render() {
-        // Update Sit Out State
-        this.update();
-
         let textWindowTab = "inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300 cursor-pointer";
         let textWindowTabActive = "inline-block p-4 text-blue-600 border-b-2 border-blue-600 rounded-t-lg active dark:text-blue-500 dark:border-blue-500 cursor-pointer";
 
@@ -351,6 +340,16 @@ class Table extends React.Component {
             let yourIndex = this.props.gameState.your_index;
 
             yourTurnToAction = yourIndex === indexToAct;
+        }
+
+        if (this.betSlider.current) {
+            this.betSlider.current.min = this.state.minBetSize;
+            this.betSlider.current.max = this.state.maxBetSize;
+        }
+
+        if (this.betSize.current) {
+            this.betSize.current.min = this.state.minBetSize;
+            this.betSize.current.max = this.state.maxBetSize;
         }
 
         return (

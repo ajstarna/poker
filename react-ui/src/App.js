@@ -163,12 +163,14 @@ class App extends React.Component {
           that.saveHandHistory(json.settlements);
 
           for (let settlement of json.settlements) {
-            let showdown = "";
-            if (settlement.is_showdown) {
-              showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
-            }
+            if (settlement.winner) {
+              let showdown = "";
+              if (settlement.is_showdown) {
+                showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
+              }
 
-            that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
+              that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
+            }
           }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
@@ -246,7 +248,7 @@ class App extends React.Component {
     this.forceUpdate();
   }
 
-  saveHandHistory(payOuts) {
+  saveHandHistory(settlements) {
     let { gameState } = this.state;
 
     let playerIndex = gameState.your_index;
@@ -268,9 +270,9 @@ class App extends React.Component {
     let returns = 0;
     let player = gameState.players[playerIndex];
     
-    for (let payOut of payOuts) {
-      if (payOut.index === playerIndex) {
-        returns += payOut.payout;
+    for (let settlement of settlements) {
+      if (settlement.index === playerIndex) {
+        returns += settlement.payout;
       }
     }
 
