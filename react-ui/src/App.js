@@ -251,7 +251,76 @@ class App extends React.Component {
 
   handleShowdown(settlements) {
     let { gameState } = this.state;
-    gameState.settlements = settlements;
+
+    let showdown = [];
+    // Get main pot winner
+    let mainPot = settlements.filter((settlement) => settlement.pot_index === 0);
+
+    for (let player of mainPot) {
+        let playerShowdown = {
+            index: player.index,
+            player_name: player.player_name,
+            winner: player.winner,
+            showCards: false
+        }
+
+        if (player.winner) {
+            playerShowdown.payout = player.payout;
+        }
+
+        if ("hole_cards" in player) {
+            playerShowdown.showCards = true;
+            playerShowdown.hole_cards = player.hole_cards;
+            playerShowdown.hand_result = player.hand_result;
+            playerShowdown.constituent_cards = player.constituent_cards;
+            playerShowdown.kickers = player.kickers;
+        }
+
+        showdown.push(playerShowdown);
+    }
+
+    // Get side pot winners
+    let sidePots = settlements.filter((settlement) => settlement.pot_index > 0);
+    let sidePotIndices = new Set(sidePots.map((pot) => pot.pot_index));
+    let sidePotSizes = {};
+
+    for (let i of sidePotIndices) {
+        sidePotSizes[i] = sidePots.filter((pot) => pot.pot_index === i).length;
+    }
+
+    for (let playerSidePot of sidePots) {
+        let playerIndex = playerSidePot.index;
+        let potIndex = playerSidePot.pot_index;
+        let potSize = sidePotSizes[potIndex];
+
+        const playerShowdown = showdown.find(player => player.index === playerIndex);
+
+        if (potSize <= 1) {
+            if ("payout" in playerShowdown) {
+                playerShowdown.payout += playerSidePot.payout;
+            } else {
+                playerShowdown.payout = playerSidePot.payout;
+            }
+        } else {
+            if (playerSidePot.winner) {
+                if ("payout" in playerShowdown) {
+                    playerShowdown.payout += playerSidePot.payout;
+                } else {
+                    playerShowdown.payout = playerSidePot.payout;
+                }
+            }
+
+            if (!playerShowdown.showCards && "hole_cards" in playerSidePot) {
+                playerShowdown.showCards = true;
+                playerShowdown.hole_cards = playerSidePot.hole_cards;
+                playerShowdown.hand_result = playerSidePot.hand_result;
+                playerShowdown.constituent_cards = playerSidePot.constituent_cards;
+                playerShowdown.kickers = playerSidePot.kickers;
+            }
+        }
+    }
+
+    gameState.showdown = showdown;
 
     this.setState({ gameState: gameState });
   }

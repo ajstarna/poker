@@ -28,7 +28,7 @@ const TableCanvas = props => {
         drawTable(context, canvasW, canvasH);
 
         if (gameState) {
-            let isShowdown = gameState.street === "showdown" && "settlements" in gameState;
+            let isShowdown = gameState.street === "showdown" && "showdown" in gameState;
             let bestHand = [];
             let bestHandResult = "";
             let whoShowed = [];
@@ -37,9 +37,9 @@ const TableCanvas = props => {
 
             if (isShowdown) {
                 numberShowed = Math.ceil(frameCount / 15);
-                showdownEnded = gameState.settlements.length <= numberShowed;
-                whoShowed = gameState.settlements.slice(0, numberShowed);
-                let winners = whoShowed.filter((settlement) => { return settlement.winner });
+                showdownEnded = gameState.showdown.length <= numberShowed;
+                whoShowed = gameState.showdown.slice(0, numberShowed);
+                let winners = whoShowed.filter((showdown) => { return showdown.winner });
 
                 // We have a winner
                 if (winners.length > 0) {
@@ -98,16 +98,22 @@ const TableCanvas = props => {
                 });
 
                 if (isShowdown) {
-                    let settlementPlayers = whoShowed.filter((settlement) => { return settlement.index === playerState.index });
-                    if (settlementPlayers.length > 0) {
-                        let settlementPlayer = settlementPlayers[0];
+                    let showdownPlayers = whoShowed.filter((showdownPlayer) => { return showdownPlayer.index === playerState.index });
+                    if (showdownPlayers.length > 0) {
+                        let showdownPlayer = showdownPlayers[0];
 
-                        if (showdownEnded && settlementPlayer.winner) {
-                            player.won();
+                        if (showdownEnded) {
+                            if (showdownPlayer.winner) {
+                                player.won();
+                            }
+
+                            if ("payout" in showdownPlayer) {
+                                player.street_contributions = showdownPlayer.payout;
+                            }
                         }
 
-                        if ("hole_cards" in settlementPlayer) {
-                            let holeCards = settlementPlayer.hole_cards;
+                        if (showdownPlayer.showCards) {
+                            let holeCards = showdownPlayer.hole_cards;
 
                             let chars = holeCards.split("");
 
