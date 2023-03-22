@@ -270,8 +270,7 @@ class App extends React.Component {
     
     for (let payOut of payOuts) {
       if (payOut.index === playerIndex) {
-        returns = payOut.payout;
-        break;
+        returns += payOut.payout;
       }
     }
 
