@@ -201,7 +201,7 @@ export class Player {
                 action_stroke_color = "#22B6DD";
             }
 
-            if (this.action === "bet") {
+            if (this.action.startsWith("bet")) {
                 action_fill_color = "#168962";
                 action_stroke_color = "#24DB9D";
             }

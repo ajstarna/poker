@@ -161,7 +161,6 @@ class App extends React.Component {
           }
         } else if (json.msg_type === "finish_hand") {
           that.handleShowdown(json.settlements);
-          that.saveHandHistory(json.settlements);
 
           for (let settlement of json.settlements) {
             if (settlement.winner) {
@@ -322,12 +321,12 @@ class App extends React.Component {
 
     gameState.showdown = showdown;
 
+    this.saveHandHistory(gameState, settlements);
+
     this.setState({ gameState: gameState });
   }
 
-  saveHandHistory(settlements) {
-    let { gameState } = this.state;
-
+  saveHandHistory(gameState, settlements) {
     let playerIndex = gameState.your_index;
     let holeCards = gameState.hole_cards;
     let board = "";
@@ -382,7 +381,8 @@ class App extends React.Component {
       board: board,
       returns: Math.abs(returns),
       loss: returns < 0,
-      color: color
+      color: color,
+      gameState: gameState
     }
 
     this.setState({ 
