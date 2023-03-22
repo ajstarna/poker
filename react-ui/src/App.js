@@ -24,157 +24,7 @@ class App extends React.Component {
         reconnecting: true,
         playerName: playerName,
         creatingTable: false,
-        gameState: {
-          "msg_type": "game_state",
-          "name": "HKGD",
-          "max_players": 9,
-          "small_blind": 1,
-          "big_blind": 2,
-          "buy_in": 200,
-          "password": null,
-          "button_idx": 0,
-          "hand_num": 1,
-          "game_suspended": false,
-          "players": [
-              {
-                  "index": 0,
-                  "player_name": "Bot 0",
-                  "money": 200,
-                  "is_active": false,
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 0
-              },
-              {
-                  "index": 1,
-                  "player_name": "Bot 1",
-                  "money": 119,
-                  "is_active": true,
-                  "last_action": "call",
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 12,
-                  "preflop_cont": 69
-              },
-              {
-                  "index": 2,
-                  "player_name": "Bot 2",
-                  "money": 131,
-                  "is_active": false,
-                  "last_action": "fold",
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 69
-              },
-              {
-                  "index": 3,
-                  "player_name": "Bot 3",
-                  "money": 200,
-                  "is_active": false,
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 0
-              },
-              {
-                  "index": 4,
-                  "player_name": "Bot 4",
-                  "money": 119,
-                  "is_active": true,
-                  "last_action": "bet:12",
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 12,
-                  "preflop_cont": 69
-              },
-              {
-                  "index": 5,
-                  "player_name": "Bot 5",
-                  "money": 200,
-                  "is_active": true,
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 0
-              },
-              {
-                  "index": 6,
-                  "player_name": "Bot 6",
-                  "money": 200,
-                  "is_active": false,
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 0
-              },
-              {
-                  "index": 7,
-                  "player_name": "Bot 7",
-                  "money": 131,
-                  "is_active": false,
-                  "last_action": "fold",
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 69
-              },
-              {
-                  "index": 8,
-                  "player_name": "Thanny",
-                  "money": 200,
-                  "is_active": false,
-                  "is_sitting_out": true,
-                  "turn_cont": 0,
-                  "flop_cont": 0,
-                  "river_cont": 0,
-                  "preflop_cont": 0
-              }
-          ],
-          "street": "showdown",
-          "current_bet": 0,
-          "flop": "5sJc9d",
-          "turn": "Qs",
-          "river": "7s",
-          "pots": [
-              300
-          ],
-          "your_index": 8,
-          "hole_cards": "Jd4c",
-          "settlements": [
-              {
-                  "index": 4,
-                  "player_name": "Bot 4",
-                  "is_showdown": true,
-                  "pot_index": 0,
-                  "winner": false,
-                  "hole_cards": "2c4s",
-                  "hand_result": "HighCard",
-                  "constituent_cards": "Qs",
-                  "kickers": "5s-7s-9d-Jc"
-              },
-              {
-                "index": 5,
-                "player_name": "Bot 5",
-                "is_showdown": true,
-                "pot_index": 0,
-                "winner": false,
-              },
-              {
-                  "index": 1,
-                  "player_name": "Bot 1",
-                  "is_showdown": true,
-                  "pot_index": 0,
-                  "winner": true,
-                  "payout": 300,
-                  "hole_cards": "4h8c",
-                  "hand_result": "HighCard",
-                  "constituent_cards": "Qs",
-                  "kickers": "7s-8c-9d-Jc"
-              }
-          ]
-      },
+        gameState: null,
         soundEnabled: false,
         chatMessages: [],
         handHistory: [],
@@ -429,7 +279,7 @@ class App extends React.Component {
     let player = gameState.players[playerIndex];
     
     for (let settlement of settlements) {
-      if (settlement.index === playerIndex) {
+      if (settlement.index === playerIndex && "payout" in settlement) {
         returns += settlement.payout;
       }
     }
@@ -477,7 +327,6 @@ class App extends React.Component {
 
   render() {
 
-    /*
     if (this.state.reconnecting) {
       return (
         <MenuBody>
@@ -487,7 +336,6 @@ class App extends React.Component {
               </MenuBody>
       );
     }
-    */
 
     return (
       <>

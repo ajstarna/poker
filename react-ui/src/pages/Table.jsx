@@ -330,7 +330,7 @@ class Table extends React.Component {
         let stats = {
             yourPosition: yourPosition,
             numPlayers: playerOrder.length,
-            handsPlayed: this.props.gameState?.hands_played
+            handsPlayed: this.props.gameState?.hand_num
         }
 
         let yourTurnToAction = false;
