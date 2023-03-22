@@ -20,6 +20,16 @@ export class Player {
       this.street_contributions = street_contributions;
       this.is_active = is_active;
       this.cards = [];
+      this.muck = false;
+      this.winner = false;
+    }
+
+    muckCards() {
+        this.muck = true;
+    }
+
+    won() {
+        this.winner = true;
     }
 
     giveCards(card1, card2) {
@@ -79,7 +89,7 @@ export class Player {
         ctx.stroke();
     }
 
-    draw(ctx, width, height) {
+    draw(ctx, width, height, frameCount) {
         var size = Math.min(width, height);
         let info_size = 0.175 * size;
         let info_offset = info_size / 2;
@@ -107,7 +117,8 @@ export class Player {
         if (this.is_players_turn_to_act) {
             ctx.save();
             // Draw green boarder if it is the players turn
-            ctx.fillStyle = "#3AC547";
+            let fillColor = Math.floor(frameCount / 3) % 2 === 0 ? "#3AC547" : "#32AC3E";
+            ctx.fillStyle = fillColor;
             roundRect(ctx,
                 info_x0 - boarder_size,
                 info_y0 - boarder_size,
@@ -135,38 +146,45 @@ export class Player {
         ctx.fill();
         ctx.stroke();
         ctx.restore();
-        
 
-        // Draw name
-        if (this.is_active && this.action !== "fold") {
-            if (this.is_players_turn_to_act) {
-                ctx.fillStyle = "#F19B0E";
+        if (this.winner) {
+            ctx.fillStyle = "#F19B0E"
+            ctx.font = `bold ${0.25*info_size}px arial`;
+            ctx.textAlign = "center";
+            ctx.fillText("Win", info_x0+info_offset, info_y0 + info_size/3);
+        } else {
+            // Draw name
+            if (this.is_active && this.action !== "fold") {
+                if (this.is_players_turn_to_act) {
+                    ctx.fillStyle = "#F19B0E";
+                } else {
+                    ctx.fillStyle = "white";
+                }
             } else {
-                ctx.fillStyle = "white";
+                ctx.fillStyle = "#aaaaaa";
             }
-        } else {
-            ctx.fillStyle = "#aaaaaa";
-        }
+            ctx.font = `bold ${0.15*info_size}px arial`;
+            ctx.textAlign = "center";
+            ctx.fillText(this.name, info_x0+info_offset, info_y0 + info_size/6);
 
-        ctx.font = `bold ${0.15*info_size}px arial`;
-        ctx.textAlign = "center";
-        ctx.fillText(this.name, info_x0+info_offset, info_y0 + info_size/6);
+            // Draw money
+            if (this.is_active && this.action !== "fold") {
+                ctx.fillStyle = "#3AC547";
+            } else {
+                ctx.fillStyle = "#206E28";
+            }
 
-        // Draw money
-        if (this.is_active && this.action !== "fold") {
-            ctx.fillStyle = "#3AC547";
-        } else {
-            ctx.fillStyle = "#206E28";
+            let moneyText = this.money;
+            if (this.muck) {
+                moneyText = "Muck";
+            } else if (this.money === 0 && this.is_active) {
+                moneyText = "All In";
+            }
+            
+            ctx.font = `bold ${0.15*info_size}px arial`;
+            ctx.textAlign = "center";
+            ctx.fillText(moneyText, info_x0+info_offset, info_y0 + 3*info_size/8);
         }
-
-        let moneyText = this.money;
-        if (this.money === 0 && this.is_active) {
-            moneyText = "All In"
-        }
-        
-        ctx.font = `bold ${0.15*info_size}px arial`;
-        ctx.textAlign = "center";
-        ctx.fillText(moneyText, info_x0+info_offset, info_y0 + 3*info_size/8);
 
         if (this.action) {
 

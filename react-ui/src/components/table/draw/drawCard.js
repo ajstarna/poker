@@ -10,7 +10,7 @@ function drawCardBase(ctx, x, y, width, height, color) {
     // Draw using 5px for border radius on all sides
     // stroke it but no fill
     ctx.fillStyle = grd;
-    ctx.strokeStyle = newShade(color, 100);
+    ctx.strokeStyle = newShade(color, -50);
     roundRect(ctx, x, y, width, height, 5);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 5;
@@ -215,24 +215,24 @@ function drawSuit(ctx, x, y, size, suit, color) {
     throw new Error('Suit must be one of the following [c, s, h, d]');
 }
 
-export function drawFrontCard(ctx, x, y, value, suit, size=55) {
+export function drawFrontCard(ctx, x, y, value, suit, size=55, darker=false) {
     let width = size;
     let height = 3*size/2;
     let suitSize = 0.4*size;
     let suitColor = getSuitColor(suit);
-
+    let shade = darker ? -100 : 0;
     // Draw card base
-    drawCardBase(ctx, x, y, width, height, 'white');
+    drawCardBase(ctx, x, y, width, height, newShade('#ffffff', shade));
 
     // Draw value
     if (value === 'T') value = '10';
     ctx.font = `900 ${0.4*size}px arial`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = suitColor;
+    ctx.fillStyle = newShade(suitColor, shade);
     ctx.fillText(value, x+0.5*size, y+0.5*size);
 
     // Draw suit
-    drawSuit(ctx, x + size/2, y + size/2 + 0.75*suitSize, suitSize, suit, suitColor);
+    drawSuit(ctx, x + size/2, y + size/2 + 0.75*suitSize, suitSize, suit, newShade(suitColor, shade));
 }
 
 export function drawBackCard(ctx, x, y, size=55) {
