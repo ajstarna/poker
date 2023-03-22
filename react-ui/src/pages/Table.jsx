@@ -8,6 +8,7 @@ import TextInput from "../components/input/TextInput";
 import { handleAdminCommands, ADMIN_PREFIX } from "../utils/admin-actions";
 import CardCanvas from "../components/table/CardCanvas";
 import MessageModal from "../components/modal/MessageModal";
+import ReplayHandler from "../components/table/ReplayHandler";
 
 class Table extends React.Component {
     constructor(props) {
@@ -20,7 +21,7 @@ class Table extends React.Component {
             leaving: false,
             sittingOut: false,
             showReplay: false,
-            replayState: null,
+            replayStateHistory: null,
             showChat: false,
             selectedTextWindow: "chat",
             chatMessage: "",
@@ -361,7 +362,8 @@ class Table extends React.Component {
                     <MessageModal
                         title="Replay"
                         onClick={() => this.setState({ showReplay: false })}>
-                        <TableCanvas gameState={this.state.replayState} className="w-96 h-96" />
+                        <ReplayHandler
+                            replayStateHistory={this.state.replayStateHistory} />
                     </MessageModal>
                 ) : null}
                 <div className="h-screen flex flex-col justify-between">
@@ -476,7 +478,7 @@ class Table extends React.Component {
                                                                             onClick={() => {
                                                                                 this.setState({
                                                                                     showReplay: true,
-                                                                                    replayState: hand.gameState
+                                                                                    replayStateHistory: hand.replayStateHistory
                                                                                 })
                                                                             }}
                                                                         />

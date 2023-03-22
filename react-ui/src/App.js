@@ -28,6 +28,7 @@ class App extends React.Component {
         soundEnabled: false,
         chatMessages: [],
         handHistory: [],
+        pastHandStates: [],
         tables: {},
         showErrorModal: false,
         errorMessage: ''
@@ -140,7 +141,8 @@ class App extends React.Component {
         } else if (json.msg_type === "game_state") {
           that.setState({
             creatingTable: false,
-            gameState: json
+            gameState: json,
+            pastHandStates: [...that.state.pastHandStates, json]
           });
           that.props.navigate("/table");
         } else if (json.msg_type === "chat") {
@@ -150,6 +152,9 @@ class App extends React.Component {
             that.deckSuffleSound.current?.play();
           }
           that.chat("Dealer", "Playing hand " + json.hand_num);
+
+          // Reset past hand states
+          that.setState({pastHandStates: []});
         } else if (json.msg_type === "prompt") {
           if (that.state.soundEnabled) {
             that.notificationActionSound.current?.play();
@@ -382,7 +387,7 @@ class App extends React.Component {
       returns: Math.abs(returns),
       loss: returns < 0,
       color: color,
-      gameState: gameState
+      replayStateHistory: this.state.pastHandStates
     }
 
     this.setState({ 
