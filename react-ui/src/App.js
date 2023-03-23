@@ -324,6 +324,10 @@ class App extends React.Component {
         }
     }
 
+    if (gameState.street !== "showdown") {
+      gameState.street = "end_of_hand";
+    }
+
     gameState.showdown = showdown;
 
     this.saveHandHistory(gameState, settlements);

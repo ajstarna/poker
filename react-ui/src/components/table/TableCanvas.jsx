@@ -29,6 +29,7 @@ const TableCanvas = props => {
 
         if (gameState) {
             let isShowdown = gameState.street === "showdown" && "showdown" in gameState;
+            let isEndOfHand = gameState.street === "end_of_hand" && "showdown" in gameState;
             let bestHand = [];
             let bestHandResult = "";
             let whoShowed = [];
@@ -44,14 +45,16 @@ const TableCanvas = props => {
                 // We have a winner
                 if (winners.length > 0) {
                     let winner = winners[0];
-                    bestHandResult = winner.hand_result;
-                    bestHand = [];
-                    bestHand = bestHand.concat(winner.constituent_cards.split("-"));
-                    bestHand = bestHand.concat(winner.kickers.split("-"));
+                    if (winner.showCards) {
+                        bestHandResult = winner.hand_result;
+                        bestHand = [];
+                        bestHand = bestHand.concat(winner.constituent_cards.split("-"));
+                        bestHand = bestHand.concat(winner.kickers.split("-"));
+                    }
                 } else if (whoShowed.length > 0) {
                     for (let i = whoShowed.length - 1; i >= 0; i--) {
                         let winner = whoShowed[i];
-                        if ("constituent_cards" in winner && "kickers" in winner) {
+                        if (winner.showCards) {
                             bestHandResult = winner.hand_result;
                             bestHand = [];
                             bestHand = bestHand.concat(winner.constituent_cards.split("-"));
@@ -129,6 +132,19 @@ const TableCanvas = props => {
                             new PlayerCard(false),
                             new PlayerCard(false)
                         );
+                    }
+                } else if (isEndOfHand) {
+                    let finalPlayers = gameState.showdown.filter((showdownPlayer) => { return showdownPlayer.index === playerState.index });
+                    if (finalPlayers.length > 0) {
+                        let finalPlayer = finalPlayers[0];
+
+                        if (finalPlayer.winner) {
+                            player.won();
+                        }
+
+                        if ("payout" in finalPlayer) {
+                            player.street_contributions = finalPlayer.payout;
+                        }
                     }
                 } else {
                     // If this is the player then show the player their cards
