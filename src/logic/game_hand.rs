@@ -2,7 +2,7 @@ use std::fmt;
 use std::collections::{HashMap, HashSet};
 
 use super::card::{Card, HandResult};
-use super::player::{Player, PlayerConfig};
+use super::player::{Player, PlayerConfig, PlayerAction};
 use super::pots::PotManager;
 
 use json::object;
@@ -75,9 +75,15 @@ impl GameHand {
     /// If we did not get to show down, then there is one active player who deserves all the money.
     /// Otherwise, we need to figure out who has the best hand.
     /// Each pot needs its own calculation
-    pub fn divvy_pots(&self,
-		  players: &mut [Option<Player>; 9],
-		  player_ids_to_configs: &HashMap::<Uuid, PlayerConfig>)
+    /// Returns a list of settlements of the paid (or active at showdown) players.
+    /// A settlement shows the payout and hole cards of winning players, OR possibly the hole cards
+    /// of losing players (if they had to show in the final reveal order of cards - starting with most aggression)
+    pub fn divvy_pots(
+	&self,
+	players: &mut [Option<Player>; 9],
+	player_ids_to_configs: &HashMap::<Uuid, PlayerConfig>,
+	starting_idx: usize
+    )
     -> Vec<json::JsonValue> {
         let hand_results: HashMap<Uuid, Option<HandResult>> = players
             .iter()
@@ -85,116 +91,161 @@ impl GameHand {
             .filter(|player| player_ids_to_configs.contains_key(&player.id)) // make sure still in the game
             .map(|player| (player.id, player.determine_best_hand(self)))
             .collect();
+	
         let is_showdown = self.is_showdown();
-        let mut pay_outs: Vec<json::JsonValue> = vec![];	
+        let mut settlements: Vec<json::JsonValue> = vec![];	
         println!("hand results = {:?}", hand_results);
-        if is_showdown {
-            // if we made it to show down, there are multiple players left, so we need to see who
-            // has the best hand.
-            println!("Multiple active players made it to showdown!");
-            println!("{:?}", self.pot_manager);
-            for pot in self.pot_manager.iter() {
-                // for each pot, we determine who should get paid out
-                // a player can only get paid for a pot that they contributed to
-                // so each pot has its own best_hand calculation
-                println!("Looking at pot {:?}", pot);
-                let mut best_ids = HashSet::<Uuid>::new();
-                let mut best_hand: Option<&HandResult> = None;
-                for (id, current_opt) in hand_results
+	let showdown_starting_idx = GameHand::get_showdown_starting_idx(players, starting_idx);
+	for (pot_idx, pot) in self.pot_manager.iter().enumerate().filter(|(_, pot)| pot.money > 0) {
+	    // for each pot, we determine who should get paid out
+	    // a player can only get paid for a pot that they contributed to
+	    // so each pot has its own best_hand calculation
+            let (best_ids, best_hand, amount, showing_ids, elligible_ids) = if is_showdown {
+		// if we made it to show down, there are multiple players left, so we need to see who
+		// has the best hand.
+		println!("Multiple active players made it to showdown!");
+		println!("Looking at pot {:?}", pot);
+		let mut best_ids = HashSet::<Uuid>::new(); // who is a winner of the pot
+		let mut showing_ids = HashSet::<Uuid>::new(); // who needs to show their cards
+		let mut elligible_ids = HashSet::<Uuid>::new(); // who was even in the pot (and should get a settlement)
+		let mut best_hand: Option<&HandResult> = None;
+		for i in (showdown_starting_idx..9).chain(0..showdown_starting_idx) {
+		    if let Some(player) = &mut players[i]  {
+			if pot.is_elligible(&player.id) && hand_results.get(&player.id).is_some() {
+			    let current_opt = hand_results.get(&player.id).unwrap();
+			    if current_opt.is_none() {
+				continue;
+			    }
+			    elligible_ids.insert(player.id); // indicates we looked at them even for this pot
+			    let current_result = current_opt.as_ref().unwrap();
+			    if best_hand.is_none() || current_result > best_hand.unwrap() {
+				println!("new best hand for id {:?}", player.id);
+				best_hand = Some(&current_result);
+				best_ids.clear();
+				best_ids.insert(player.id); // only one best hand now
+				showing_ids.insert(player.id); // they need to show since a potential winner at this point
+			    } else if current_result == best_hand.unwrap() {
+				println!("equally good hand for id {:?}", player.id);
+				best_ids.insert(player.id); // another index that also has the best hand
+				showing_ids.insert(player.id); // they need to show since a potential winner at this point
+			    } else {
+				println!("hand worse for id {:?}", player.id);
+				continue;
+			    }
+			}
+		    }
+		}
+		// divy the pot to all the winners
+		let num_winners = best_ids.len();
+		let amount = (pot.get_money() as f64 / num_winners as f64) as u32;
+		(best_ids, best_hand, amount, showing_ids, elligible_ids)
+            } else {
+		// the hand ended before Showdown, so we simple find the one active player remaining
+		let best_ids:  HashSet::<Uuid> = players
 		    .iter()
-		    .filter(|(id, opt)| pot.is_elligible(&id) && opt.is_some()) {
-                    let current_result = current_opt.as_ref().unwrap();
-                    if best_hand.is_none() || current_result > best_hand.unwrap() {
-                        println!("new best hand for id {:?}", id);
-                        best_hand = Some(current_result);
-                        best_ids.clear();
-                        best_ids.insert(*id); // only one best hand now
-                    } else if current_result == best_hand.unwrap() {
-                        println!("equally good hand for id {:?}", id);
-                        best_ids.insert(*id); // another index that also has the best hand
-                    } else {
-                        println!("hand worse for id {:?}", id);
-                        continue;
-                    }
-                }
-                // divy the pot to all the winners
-                let num_winners = best_ids.len();
-                let amount = (pot.get_money() as f64 / num_winners as f64) as u32;
-                //self.pot_manager.pots.first_mut().unwrap().money = 0;
-                GameHand::pay_players(&mut pay_outs, players, player_ids_to_configs, best_ids, amount, best_hand, is_showdown);
-            }
-        } else {
-            // the hand ended before Showdown, so we simple find the one active player remaining
-	    // TODO: is this weird? Is it possible that there could be more than one pot...?
-            let best_ids:  HashSet::<Uuid> = players
-		.iter()
-		.flatten()
-		.filter(|player| player.is_active)
-		.map(|player| player.id).collect();
-            // if we didn't make it to show down, there better be only one player left
-            assert!(best_ids.len() == 1);
-            GameHand::pay_players(
-		&mut pay_outs,
-                players,
-		player_ids_to_configs,
-                best_ids,
-                self.pot_manager.iter().next().unwrap().get_money(),
-                None, // no hand result if not at showdown
-                is_showdown,
-            );
-        }
-	pay_outs
+		    .flatten()
+		    .filter(|player| player.is_active)
+		    .map(|player| player.id).collect();
+		// if we didn't make it to show down, there better be only one player left
+		assert!(best_ids.len() == 1);
+		let best_hand = None;
+		    let amount = self.pot_manager.iter().next().unwrap().get_money();
+		let showing_ids = best_ids.clone();
+		let elligible_ids = best_ids.clone();		
+		(best_ids, best_hand, amount, showing_ids, elligible_ids)
+            };
+	    self.settle_players(&mut settlements, players, player_ids_to_configs, &hand_results, pot_idx,
+				     best_ids, best_hand, amount, showing_ids, elligible_ids, showdown_starting_idx);
+	    
+	}
+	settlements
     }
 
-    /// iterate through the players, and any with an id in best_ids gets thei money increaed by amount
-    /// Moreover, construct a json payout message for each one of these payouts, and add it to the given pay_outs vec
-    fn pay_players(
-	pay_outs: &mut Vec<json::JsonValue>,
+    /// iterate through the players, and any with an id in best_ids gets their money increased by amount.
+    /// Moreover, construct a json settlement message for each one of these payouts,
+    /// and add it to the given settlements vec (if they need to show)
+    fn settle_players(
+	&self, 
+	settlements: &mut Vec<json::JsonValue>,
 	players: &mut [Option<Player>; 9],
 	player_ids_to_configs: &HashMap::<Uuid, PlayerConfig>,
+	hand_results: &HashMap<Uuid, Option<HandResult>>,	
+	pot_idx: usize,
         best_ids: HashSet<Uuid>,
-        amount: u32,
         best_hand: Option<&HandResult>,
-        is_showdown: bool,
+        amount: u32,
+	showing_ids: HashSet<Uuid>,
+	elligible_ids: HashSet<Uuid>,	
+	showdown_starting_idx: usize,
     ) {
-        for (i, player_spot) in players.iter_mut().enumerate() {
-            if player_spot.is_some() {
-                let player = player_spot.as_mut().unwrap();
-                if best_ids.contains(&player.id) {
-                    // get the name for messages
-                    let name: String = if let Some(config) = &player_ids_to_configs.get(&player.id)
-                    {
-                        config.name.as_ref().unwrap().clone()
-                    } else {
-                        // it is a bit weird if we made it all the way to the pay stage for a left player
-                        "Player who left".to_string()
-                    };
+        let is_showdown = self.is_showdown();
+        for i in (showdown_starting_idx..9).chain(0..showdown_starting_idx) {
+	    if let Some(player) = &mut players[i]  {
+		if !elligible_ids.contains(&player.id) {
+                    continue;
+		}
+		let name: String = if let Some(config) = &player_ids_to_configs.get(&player.id)
+		{
+		    config.name.as_ref().unwrap().clone()
+		} else {
+		    // it is a bit weird if we made it all the way to the pay stage for a left player
+		    "Player who left".to_string()
+		};
 
-                    let mut message = object! {
-                        payout: amount,
-                        index: i,
-                        player_name: name,
-                        is_showdown: is_showdown,
-                    };
-		    
-		    if let Some(hand_result) = best_hand {
-                        message["hand_result"] = hand_result.hand_ranking_string().into();			
+		let mut message = object! {
+		    index: i,
+		    player_name: name,
+		    is_showdown: is_showdown,
+		    pot_index: pot_idx,
+		};
+		
+		if best_ids.contains(&player.id) {
+		    message["winner"] = true.into();		    
+		    message["payout"] = amount.into();
+		    println!(
+			"paying out {:?} to {:?}, with hand result = {:?}",
+			amount, player.id, best_hand
+		    );
+		    player.pay(amount);		    
+		} else {
+		    message["winner"] = false.into();
+		}
+		if is_showdown && showing_ids.contains(&player.id) {		    
+		    let hole_string = format!("{}{}", player.hole_cards[0], player.hole_cards[1]);
+		    message["hole_cards"] = hole_string.into();
+		    if let Some(hand_result) = hand_results.get(&player.id).unwrap() {
+			message["hand_result"] = hand_result.hand_ranking_string().into();			
 			message["constituent_cards"] = hand_result.constituent_cards_string().into();
-			message["kickers"] = hand_result.kickers_string().into();						
+			message["kickers"] = hand_result.kickers_string().into();
 		    }
-                    println!(
-                        "paying out {:?} to {:?}, with hand result = {:?}",
-                        amount, player.id, best_hand
-                    );
-		    if is_showdown {
-			let hole_string = format!("{}{}", player.hole_cards[0], player.hole_cards[1]);
-                        message["hole_cards"] = hole_string.into();			
-		    }
-                    pay_outs.push(message);
-                    player.pay(amount);
-                }
+		    
+		}
+		settlements.push(message);
             }
         }
     }
-    
+
+    // determine where to start the showing of cards
+    // if there is a last-aggressor, then it starts with them,
+    // otherwise, it defaults to the street starting idx    
+    fn get_showdown_starting_idx(
+	players: &mut [Option<Player>; 9],
+	starting_idx: usize,
+    ) -> usize {
+	let mut showdown_starting_idx = starting_idx;
+        for (i, player_spot) in players.iter_mut().enumerate() {
+	    if player_spot.is_some() {
+                let player = player_spot.as_mut().unwrap();
+		if let Some(PlayerAction::Bet(_)) = player.last_action {
+		    // if the player's last action was a bet, then they we the last aggressor,
+		    // and hence has to show first
+		    showdown_starting_idx = i;
+		    break;
+		}
+	    }
+	}
+	showdown_starting_idx
+    }
 }
+
+

@@ -132,8 +132,8 @@ class App extends React.Component {
           that.handleTableList(json.tables);
         } else if (json.msg_type === "table_info") {
           that.updateTableInfo(json);
-        } else if (json.msg_type === "created_game") {
-          let output = "You created a game. Type '/help' for a list of available admin commands. (Private games only)";
+        } else if (json.msg_type === "created_table") {
+          let output = "You created a table. Type '/help' for a list of available admin commands. (Private games only)";
           that.chat("Dealer", output);	
           that.setState({creatingTable: false});
           that.props.navigate("/table");
@@ -160,15 +160,15 @@ class App extends React.Component {
             that.chat("Dealer", `Your turn to act. There is currently no bet.`);
           }
         } else if (json.msg_type === "finish_hand") {
-          that.saveHandHistory(json.pay_outs);
+          that.saveHandHistory(json.settlements);
 
-          for (let payOut of json.pay_outs) {
+          for (let settlement of json.settlements) {
             let showdown = "";
-            if (payOut.is_showdown) {
-              showdown = ` in a showdown with ${payOut.hand_result}: ${payOut.constituent_cards} and ${payOut.kickers} kicker.`;
+            if (settlement.is_showdown) {
+              showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
             }
 
-            that.chat("Dealer", `${payOut.player_name} won ${payOut.payout}${showdown}`);
+            that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
           }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");

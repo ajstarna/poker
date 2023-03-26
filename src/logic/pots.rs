@@ -7,7 +7,7 @@ use uuid::Uuid;
 /// A game hand can have multiple pots, when players go all-in, and betting continues
 #[derive(Debug)]
 pub struct Pot {
-    money: u32,                        // total amount in this pot
+    pub money: u32,                        // total amount in this pot
     contributions: HashMap<Uuid, u32>, // which players have contributed to the pot, and how much
     // the most that any one player can put in. If a player goes all-in into a pot,
     // then the cap is the amount that player has put in

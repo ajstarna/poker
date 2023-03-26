@@ -1,6 +1,6 @@
-//! `GameHub` is an actor. It keeps track of the current tables/games
+//! `TableHub` is an actor. It keeps track of the current tables/games
 //! and manages PlayerConfig structs (which include Ws Recipients)
-//! When a WsMessage comes in from a WsGameSession, the GameHub routes the message to the proper Game
+//! When a WsMessage comes in from a WsGameSession, the TableHub routes the message to the proper Game
 
 //! This file is adapted from the actix-web chat websocket example
 
@@ -10,9 +10,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::logic::{Game, PlayerAction, PlayerConfig};
+use crate::logic::{Table, PlayerAction, PlayerConfig};
 use crate::messages::{
-    Connect, Create, CreateFields, CreateGameError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
+    Connect, Create, CreateFields, CreateTableError, GameOver, Join, ListTables, MetaAction, MetaActionMessage,
     PlayerActionMessage, PlayerName, Returned, ReturnedReason, WsMessage,
 };
 use actix::prelude::{Actor, Context, Handler, MessageResult};
@@ -25,9 +25,9 @@ use uuid::Uuid;
 const CHAR_SET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const GAME_NAME_LEN: usize = 4;
 
-/// `Gamelobby` manages chat tables and responsible for coordinating chat session.
+/// `Tablelobby` manages chat tables and responsible for coordinating chat session.
 #[derive(Debug)]
-pub struct GameHub {
+pub struct TableHub {
     // map from session id to the PlayerConfig for players that have connected but are not at a table
     main_lobby_connections: HashMap<Uuid, PlayerConfig>,
 
@@ -44,9 +44,9 @@ pub struct GameHub {
     //visitor_count: Arc<AtomicUsize>,
 }
 
-impl GameHub {
-    pub fn new() -> GameHub {
-        GameHub {
+impl TableHub {
+    pub fn new() -> TableHub {
+        TableHub {
             main_lobby_connections: HashMap::new(),
             players_to_table: HashMap::new(),
             tables_to_actions: HashMap::new(),
@@ -56,8 +56,8 @@ impl GameHub {
     }    
 }
 
-/// Make actor from `GameHub`
-impl Actor for GameHub {
+/// Make actor from `TableHub`
+impl Actor for TableHub {
     /// We are going to use simple Context, we just need ability to communicate
     /// with other actors.
     type Context = Context<Self>;
@@ -78,7 +78,7 @@ impl Actor for GameHub {
 /// Handler for Connect message.
 ///
 /// Register new session with a given uuid.It could be brand new or a reconnection of an existing uuid
-impl Handler<Connect> for GameHub {
+impl Handler<Connect> for TableHub {
     type Result = MessageResult<Connect>; // use MessageResult so that we can return a Uuid
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
@@ -142,7 +142,7 @@ impl Handler<Connect> for GameHub {
 }
 
 /// Handler for `ListTables` message.
-impl Handler<ListTables> for GameHub {
+impl Handler<ListTables> for TableHub {
     type Result = MessageResult<ListTables>;
 
     /// we return a vec of table names of public tables now and also
@@ -164,7 +164,7 @@ impl Handler<ListTables> for GameHub {
 }
 
 /// Handler for PlayerName message.
-impl Handler<PlayerName> for GameHub {
+impl Handler<PlayerName> for TableHub {
     type Result = ();
 
     fn handle(&mut self, msg: PlayerName, _: &mut Context<Self>) {
@@ -203,7 +203,7 @@ impl Handler<PlayerName> for GameHub {
 
 /// Join table, send disconnect message to old table
 /// send join message to new table
-impl Handler<Join> for GameHub {
+impl Handler<Join> for TableHub {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
@@ -273,7 +273,7 @@ impl Handler<Join> for GameHub {
 
 /// Handler for a player that has been returned from a game officially
 /// This message comes FROM a game and provides the config, which we can put back in the lobby`
-impl Handler<Returned> for GameHub {
+impl Handler<Returned> for TableHub {
     type Result = ();
 
     fn handle(&mut self, msg: Returned, _: &mut Context<Self>) {
@@ -312,10 +312,10 @@ impl Handler<Returned> for GameHub {
 }
 
 /// create table, cannot already be at a table
-impl Handler<Create> for GameHub {
-    type Result = Result<String, CreateGameError>;
+impl Handler<Create> for TableHub {
+    type Result = Result<String, CreateTableError>;
 
-    /// creates a game and returns either Ok(table_name) or an Er(CreateGameError)
+    /// creates a game and returns either Ok(table_name) or an Er(CreateTableError)
     /// if the player is not in the lobby or does not have their name set
     fn handle(&mut self, msg: Create, ctx: &mut Context<Self>) -> Self::Result {
         let Create { id, create_msg } = msg;
@@ -326,12 +326,12 @@ impl Handler<Create> for GameHub {
             // so we must be waiting for the game to remove the player still
             println!("player config not in the main lobby, so they must already be at a game");
             if let Some(table_name) = self.players_to_table.get(&id) {
-                return Err(CreateGameError::AlreadyAtTable(table_name.to_string()));
+                return Err(CreateTableError::AlreadyAtTable(table_name.to_string()));
             } else {
                 println!("player not at lobby nor at a table");
 		// TODO: I think this should stop the session actor that sent this message, otherwise
 		// we can have a session actor living indefinitely with no corresponding playerconfig?		
-                return Err(CreateGameError::PlayerDoesNotExist);
+                return Err(CreateTableError::PlayerDoesNotExist);
             }
         }
         let mut player_config = player_config_option.unwrap();
@@ -342,7 +342,7 @@ impl Handler<Create> for GameHub {
             // put them back in the lobby
             self.main_lobby_connections
                 .insert(player_config.id, player_config);
-            return Err(CreateGameError::NameNotSet);
+            return Err(CreateTableError::NameNotSet);
         }
 
 	match serde_json::from_str(&create_msg) {
@@ -359,12 +359,12 @@ impl Handler<Create> for GameHub {
 		
 		if num_bots >= max_players {
 		    self.main_lobby_connections.insert(player_config.id, player_config);
-		    return Err(CreateGameError::TooManyBots);
+		    return Err(CreateTableError::TooManyBots);
 		}
 		
 		if big_blind > buy_in || small_blind > buy_in {
 		    self.main_lobby_connections.insert(player_config.id, player_config);
-		    return Err(CreateGameError::TooLargeBlinds);		
+		    return Err(CreateTableError::TooLargeBlinds);		
 		}
 		
 		let mut rng = rand::thread_rng();
@@ -389,7 +389,7 @@ impl Handler<Create> for GameHub {
 		let cloned_actions = actions.clone();
 		let cloned_meta_actions = meta_actions.clone();
 		
-		let mut game = Game::new(
+		let mut game = Table::new(
                     ctx.address(),
                     table_name.clone(),
                     None, // no deck needed to pass in
@@ -438,21 +438,21 @@ impl Handler<Create> for GameHub {
 		println!("create message unable to deserialize");
 		println!("{:?}", e);
 		self.main_lobby_connections.insert(player_config.id, player_config);	    
-		return Err(CreateGameError::UnableToParseJson(e.to_string()));
+		return Err(CreateTableError::UnableToParseJson(e.to_string()));
             }
 	}
     }
 }
 
 /// Handler for Message message.
-impl Handler<PlayerActionMessage> for GameHub {
+impl Handler<PlayerActionMessage> for TableHub {
     type Result = ();
 
     /// the player has sent a message of what their next action in the game should be,
     /// so we need to relay that to the game
     fn handle(&mut self, msg: PlayerActionMessage, _: &mut Context<Self>) {
         if let Some(table_name) = self.players_to_table.get(&msg.id) {
-            // the player was at a table, so tell the Game this player's message
+            // the player was at a table, so tell the Table this player's message
             if let Some(actions_map) = self.tables_to_actions.get_mut(table_name) {
                 println!("handling player action in the hub!");
                 actions_map
@@ -471,7 +471,7 @@ impl Handler<PlayerActionMessage> for GameHub {
 
 /// the game tells us that it has ended (no more human players),
 /// so lets remove it from our hub records
-impl Handler<GameOver> for GameHub {
+impl Handler<GameOver> for TableHub {
     type Result = ();
 
     fn handle(&mut self, msg: GameOver, _: &mut Context<Self>) {
@@ -495,7 +495,7 @@ impl Handler<GameOver> for GameHub {
 /// Handler for MetaAction messages.
 /// The types of meta actions inside a MetaAction message should simply be
 /// passed on to the game (if one exists)
-impl Handler<MetaActionMessage> for GameHub {
+impl Handler<MetaActionMessage> for TableHub {
     type Result = ();
 
     fn handle(&mut self, msg: MetaActionMessage, _: &mut Context<Self>) {

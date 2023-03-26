@@ -117,7 +117,6 @@ impl PlayerConfig {
     /// a player can't sit in a table indefinitely.
     pub fn has_active_heart_beat(&self) -> bool {
 	let gap = Instant::now().duration_since(self.heart_beat);
-	println!("config = {:?}, gap = {:?}", self, gap);
 	if gap > PLAYER_TIMEOUT {
             // heartbeat timed out
             println!("player timed out!");
