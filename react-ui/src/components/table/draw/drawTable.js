@@ -57,12 +57,12 @@ export function drawTable(ctx, width, height) {
 
     // Draw inner edge
     ctx.save();
-    var grdBorder = ctx.createRadialGradient(x0, y0, 20, x0, y0, Math.floor(w/2));
-    grdBorder.addColorStop(0, "rgb(50, 50, 50)");
-    grdBorder.addColorStop(0.8, "rgb(20, 20, 20)");
+    var grdInnerBorder = ctx.createRadialGradient(x0, y0, 20, x0, y0, Math.floor(w/2));
+    grdInnerBorder.addColorStop(0, "rgb(50, 50, 50)");
+    grdInnerBorder.addColorStop(0.8, "rgb(20, 20, 20)");
 
     ctx.strokeStyle = "rgb(25, 25, 25)";
-    ctx.fillStyle = grdBorder;
+    ctx.fillStyle = grdInnerBorder;
     roundRect(ctx, x0 + borderSize, y0 + borderSize, x1 - 2 * borderSize, y1 - 2 * borderSize, r - borderSize);
     ctx.shadowColor = '#1c1917';
     ctx.shadowBlur = 20;

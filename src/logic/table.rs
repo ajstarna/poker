@@ -3,6 +3,7 @@ use json::object;
 use rand::Rng;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
+use std::convert::TryInto;
 
 use super::card::Card;
 use super::deck::{Deck, StandardDeck};
@@ -789,10 +790,11 @@ impl Table {
 	let starting_idx = self.get_starting_idx();
 	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
 	println!("blah settlements = {:?}", settlements);
+        let wait_time = 3*settlements.len();
         finish_hand_message["settlements"] = settlements.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
-
-        let pause_duration = time::Duration::from_secs(1);
+        
+        let pause_duration = time::Duration::from_secs(wait_time.try_into().unwrap());
         thread::sleep(pause_duration);	
         // take the players' cards
         for player in self.players.iter_mut().flatten() {
