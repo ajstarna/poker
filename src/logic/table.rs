@@ -3343,7 +3343,7 @@ mod tests {
     /// if the BB is 8, then the next bet must be to at least 16
     /// Here, player 1 attempts a bet of 13, but is denied, and eventually times out
     #[test]
-    fn pre_flop_min_bet_fail() {
+    fn pre_flop_min_raise_fail() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
@@ -3408,7 +3408,7 @@ mod tests {
     /// Then, the SB attempts to bet 1 dollar (too low), so times out
     /// the BB folds, and the button should win the hand
     #[test]
-    fn later_street_min_bet() {
+    fn later_street_min_raise() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
@@ -3495,7 +3495,7 @@ mod tests {
     /// Player3 bets up to 45, thus setting the min raise now to be 25,
     /// Finally, Player1 attempts to bet 65, not enough (70 required), so times out
     #[test]
-    fn pre_flop_min_bet_multiple() {
+    fn pre_flop_min_raise_multiple() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
@@ -3582,7 +3582,7 @@ mod tests {
     /// min raise.
     /// Player1 will time out.
     #[test]
-    fn pre_flop_min_bet_all_in() {
+    fn pre_flop_min_raise_all_in() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
@@ -3665,7 +3665,7 @@ mod tests {
     /// Player1 bets up to 230 (the minimum allowed)
     /// Player3 attempts to bet 270, but this is too small, so times out
     #[test]
-    fn pre_flop_min_bet_all_in2() {
+    fn pre_flop_min_raise_all_in_2() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
