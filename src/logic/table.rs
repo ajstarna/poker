@@ -884,6 +884,7 @@ impl Table {
         // the starting index is either the person one more from the button on most streets,
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
+	// is that ACTUALLY a todo anymore? March 26, 2023
         let mut starting_idx = self.button_idx + 1;
         if starting_idx >= self.players.len() {
             starting_idx = 0;
@@ -1295,7 +1296,6 @@ impl Table {
 				// and therefore, we are not allowed to bet!
 				// We need to check that our last action was a bet, since otherwise this
 				// is a normal situation preflop for the smallblind
-				// TODO: tell the front end about this before hand, it is a niche poker rule!
 				println!("the minimum raise was not reached on our previous bet! we cant bet");
 				let message = json::object! {
 				    msg_type: "error".to_owned(),
