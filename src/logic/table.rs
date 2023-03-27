@@ -190,6 +190,7 @@ impl Table {
 	if let Some(gamehand) = gamehand_opt {
 	    state_message["street"] = gamehand.street.to_string().into();
 	    state_message["current_bet"] = gamehand.current_bet.into();
+	    state_message["min_raise"] = gamehand.min_raise.into();	    
 	    
 	    if let Some(flop) = &gamehand.flop {
 		state_message["flop"] = format!(
@@ -814,7 +815,7 @@ impl Table {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) -> bool {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-        let mut gamehand = GameHand::default();
+        let mut gamehand = GameHand::new(self.big_blind);
 	let mut num_active = 0;
         for player in self.players.iter_mut().flatten() {
             if player.money == 0 {
@@ -1165,25 +1166,6 @@ impl Table {
 		// collect big blind!
 		return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
             }
-
-	    let player_cumulative = gamehand.street_contributions.get(&gamehand.street).unwrap()[index];	
-	    let prompt = if gamehand.current_bet > player_cumulative {
-		let diff = gamehand.current_bet - player_cumulative;
-		format!("Enter action ({} to call): ", diff)
-	    } else {
-		format!("Enter action (current bet = {}): ", gamehand.current_bet)
-	    };
-	    let message = object! {
-		msg_type: "prompt".to_owned(),
-		prompt: prompt,
-		current_bet: gamehand.current_bet,
-		min_raise: gamehand.min_raise,
-	    };
-	    PlayerConfig::send_specific_message(
-		&message.dump(),
-		player.id,
-		&self.player_ids_to_configs,
-	    );
 	    player.id
 	};
         let mut action = None;
