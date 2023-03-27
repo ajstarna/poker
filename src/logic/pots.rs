@@ -117,7 +117,6 @@ impl PotManager {
                 }
             } else {
                 // there is not cap on this pot, so simply put the new money in for this player
-                println!("no cap");
                 *so_far += to_contribute;
                 pot.money += to_contribute;
                 if all_in {

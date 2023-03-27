@@ -1064,8 +1064,16 @@ impl Table {
 		    
                 }
                 PlayerAction::Bet(new_bet) => {
+		    let raise_amount = new_bet - gamehand.current_bet;
+		    let must_all_in = if raise_amount < gamehand.min_raise {
+			println!("the new bet did not meet the min raise amount, so there must be an all-in");
+			true
+		    } else {
+			println!("setting new minumum raise to {raise_amount}");			
+			gamehand.min_raise = raise_amount;
+			false
+		    };
                     let difference = new_bet - player_cumulative;
-                    println!("difference = {}", difference);
                     gamehand.current_bet = new_bet;
                     player.money -= difference;		    		    
                     let all_in = if player.is_all_in() {
@@ -1077,6 +1085,10 @@ impl Table {
                         num_settled = 1;
                         false
                     };
+		    if must_all_in {
+			// just to make sure the code is doing what we think it is
+			assert!(all_in);
+		    }
                     gamehand.contribute(i, player.id, difference, all_in);
                 }
             }
@@ -1163,7 +1175,8 @@ impl Table {
 	    let message = object! {
 		msg_type: "prompt".to_owned(),
 		prompt: prompt,
-        current_bet: gamehand.current_bet
+		current_bet: gamehand.current_bet,
+		min_raise: gamehand.min_raise,
 	    };
 	    PlayerConfig::send_specific_message(
 		&message.dump(),
@@ -1208,7 +1221,6 @@ impl Table {
 			// we give the user a second to place their action
 			thread::sleep(retry_duration);
 		    }
-
 		    Some(PlayerAction::Fold) => {
 			if gamehand.current_bet <= player_cumulative {
 			    // if the player has put in enough then no sense folding
@@ -1231,7 +1243,6 @@ impl Table {
 			}
 		    }
 		    Some(PlayerAction::Check) => {
-			//println!("Player checks!");
 			if gamehand.current_bet > player_cumulative {
 			    // if the current bet is higher than this player's bet
 			    if player.human_controlled {
@@ -1277,6 +1288,28 @@ impl Table {
 			    println!("this should not happen!");
 			    continue;
 			}
+			if gamehand.current_bet < player_cumulative + gamehand.min_raise {
+			    if let Some(PlayerAction::Bet(_)) = player.last_action {
+				// this indicates that the minumum raise needed overtop of our last bet
+				// was not reached, i.e. we must be dealing with an all-in situation,
+				// and therefore, we are not allowed to bet!
+				// We need to check that our last action was a bet, since otherwise this
+				// is a normal situation preflop for the smallblind
+				// TODO: tell the front end about this before hand, it is a niche poker rule!
+				println!("the minimum raise was not reached on our previous bet! we cant bet");
+				let message = json::object! {
+				    msg_type: "error".to_owned(),
+				    error: "invalid_action".to_owned(),
+				    reason:"You can't bet again since the minumum raise on your previous bet was not satisfied.".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+				continue;
+			    }
+			}
 			if new_bet > player.money + player_cumulative {
 			    println!("cant bet more than you have");
 			    let message = json::object! {
@@ -1291,20 +1324,23 @@ impl Table {
 			    );
 			    continue;
 			}
-			if new_bet <= gamehand.current_bet {
-			    println!("new bet must be larger than current");
-			    let message = json::object! {
-				msg_type: "error".to_owned(),
-				error: "invalid_action".to_owned(),
-				reason: "the new bet must be larger than the current bet!".to_owned(),
-			    };
-			    PlayerConfig::send_specific_message(
-				&message.dump(),
-				player.id,
-				&self.player_ids_to_configs,
-			    );
-			    continue;
-			}
+			if new_bet < gamehand.current_bet + gamehand.min_raise &&
+			    (player_cumulative + player.money != new_bet) {
+				// the new bet must meet the min raise,
+				// UNLESS it puts them all-in, then it is fine
+				println!("new bet must be at least the minimum raise!");
+				let message = json::object! {
+				    msg_type: "error".to_owned(),
+				    error: "invalid_action".to_owned(),
+				    reason: "the new bet must be at least the minumum raise!".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+				continue;
+			    }
 			action = Some(PlayerAction::Bet(new_bet));
 		    }
 		    other => {
@@ -1505,6 +1541,9 @@ mod tests {
             table // return the table back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // set the action that player2 folds
         incoming_actions
             .lock()
@@ -1550,6 +1589,9 @@ mod tests {
             table // return the table back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -3451,7 +3493,7 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id1, PlayerAction::Call);
-        // player2 calls folds
+        // player2 calls
         incoming_actions
             .lock()
             .unwrap()
@@ -3471,22 +3513,26 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id2, PlayerAction::Bet(1));
-	
-        // player3 Folds, leaving player1 as the winner
+        // player3 bets 8, which is allowed
         incoming_actions
             .lock()
             .unwrap()
-            .insert(id3, PlayerAction::Fold);
+            .insert(id3, PlayerAction::Bet(8));
+        // player1 attempts to bet smaller than the min raise
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(15));
 	
         // get the game back from the thread
         let table = handler.join().unwrap();
 
-	// player1 eventually wins the 3 BBs
-        assert_eq!(table.players[0].as_ref().unwrap().money, 1024);
+	// player3 eventually wins the 2 BBs
+        assert_eq!(table.players[2].as_ref().unwrap().money, 1016);
 
 	// the others lost it
-        assert_eq!(table.players[1].as_ref().unwrap().money, 992);
-        assert_eq!(table.players[2].as_ref().unwrap().money, 992);	
+        assert_eq!(table.players[0].as_ref().unwrap().money, 992);
+        assert_eq!(table.players[1].as_ref().unwrap().money, 992);	
     }
 
     /// during preflop, the min raise starts at the big blind.
@@ -3573,16 +3619,15 @@ mod tests {
 
     /// during preflop, the min raise starts at the big blind.
     /// Here, player1 makes a bet of 50, thus setting the min raise to now be 42
-    /// Player2 begins with 74 bucks, then pays 4 to be SB, so only has 70 left.
-    /// While this is less than the 42 min raise, it is still valid, because it is an all-in
-    /// So Player2 goes all-in with 70 (a raise of only 20) The min raise remains at 42.
+    /// Player2 goes all-in with 70 (a raise of only 20) The min raise remains at 42.
+    /// While this is less than the 42 min raise, it is still valid, because it is an all-in    
     /// Player3 calls the all-in.    
     /// Player1 now attempts to raise again, **BUT** this is a special rule where the original
     /// raiser is not allowed to raise again if the current raise (all-in) was less than a "true"
     /// min raise.
     /// Player1 will time out.
     #[test]
-    fn pre_flop_min_raise_all_in() {
+    fn pre_flop_min_raise_all_in_1() {
         let mut table = Table::default();
 	table.player_action_timeout = 5;
         let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
@@ -3601,7 +3646,7 @@ mod tests {
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
         table.add_human(settings2, None).unwrap();
-        table.players[1].as_mut().unwrap().money = 74; // starts with 74 bucks
+        table.players[1].as_mut().unwrap().money = 70; // starts with 70 bucks
 	
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
@@ -3646,11 +3691,18 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id1, PlayerAction::Bet(150));
+
+        // player3 calls the all-in (only if it happens wrongly in this unit test!)
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
 	
         // get the game back from the thread
         let table = handler.join().unwrap();
 
 	// player1 loses their first bet of 50, but not their next invalid bet amount
+	// if the code errantly lets the 150 bet happen, then player3 calls, and finally player1 times out
         assert_eq!(table.players[0].as_ref().unwrap().money, 950);
 
 	// player2 and player3 outcome is arbitrary
@@ -3658,9 +3710,9 @@ mod tests {
 
     /// during preflop, the min raise starts at the big blind.
     /// Here, player1 makes a bet of 50, thus setting the min raise to now be 42
-    /// Player2 begins with 74 bucks, then pays 4 to be SB, so only has 70 left.
+    /// Player2 begins with 70 bucks, and goes all in
     /// While this is less than the 42 min raise, it is still valid, because it is an all-in
-    /// So Player2 goes all-in with 70 (a raise of only 20) The min raise remains at 42.
+    /// The min raise remains at 42.
     /// Player3 bets up to 150, making the new min_raise to be 80
     /// Player1 bets up to 230 (the minimum allowed)
     /// Player3 attempts to bet 270, but this is too small, so times out
@@ -3684,7 +3736,7 @@ mod tests {
         let name2 = "Human2".to_string();
         let settings2 = PlayerConfig::new(id2, Some(name2), None);
         table.add_human(settings2, None).unwrap();
-        table.players[1].as_mut().unwrap().money = 74; // starts with 74 bucks
+        table.players[1].as_mut().unwrap().money = 70; // starts with 70 bucks
 	
         // player3 will start as the big blind
         let id3 = uuid::Uuid::new_v4();
@@ -3709,11 +3761,11 @@ mod tests {
             .lock()
             .unwrap()
             .insert(id1, PlayerAction::Bet(50));
-        // player2 goes all-in with a bet of 74
+        // player2 goes all-in with a bet of 70
         incoming_actions
             .lock()
             .unwrap()
-            .insert(id2, PlayerAction::Bet(74));
+            .insert(id2, PlayerAction::Bet(70));
         // player3 bets up to 150, setting new min raise to 80
         incoming_actions
             .lock()
@@ -3738,11 +3790,18 @@ mod tests {
         let table = handler.join().unwrap();
 
 	// player3 loses their bet of 150
-        assert_eq!(table.players[2].as_ref().unwrap().money, 950);
+        assert_eq!(table.players[2].as_ref().unwrap().money, 850);
 
-	// player1 or player2 win the 74 dollar side pot
-        assert!(table.players[0].as_ref().unwrap().money == 1074 ||
-		table.players[1].as_ref().unwrap().money == 1074);		   
+	let player_1_money = table.players[0].as_ref().unwrap().money;
+	let player_2_money = table.players[1].as_ref().unwrap().money;
+	assert!(player_2_money == 0 || player_2_money == 210); // player2 wins the side pot or not
+	if player_2_money == 0 {
+	    // if they lost the side pot, then player1 won it (and the bigger pot)
+	    assert_eq!(player_1_money, 1220);
+	} else {
+	    // else player_2 won the side pot, but player1 still gets the excess player2 money
+	    assert_eq!(player_1_money, 1010);	    
+	}
     }
     
 }
