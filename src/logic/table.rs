@@ -789,8 +789,8 @@ impl Table {
 
 	let starting_idx = self.get_starting_idx();
 	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
-	println!("blah settlements = {:?}", settlements);
-        let wait_time = 3*settlements.len();
+	let num_in_showdown = self.players.iter().flatten().filter(|player| player.is_active).count();
+        let wait_time = 3 * num_in_showdown + 3; // a 3 bonus seconds at the very end 
         finish_hand_message["settlements"] = settlements.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
         
