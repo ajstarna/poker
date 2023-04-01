@@ -37,6 +37,7 @@ pub struct GameHand {
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
+    pub last_action: Option<PlayerAction>, // the last thing anyone did (or None)	
     pub current_bet: u32, // the current street bet at any moment
     pub min_raise: u32, // the minimum amount that the next raise must be
     pub flop: Option<Vec<Card>>,
@@ -54,6 +55,7 @@ impl GameHand {
             street: Street::Preflop,
             pot_manager: PotManager::new(),
             street_contributions: HashMap::new(),
+	    last_action: None,
 	    current_bet: 0,
 	    min_raise: big_blind,
             flop: None,

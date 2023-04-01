@@ -124,11 +124,17 @@ impl Table {
 	}
     }
 
-    // check that all active players are all_in    
-    fn is_everyone_all_in(&self) -> bool {
-	self.players.iter()
+    /// An all-in-situation is when no more actions are needed for the hand
+    /// This means at least one person must be all in, and at most one non-all-in active
+    /// player remains. Since if at least 2 active non-all-in-players are left, then they can
+    /// keep betting with each other in a side pot.
+    fn is_all_in_situation(&self) -> bool {
+	let remaining_actionable_players = self.players
+	    .iter()
 	    .flatten()
-	    .all(|player| !player.is_active || player.is_all_in())
+	    .filter(|player| player.is_active && !player.is_all_in())
+	    .count();
+	remaining_actionable_players < 2
     }
     
     /// returns the game state as a json-String, for sending to the front-end
@@ -138,7 +144,7 @@ impl Table {
 	game_suspended: bool,
     ) -> json::JsonValue {
 	// if every active player is all-in, then add hole card info for each player
-	let everyone_all_in = self.is_everyone_all_in();
+	let all_in_situation = self.is_all_in_situation();
 	
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
@@ -151,7 +157,7 @@ impl Table {
             button_idx: self.button_idx,
             hand_num: self.hand_num,
 	    game_suspended: game_suspended,
-	    everyone_all_in: everyone_all_in,
+	    all_in_situation: all_in_situation,
 	};
 	
 	// add a list of player infos
@@ -180,7 +186,7 @@ impl Table {
 		if let Some(last_action) = player.last_action {
                     player_info["last_action"] = last_action.to_string().into();
 		}
-		if everyone_all_in && player.is_active {
+		if all_in_situation && player.is_active {
 		    // everyone left is all_in, so show all the cards
 		    player_info["hole_cards"] = format!("{}{}",
 							player.hole_cards[0],
@@ -812,7 +818,7 @@ impl Table {
 	let starting_idx = self.get_starting_idx();
 	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
 	let num_in_showdown = self.players.iter().flatten().filter(|player| player.is_active).count();
-        let wait_time = 3 * num_in_showdown + 3; // a 3 bonus seconds at the very end 
+        let wait_time = 3 * num_in_showdown + 2; // 2 bonus seconds at the very end 
         finish_hand_message["settlements"] = settlements.into();	
         PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
         
@@ -918,15 +924,7 @@ impl Table {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         gamehand: &mut GameHand,
     ) -> bool {
-        // if a player is still active but has no remaining money (i.e. is all-in),
-        let mut num_all_in = self
-            .players
-            .iter()
-            .flatten() // skip over None values
-            .filter(|player| player.is_all_in())
-            .count();
-
-        let mut num_active = self
+        let num_active = self
             .players
             .iter()
             .flatten() // skip over None values
@@ -937,57 +935,60 @@ impl Table {
                 "num_active players = {}, so we cannot play a hand!",
                 num_active
             );
-            return true;
+            return true; // the hand is over!
         }
 
-        if num_all_in + 1 == num_active {
-            println!("only one person is not all in, so don't bother with the street!");
-            return false;
-        }
-
-        // once every player is either all-in or settled, then we move to the next street
-        let mut num_settled = 0; // keep track of how many players have put in enough chips to move on
-        println!("num active players = {}", num_active);
-
-        if num_settled > 0 {
-            println!("num settled (i.e. all in players) = {}", num_settled);
-            PlayerConfig::send_group_message(
-                &format!("num settled (i.e. all in players) = {}", num_settled),
-                &self.player_ids_to_configs,
-            );
-        }
+	if self.is_all_in_situation() {
+            println!("an all-in-situation, dont bother with the street!");
+            return false;	    
+	}
 	
-        let starting_idx = self.get_starting_idx(); // which player starts the betting
-
         gamehand.street_contributions.insert(gamehand.street, [0;9]);
 	
-	let between_hands = false;		
-	
-	let mut hand_over = false;	
-        // iterate over the players from the starting index to the end of the vec,
-        // and then from the beginning back to the starting index
+	let between_hands = false;			
+	let mut hand_over = false;
+
+        let starting_idx = self.get_starting_idx(); // which player starts the betting	
+        // iterate over the players in a cycle, from the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
 	    // handle meta actions once right at the beginning to be responsive to sitout messages for example
             self.handle_meta_actions(&incoming_meta_actions, between_hands, Some(gamehand));
-	    
+
             // double check if any players left as a meta-action during the previous
-            // player's turn. They should no longer be considered as active or all_in
-            for player_spot in self.players.iter_mut() {
+            // player's turn.
+	    // Also, count how many active, all_in, and settled players we have
+	    let current_contributions = gamehand.street_contributions.get(&gamehand.street).unwrap();	
+	    let mut num_active = 0;    
+	    let mut num_settled = 0;
+	    let mut num_all_in = 0;	    	    
+            for (i, player_spot) in self.players.iter_mut().enumerate() {		
 		if let Some(player) = player_spot {
                     if !self.player_ids_to_configs.contains_key(&player.id) {
 			println!("player is no longer in the config");
-			if player.is_all_in() {
-                        num_all_in -= 1;
-			}
-			if player.is_active {
-                            player.deactivate(); // technically redundant I guess since setting to None later
-                            num_active -= 1;
-			}
 			*player_spot = None;
+			continue;
                     }
+		    if player.is_active {
+			num_active += 1;
+		    }
+		    if player.is_all_in() {
+			num_all_in += 1;
+		    } else {
+			if let Some(PlayerAction::PostBigBlind(_)) = player.last_action {
+			    // posting the big blind does not count as being "settled",
+			    // since they get a chance to raise again.
+			    continue
+			}
+			if gamehand.current_bet > 0 {
+			    // players can only be settled if something was bet!
+			    let player_cont = current_contributions[i];
+			    if player_cont >= gamehand.current_bet {
+				num_settled += 1;
+			    }
+			}
+		    }
 		}
             }
-	    
             if num_active == 1 {
                 println!("Only one active player left so lets break the steet loop");
                 // end the street and indicate to the caller that the hand is finished
@@ -1002,7 +1003,7 @@ impl Table {
                 // end the street and indicate to the caller that the hand is going to the next street
                 break;
             }
-
+	    
 	    if let Some(player) = &self.players[i]  {
 		println!("Player = {:?}, i = {}", player, i);		
 		if !(player.is_active && player.money > 0) {
@@ -1023,8 +1024,10 @@ impl Table {
                 gamehand,
 		i
             );
-
+	    
 	    println!("action = {:?}", action);
+	    gamehand.last_action = Some(action);
+	    
 	    let player_cumulative = gamehand.street_contributions.get_mut(&gamehand.street).unwrap()[i];
             // now that we have gotten the current player's action and handled
             // any meta actions, we are free to respond and mutate the player
@@ -1034,53 +1037,30 @@ impl Table {
             match action {
                 PlayerAction::PostSmallBlind(amount) => {	
                     player.money -= amount;		    	    
-                    // regardless if the player couldn't afford it, the new street bet is the big blind
-                    gamehand.current_bet = self.small_blind;
-                    let all_in = if player.is_all_in() {
-                        num_all_in += 1;
-                        true
-                    } else {
-                        false
-                    };
-                    gamehand.contribute(i, player.id, amount, all_in);
+                    gamehand.current_bet = amount;
+                    gamehand.contribute(i, player.id, amount, player.is_all_in());
                 }
                 PlayerAction::PostBigBlind(amount) => {
                     player.money -= amount;		    		    
-                    // regardless if the player couldn't afford it, the new street bet is the big blind
-                    gamehand.current_bet = self.big_blind;
-                    let all_in = if player.is_all_in() {
-                        num_all_in += 1;
-                        true
-                    } else {
-                        false
-                    };
-                    gamehand.contribute(i, player.id, amount, all_in);
-                    // note: we dont count the big blind as a "settled" player,
-                    // since they still get a chance to act after the small blind
+                    // the new street bet is either the new amount posted or the existing bet
+		    // This handles the rare cases where the big blind can't afford the BB
+                    gamehand.current_bet = std::cmp::max(amount, gamehand.current_bet);
+                    gamehand.contribute(i, player.id, amount, player.is_all_in());
                 }
                 PlayerAction::Fold => {
                     player.deactivate();
-                    num_active -= 1;
                 }
                 PlayerAction::SitOut => {
                     player.deactivate();
-                    num_active -= 1;
                 }
                 PlayerAction::Check => {
-                    num_settled += 1;
+		    
                 }
                 PlayerAction::Call => {
                     let difference = gamehand.current_bet - player_cumulative;
-                    let (amount, all_in) = if difference >= player.money {
-                        println!("you have to put in the rest of your chips");
-                        num_all_in += 1;
-			(player.money, true)
-                    } else {
-                        num_settled += 1;
-			(difference, false)
-                    };
+		    let amount = std::cmp::min(difference, player.money); // can only put in as much as everything!
                     player.money -= amount;		    
-                    gamehand.contribute(i, player.id, amount, all_in);
+                    gamehand.contribute(i, player.id, amount, player.is_all_in());
 		    
                 }
                 PlayerAction::Bet(new_bet) => {
@@ -1096,20 +1076,11 @@ impl Table {
                     let difference = new_bet - player_cumulative;
                     gamehand.current_bet = new_bet;
                     player.money -= difference;		    		    
-                    let all_in = if player.is_all_in() {
-                        println!("Just bet the rest of our money!");
-                        num_all_in += 1;
-                        num_settled = 0;
-                        true
-                    } else {
-                        num_settled = 1;
-                        false
-                    };
 		    if must_all_in {
 			// just to make sure the code is doing what we think it is
-			assert!(all_in);
+			assert!(player.is_all_in());
 		    }
-                    gamehand.contribute(i, player.id, difference, all_in);
+                    gamehand.contribute(i, player.id, difference, player.is_all_in());
                 }
             }
         };
@@ -1168,6 +1139,8 @@ impl Table {
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
 
+	println!("blah current bet = {:?}", gamehand.current_bet);
+	
 	// note: several times in this method we access player within a scope, so that
 	// we can call handle_meta_actions in between. Since that method wants to modify self.players,
 	// we cannot have one borrowed at the same time.
@@ -1176,14 +1149,16 @@ impl Table {
 	// if that seemed better in the future to bring back the clone() in a lighter way)
 	// I don't know if this is somewhat common, or if I have coded myself into a corner...
 	let player_id = {
-	    let player = self.players[index].as_ref().unwrap();	   	
-            if gamehand.street == Street::Preflop && gamehand.current_bet == 0 {
-		// collect small blind!
-		return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));
-            } else if gamehand.street == Street::Preflop && gamehand.current_bet == self.small_blind {
-		// collect big blind!
-		return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
-            }
+	    let player = self.players[index].as_ref().unwrap();
+	    if let Some(action) = gamehand.last_action {
+		if matches!(action, PlayerAction::PostSmallBlind(_)) {
+		    // the last action was the small blind, so now need the big blind
+		    return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
+		}
+	    } else {
+		// there was no action yet, so post small blind to begin
+		return PlayerAction::PostSmallBlind(cmp::min(self.small_blind, player.money));		
+	    }
 	    player.id
 	};
         let mut action = None;
@@ -2654,7 +2629,7 @@ mod tests {
     /// we play 4 hands with 3 players with everyone folding whenever it gets to them,
     /// Note: we sleep several seconds in the test to let the game finish its hand in its thread,
     /// so the test is brittle to changes in wait durations within the table.
-    /// If this test starts failing in the future, it is likely just a matter of tweaking the sleep
+    /// *ATTENTION*: If this test starts failing in the future, it is likely just a matter of tweaking the sleep
     /// durations
     #[test]
     fn button_movement() {
@@ -2705,7 +2680,7 @@ mod tests {
             .insert(id2, PlayerAction::Fold);
 
         // wait for next hand
-        let wait_duration = time::Duration::from_secs(11);
+        let wait_duration = time::Duration::from_secs(15);
         thread::sleep(wait_duration);
 
         println!("\n\nsetting 2!");
@@ -3803,6 +3778,189 @@ mod tests {
 	    // else player_2 won the side pot, but player1 still gets the excess player2 money
 	    assert_eq!(player_1_money, 1010);	    
 	}
+    }
+
+    /// if the big blind goes all in with less than the full amount, that sets the
+    /// new current bet.
+    #[test]
+    fn big_blind_all_in_1() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button/big_blind to have the best hand
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Diamond,
+        });
+
+        deck.push(Card {
+            rank: Rank::Six,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Heart,
+        });
+
+        // the flop
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+	// turn
+        deck.push(Card {
+            rank: Rank::Four,
+            suit: Suit::Heart,
+        });
+	// river	
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Diamond,
+        });
+	
+        let mut table = Table::default();
+        table.deck = Box::new(deck);	
+
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button/big_blind
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+        table.players[0].as_mut().unwrap().money = 6; // starts with 6, which is less than 8
+	
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+	
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player2 calls, which is only 2 more bucks
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// 6 dollars exchanged hands, less than the usual Big Blind
+	let player_1_money = table.players[0].as_ref().unwrap().money;
+	let player_2_money = table.players[1].as_ref().unwrap().money;
+	assert_eq!(player_1_money, 12);
+	assert_eq!(player_2_money, 994);	    
+    }
+
+    /// if the big blind goes all in with less than the full amount, that sets the
+    /// new current bet.
+    /// In this test, the big blind has less than the small blind already put in,
+    /// so the small blind should "auto check", and not lose their surplus
+    #[test]
+    fn big_blind_all_in_2() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button/big_blind to have the best hand
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Diamond,
+        });
+
+        deck.push(Card {
+            rank: Rank::Six,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Heart,
+        });
+
+        // the flop
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+	// turn
+        deck.push(Card {
+            rank: Rank::Four,
+            suit: Suit::Heart,
+        });
+	// river	
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Diamond,
+        });
+	
+        let mut table = Table::default();
+        table.deck = Box::new(deck);	
+
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button/big_blind
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+        table.players[0].as_mut().unwrap().money = 3; // starts with 3, which is even less than the SB of 4
+	
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+	
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// NO ACTIONS SHOULD BE NEEDED!
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// 3 dollars exchanged hands, less than the usual Big Blind or even Small Blind
+	let player_1_money = table.players[0].as_ref().unwrap().money;
+	let player_2_money = table.players[1].as_ref().unwrap().money;
+	assert_eq!(player_1_money, 6);
+	assert_eq!(player_2_money, 997);	    
     }
     
 }
