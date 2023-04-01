@@ -1311,10 +1311,11 @@ impl Table {
 				// the new bet must meet the min raise,
 				// UNLESS it puts them all-in, then it is fine
 				println!("new bet must be at least the minimum raise!");
+				let min_bet = gamehand.current_bet + gamehand.min_raise;
 				let message = json::object! {
 				    msg_type: "error".to_owned(),
 				    error: "invalid_action".to_owned(),
-				    reason: "the new bet must be at least the minumum raise!".to_owned(),
+				    reason: format!("the new bet must be at least the minumum: {min_bet}"),
 				};
 				PlayerConfig::send_specific_message(
 				    &message.dump(),
