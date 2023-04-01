@@ -100,7 +100,6 @@ impl Table {
 
     fn send_game_state(&self, gamehand_opt: Option<&GameHand>, game_suspended: bool) {
 	let mut state_message = self.get_game_state_json(gamehand_opt, game_suspended);
-	println!("blah {:?}", state_message.dump());
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
