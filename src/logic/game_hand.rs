@@ -33,10 +33,12 @@ impl fmt::Display for Street {
 			
 #[derive(Debug)]
 pub struct GameHand {
+    big_blind: u32,
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
     pub current_bet: u32, // the current street bet at any moment
+    pub min_raise: u32, // the minimum amount that the next raise must be
     pub flop: Option<Vec<Card>>,
     pub turn: Option<Card>,
     pub river: Option<Card>,
@@ -44,12 +46,16 @@ pub struct GameHand {
 }
 
 impl GameHand {
-    pub fn default() -> Self {
+
+    /// a new() constructor when we know the min raise upfront
+    pub fn new(big_blind: u32) -> Self {
         GameHand {
+	    big_blind,
             street: Street::Preflop,
             pot_manager: PotManager::new(),
             street_contributions: HashMap::new(),
 	    current_bet: 0,
+	    min_raise: big_blind,
             flop: None,
             turn: None,
             river: None,

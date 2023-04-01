@@ -32,6 +32,7 @@ pub struct Table {
     small_blind: u32,
     big_blind: u32,
     buy_in: u32,
+    player_action_timeout: u32, // how long to wait for a single action
     password: Option<String>,
     admin_id: Uuid,
     button_idx: usize, // index of the player with the button
@@ -51,6 +52,7 @@ impl Default for Table {
             small_blind: 4,
             big_blind: 8,
             buy_in: 1000,
+	    player_action_timeout: 45,
             password: None,
 	    admin_id: uuid::Uuid::new_v4(), // an arbitrary/random admin id
             button_idx: 0,
@@ -88,6 +90,7 @@ impl Table {
             small_blind,
             big_blind,
             buy_in,
+	    player_action_timeout: 45,
             password,
 	    admin_id,
             button_idx: 0,
@@ -187,6 +190,7 @@ impl Table {
 	if let Some(gamehand) = gamehand_opt {
 	    state_message["street"] = gamehand.street.to_string().into();
 	    state_message["current_bet"] = gamehand.current_bet.into();
+	    state_message["min_raise"] = gamehand.min_raise.into();	    
 	    
 	    if let Some(flop) = &gamehand.flop {
 		state_message["flop"] = format!(
@@ -811,7 +815,7 @@ impl Table {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) -> bool {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-        let mut gamehand = GameHand::default();
+        let mut gamehand = GameHand::new(self.big_blind);
 	let mut num_active = 0;
         for player in self.players.iter_mut().flatten() {
             if player.money == 0 {
@@ -855,7 +859,8 @@ impl Table {
             for player in self.players.iter_mut().flatten() {
 		player.last_action = None;
             }
-	    
+	    // at the start of each stree, the min raise is just the big blind
+	    gamehand.min_raise = self.big_blind; 
             let finished =
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
             // pause for a second for dramatic effect heh
@@ -880,6 +885,7 @@ impl Table {
         // the starting index is either the person one more from the button on most streets,
         // or 3 down on the preflop (since the blinds already had to buy in)
         // TODO: this needs to be smarter in small games
+	// is that ACTUALLY a todo anymore? March 26, 2023
         let mut starting_idx = self.button_idx + 1;
         if starting_idx >= self.players.len() {
             starting_idx = 0;
@@ -1060,8 +1066,16 @@ impl Table {
 		    
                 }
                 PlayerAction::Bet(new_bet) => {
+		    let raise_amount = new_bet - gamehand.current_bet;
+		    let must_all_in = if raise_amount < gamehand.min_raise {
+			println!("the new bet did not meet the min raise amount, so there must be an all-in");
+			true
+		    } else {
+			println!("setting new minumum raise to {raise_amount}");			
+			gamehand.min_raise = raise_amount;
+			false
+		    };
                     let difference = new_bet - player_cumulative;
-                    println!("difference = {}", difference);
                     gamehand.current_bet = new_bet;
                     player.money -= difference;		    		    
                     let all_in = if player.is_all_in() {
@@ -1073,6 +1087,10 @@ impl Table {
                         num_settled = 1;
                         false
                     };
+		    if must_all_in {
+			// just to make sure the code is doing what we think it is
+			assert!(all_in);
+		    }
                     gamehand.contribute(i, player.id, difference, all_in);
                 }
             }
@@ -1148,31 +1166,13 @@ impl Table {
 		// collect big blind!
 		return PlayerAction::PostBigBlind(cmp::min(self.big_blind, player.money));
             }
-
-	    let player_cumulative = gamehand.street_contributions.get(&gamehand.street).unwrap()[index];	
-	    let prompt = if gamehand.current_bet > player_cumulative {
-		let diff = gamehand.current_bet - player_cumulative;
-		format!("Enter action ({} to call): ", diff)
-	    } else {
-		format!("Enter action (current bet = {}): ", gamehand.current_bet)
-	    };
-	    let message = object! {
-		msg_type: "prompt".to_owned(),
-		prompt: prompt,
-        current_bet: gamehand.current_bet
-	    };
-	    PlayerConfig::send_specific_message(
-		&message.dump(),
-		player.id,
-		&self.player_ids_to_configs,
-	    );
 	    player.id
 	};
         let mut action = None;
         let mut attempts = 0;
         let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
 	let between_hands = false;		
-        while attempts < 45 && action.is_none() {
+        while attempts < self.player_action_timeout && action.is_none() {
             // the first thing we do on each loop is handle meta action
             // this lets us display messages in real-time without having to wait until after the
             // current player gives their action
@@ -1204,7 +1204,6 @@ impl Table {
 			// we give the user a second to place their action
 			thread::sleep(retry_duration);
 		    }
-
 		    Some(PlayerAction::Fold) => {
 			if gamehand.current_bet <= player_cumulative {
 			    // if the player has put in enough then no sense folding
@@ -1227,7 +1226,6 @@ impl Table {
 			}
 		    }
 		    Some(PlayerAction::Check) => {
-			//println!("Player checks!");
 			if gamehand.current_bet > player_cumulative {
 			    // if the current bet is higher than this player's bet
 			    if player.human_controlled {
@@ -1273,6 +1271,27 @@ impl Table {
 			    println!("this should not happen!");
 			    continue;
 			}
+			if gamehand.current_bet < player_cumulative + gamehand.min_raise {
+			    if let Some(PlayerAction::Bet(_)) = player.last_action {
+				// this indicates that the minumum raise needed overtop of our last bet
+				// was not reached, i.e. we must be dealing with an all-in situation,
+				// and therefore, we are not allowed to bet!
+				// We need to check that our last action was a bet, since otherwise this
+				// is a normal situation preflop for the smallblind
+				println!("the minimum raise was not reached on our previous bet! we cant bet");
+				let message = json::object! {
+				    msg_type: "error".to_owned(),
+				    error: "invalid_action".to_owned(),
+				    reason:"You can't bet again since the minumum raise on your previous bet was not satisfied.".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+				continue;
+			    }
+			}
 			if new_bet > player.money + player_cumulative {
 			    println!("cant bet more than you have");
 			    let message = json::object! {
@@ -1287,20 +1306,23 @@ impl Table {
 			    );
 			    continue;
 			}
-			if new_bet <= gamehand.current_bet {
-			    println!("new bet must be larger than current");
-			    let message = json::object! {
-				msg_type: "error".to_owned(),
-				error: "invalid_action".to_owned(),
-				reason: "the new bet must be larger than the current bet!".to_owned(),
-			    };
-			    PlayerConfig::send_specific_message(
-				&message.dump(),
-				player.id,
-				&self.player_ids_to_configs,
-			    );
-			    continue;
-			}
+			if new_bet < gamehand.current_bet + gamehand.min_raise &&
+			    (player_cumulative + player.money != new_bet) {
+				// the new bet must meet the min raise,
+				// UNLESS it puts them all-in, then it is fine
+				println!("new bet must be at least the minimum raise!");
+				let message = json::object! {
+				    msg_type: "error".to_owned(),
+				    error: "invalid_action".to_owned(),
+				    reason: "the new bet must be at least the minumum raise!".to_owned(),
+				};
+				PlayerConfig::send_specific_message(
+				    &message.dump(),
+				    player.id,
+				    &self.player_ids_to_configs,
+				);
+				continue;
+			    }
 			action = Some(PlayerAction::Bet(new_bet));
 		    }
 		    other => {
@@ -1501,6 +1523,9 @@ mod tests {
             table // return the table back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // set the action that player2 folds
         incoming_actions
             .lock()
@@ -1546,6 +1571,9 @@ mod tests {
             table // return the table back
         });
 
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
         // set the action that player2 calls
         incoming_actions
             .lock()
@@ -2658,7 +2686,7 @@ mod tests {
             .insert(id2, PlayerAction::Fold);
 
         // wait for next hand
-        let wait_duration = time::Duration::from_secs(9);
+        let wait_duration = time::Duration::from_secs(11);
         thread::sleep(wait_duration);
 
         println!("\n\nsetting 2!");
@@ -3333,6 +3361,429 @@ mod tests {
         assert_eq!(table.players[0].as_ref().unwrap().money, 1012);
         assert_eq!(table.players[1].as_ref().unwrap().money, 996);
         assert_eq!(table.players[1].as_ref().unwrap().money, 996);	
+    }
+
+    /// during preflop, the min raise starts at the big blind.
+    /// if the BB is 8, then the next bet must be to at least 16
+    /// Here, player 1 attempts a bet of 13, but is denied, and eventually times out
+    #[test]
+    fn pre_flop_min_raise_fail() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        table.add_human(settings3, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player1 tries to bet 13, but this is not big enough
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(13));
+        // player2 folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Fold);
+
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player1 was unable to do anything, so still has money
+        assert_eq!(table.players[0].as_ref().unwrap().money, 1000);
+
+	// the small blind went to the BB
+        assert_eq!(table.players[1].as_ref().unwrap().money, 996);
+        assert_eq!(table.players[2].as_ref().unwrap().money, 1004);	
+    }
+
+    /// during the flop, the min raise starts at the big blind.
+    /// We call and check to the flop.
+    /// Then, the SB attempts to bet 1 dollar (too low), so times out
+    /// the BB folds, and the button should win the hand
+    #[test]
+    fn later_street_min_raise() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        table.add_human(settings3, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player1 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Call);
+        // player2 calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+        // player3 checks to the flop
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Check);
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(8);
+        thread::sleep(wait_duration);
+
+        // player2 attempts to bet smaller than the min raise, so should time out
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(1));
+        // player3 bets 8, which is allowed
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Bet(8));
+        // player1 attempts to bet smaller than the min raise
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(15));
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player3 eventually wins the 2 BBs
+        assert_eq!(table.players[2].as_ref().unwrap().money, 1016);
+
+	// the others lost it
+        assert_eq!(table.players[0].as_ref().unwrap().money, 992);
+        assert_eq!(table.players[1].as_ref().unwrap().money, 992);	
+    }
+
+    /// during preflop, the min raise starts at the big blind.
+    /// Here, player 1 makes a bet of 20, thus setting the min raise to now be 12
+    /// Player2 attempts to bet 25, this is not enough (32 required), so times out
+    /// Player3 bets up to 45, thus setting the min raise now to be 25,
+    /// Finally, Player1 attempts to bet 65, not enough (70 required), so times out
+    #[test]
+    fn pre_flop_min_raise_multiple() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        table.add_human(settings3, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player1 bets 20 and sets min raise to 12
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(20));
+        // player2 attempts a bet of 25, but this fails, so they time out
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(25));
+        // player3 bets to 45, and sets the min raise to 25
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Bet(45));
+
+	// sleep before next action from P1
+        thread::sleep(time::Duration::from_secs_f32(5.0)); 
+	
+        // player1 attempts a bet of 65, which fails, so they time out
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(65));
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player1 loses their first bet of 20
+        assert_eq!(table.players[0].as_ref().unwrap().money, 980);
+
+	// player2 lost their SB from time out
+        assert_eq!(table.players[1].as_ref().unwrap().money, 996);
+
+	// player3 wins the rest
+        assert_eq!(table.players[2].as_ref().unwrap().money, 1024);	
+    }
+
+    /// during preflop, the min raise starts at the big blind.
+    /// Here, player1 makes a bet of 50, thus setting the min raise to now be 42
+    /// Player2 goes all-in with 70 (a raise of only 20) The min raise remains at 42.
+    /// While this is less than the 42 min raise, it is still valid, because it is an all-in    
+    /// Player3 calls the all-in.    
+    /// Player1 now attempts to raise again, **BUT** this is a special rule where the original
+    /// raiser is not allowed to raise again if the current raise (all-in) was less than a "true"
+    /// min raise.
+    /// Player1 will time out.
+    #[test]
+    fn pre_flop_min_raise_all_in_1() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+        table.players[1].as_mut().unwrap().money = 70; // starts with 70 bucks
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        table.add_human(settings3, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player1 bets 50 and sets min raise to 42
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(50));
+        // player2 goes all-in with a bet of 70
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(70));
+        // player3 calls the all-in
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
+
+	// sleep before next action from P1
+        thread::sleep(time::Duration::from_secs_f32(5.0)); 
+	
+        // player1 attempts a new bet of 150, but they are not allowed to raise again
+	// (even though this is technically more than the min_raise needed on themselves)
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(150));
+
+        // player3 calls the all-in (only if it happens wrongly in this unit test!)
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Call);
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player1 loses their first bet of 50, but not their next invalid bet amount
+	// if the code errantly lets the 150 bet happen, then player3 calls, and finally player1 times out
+        assert_eq!(table.players[0].as_ref().unwrap().money, 950);
+
+	// player2 and player3 outcome is arbitrary
+    }
+
+    /// during preflop, the min raise starts at the big blind.
+    /// Here, player1 makes a bet of 50, thus setting the min raise to now be 42
+    /// Player2 begins with 70 bucks, and goes all in
+    /// While this is less than the 42 min raise, it is still valid, because it is an all-in
+    /// The min raise remains at 42.
+    /// Player3 bets up to 150, making the new min_raise to be 80
+    /// Player1 bets up to 230 (the minimum allowed)
+    /// Player3 attempts to bet 270, but this is too small, so times out
+    #[test]
+    fn pre_flop_min_raise_all_in_2() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+        table.players[1].as_mut().unwrap().money = 70; // starts with 70 bucks
+	
+        // player3 will start as the big blind
+        let id3 = uuid::Uuid::new_v4();
+        let name3 = "Human3".to_string();
+        let settings3 = PlayerConfig::new(id3, Some(name3), None);
+        table.add_human(settings3, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 3);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player1 bets 50 and sets min raise to 42
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(50));
+        // player2 goes all-in with a bet of 70
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(70));
+        // player3 bets up to 150, setting new min raise to 80
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Bet(150));
+
+	// sleep before next action from P1
+        thread::sleep(time::Duration::from_secs_f32(5.0)); 
+	
+        // player1 bets up to 230
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(230));
+        // player3 attempts to bet 270, but this is smaller than the 80 min raise, so times out
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id3, PlayerAction::Bet(270));
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player3 loses their bet of 150
+        assert_eq!(table.players[2].as_ref().unwrap().money, 850);
+
+	let player_1_money = table.players[0].as_ref().unwrap().money;
+	let player_2_money = table.players[1].as_ref().unwrap().money;
+	assert!(player_2_money == 0 || player_2_money == 210); // player2 wins the side pot or not
+	if player_2_money == 0 {
+	    // if they lost the side pot, then player1 won it (and the bigger pot)
+	    assert_eq!(player_1_money, 1220);
+	} else {
+	    // else player_2 won the side pot, but player1 still gets the excess player2 money
+	    assert_eq!(player_1_money, 1010);	    
+	}
     }
     
 }
