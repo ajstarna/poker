@@ -17,7 +17,7 @@ class Create extends React.Component {
         this.numBotsRef = createRef();
         this.smallBlindRef = createRef();
         this.bigBlindRef = createRef();
-        this.startingStackRef = createRef();
+        this.buyInRef = createRef();
 
         this.handleChange = this.handleChange.bind(this);
         this.handleSubmit = this.handleSubmit.bind(this);
@@ -56,7 +56,7 @@ class Create extends React.Component {
                 "num_bots": this.numBotsRef.current.getValue(),
                 "small_blind": this.smallBlindRef.current.getValue(),
                 "big_blind": this.bigBlindRef.current.getValue(),
-                "buy_in": this.startingStackRef.current.getValue(),
+                "buy_in": this.buyInRef.current.getValue(),
             };
 
             if (this.state.private) {
@@ -89,8 +89,8 @@ class Create extends React.Component {
                     <Counter ref={this.smallBlindRef} min="0" max="10000" step="1" name="smallBlind" value="1" />
                     <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Big Blind:</label>
                     <Counter ref={this.bigBlindRef} min="0" max="10000" step="1" name="bigBlind" value="2" />
-                    <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Starting Stack:</label>
-                    <Counter ref={this.startingStackRef} min="0" max="10000" step="100" name="startingStack" value="200" />
+                    <label className="block mt-10 mb-2 text-lg font-medium text-gray-200">Buy In:</label>
+                    <Counter ref={this.buyInRef} min="0" max="10000" step="100" name="buyIn" value="200" />
                     <label className="block mt-10 mb-2">
                         <input className="mr-4 leading-tight w-4 h-4" type="checkbox" name="private" value={this.state.private} onChange={this.handleChange} />
                         <span className="text-lg font-medium text-gray-200">
