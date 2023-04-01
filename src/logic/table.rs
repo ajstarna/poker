@@ -100,6 +100,7 @@ impl Table {
 
     fn send_game_state(&self, gamehand_opt: Option<&GameHand>, game_suspended: bool) {
 	let mut state_message = self.get_game_state_json(gamehand_opt, game_suspended);
+	println!("blah {:?}", state_message.dump());
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
@@ -129,12 +130,16 @@ impl Table {
     /// player remains. Since if at least 2 active non-all-in-players are left, then they can
     /// keep betting with each other in a side pot.
     fn is_all_in_situation(&self) -> bool {
-	let remaining_actionable_players = self.players
-	    .iter()
-	    .flatten()
-	    .filter(|player| player.is_active && !player.is_all_in())
-	    .count();
-	remaining_actionable_players < 2
+	let mut someone_all_in = false;
+	let mut num_other_active = 0;
+	for player in self.players.iter().flatten() {
+	    if player.is_all_in() {
+		someone_all_in = true;
+	    } else if player.is_active{
+		num_other_active += 1;
+	    }
+	}
+	someone_all_in && num_other_active < 2
     }
     
     /// returns the game state as a json-String, for sending to the front-end
@@ -188,10 +193,15 @@ impl Table {
 		}
 		if all_in_situation && player.is_active {
 		    // everyone left is all_in, so show all the cards
-		    player_info["hole_cards"] = format!("{}{}",
-							player.hole_cards[0],
-							player.hole_cards[1])
-			.into();
+		    // (check for length 2 to be safe, but should not be an issue)
+		    if player.hole_cards.len() == 2 {
+			player_info["hole_cards"] = format!("{}{}",
+							    player.hole_cards[0],
+							    player.hole_cards[1])
+			    .into();
+		    } else {
+			player_info["hole_cards"] = json::Null;
+		    }
 		}
 		if let Some(gamehand) = gamehand_opt {
 		    for (street, contributions) in gamehand.street_contributions.iter() {
@@ -3961,6 +3971,41 @@ mod tests {
 	let player_2_money = table.players[1].as_ref().unwrap().money;
 	assert_eq!(player_1_money, 6);
 	assert_eq!(player_2_money, 997);	    
+    }
+
+    /// this test is just a sanity check that nothing goes comletely haywire if there
+    /// is only a single person at the table.
+    /// We have seens bugs occurs in such a situation
+    #[test]
+    fn only_one_player() {
+        let mut table = Table::default();
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // flatten to get all the Some() players
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 1);
+        assert!(table.players[0].as_ref().unwrap().human_controlled);
+
+	// nothing will actually happen, but we call play_one_hand
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+        // check that the money changed hands
+        assert_eq!(table.players[0].as_ref().unwrap().money, 1000);
     }
     
 }
