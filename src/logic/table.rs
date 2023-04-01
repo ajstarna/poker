@@ -123,6 +123,13 @@ impl Table {
             }
 	}
     }
+
+    // check that all active players are all_in    
+    fn is_everyone_all_in(&self) -> bool {
+	self.players.iter()
+	    .flatten()
+	    .all(|player| !player.is_active || player.is_all_in())
+    }
     
     /// returns the game state as a json-String, for sending to the front-end
     fn get_game_state_json(
@@ -130,6 +137,9 @@ impl Table {
 	gamehand_opt: Option<&GameHand>,
 	game_suspended: bool,
     ) -> json::JsonValue {
+	// if every active player is all-in, then add hole card info for each player
+	let everyone_all_in = self.is_everyone_all_in();
+	
         let mut state_message = object! {
             msg_type: "game_state".to_owned(),
             name: self.name.to_owned(),
@@ -141,8 +151,9 @@ impl Table {
             button_idx: self.button_idx,
             hand_num: self.hand_num,
 	    game_suspended: game_suspended,
+	    everyone_all_in: everyone_all_in,
 	};
-
+	
 	// add a list of player infos
 	let mut player_infos = vec![];
         for (i, player_spot) in self.players.iter().enumerate() {
@@ -168,6 +179,13 @@ impl Table {
 		}
 		if let Some(last_action) = player.last_action {
                     player_info["last_action"] = last_action.to_string().into();
+		}
+		if everyone_all_in && player.is_active {
+		    // everyone left is all_in, so show all the cards
+		    player_info["hole_cards"] = format!("{}{}",
+							player.hole_cards[0],
+							player.hole_cards[1])
+			.into();
 		}
 		if let Some(gamehand) = gamehand_opt {
 		    for (street, contributions) in gamehand.street_contributions.iter() {
