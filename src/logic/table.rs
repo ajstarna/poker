@@ -126,7 +126,7 @@ impl Table {
 
     /// An all-in-situation is when no more actions are needed for the hand
     /// This means at least one person must be all in, and at most one non-all-in active
-    /// player remains. Since if at least 2 active non-all-in-players are left, then can
+    /// player remains. Since if at least 2 active non-all-in-players are left, then they can
     /// keep betting with each other in a side pot.
     fn is_all_in_situation(&self) -> bool {
 	let remaining_actionable_players = self.players
@@ -924,16 +924,6 @@ impl Table {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
         gamehand: &mut GameHand,
     ) -> bool {
-
-	/*
-        // if a player is still active but has no remaining money (i.e. is all-in),
-        let num_all_in = self
-            .players
-            .iter()
-            .flatten() // skip over None values
-            .filter(|player| player.is_all_in())
-            .count();
-	 */
         let num_active = self
             .players
             .iter()
@@ -952,34 +942,26 @@ impl Table {
             println!("an all-in-situation, dont bother with the street!");
             return false;	    
 	}
-
-	/*
-        if num_all_in + 1 == num_active {
-            println!("only one person is not all in, so don't bother with the street!");
-            return false;
-        }*/
 	
-        let starting_idx = self.get_starting_idx(); // which player starts the betting
-
         gamehand.street_contributions.insert(gamehand.street, [0;9]);
 	
-	let between_hands = false;		
-	
-	let mut hand_over = false;	
-        // iterate over the players from the starting index to the end of the vec,
-        // and then from the beginning back to the starting index
+	let between_hands = false;			
+	let mut hand_over = false;
+
+        let starting_idx = self.get_starting_idx(); // which player starts the betting	
+        // iterate over the players in a cycle, from the starting index
         for i in (starting_idx..9).chain(0..starting_idx).cycle() {
 	    // handle meta actions once right at the beginning to be responsive to sitout messages for example
             self.handle_meta_actions(&incoming_meta_actions, between_hands, Some(gamehand));
 
-	    let current_contributions = gamehand.street_contributions.get(&gamehand.street).unwrap();	
-	    let mut num_active = 0;    
-	    let mut num_settled = 0;
-	    let mut num_all_in = 0;	    
             // double check if any players left as a meta-action during the previous
             // player's turn.
 	    // Also, count how many active, all_in, and settled players we have
-            for (i, player_spot) in self.players.iter_mut().enumerate() {
+	    let current_contributions = gamehand.street_contributions.get(&gamehand.street).unwrap();	
+	    let mut num_active = 0;    
+	    let mut num_settled = 0;
+	    let mut num_all_in = 0;	    	    
+            for (i, player_spot) in self.players.iter_mut().enumerate() {		
 		if let Some(player) = player_spot {
                     if !self.player_ids_to_configs.contains_key(&player.id) {
 			println!("player is no longer in the config");
@@ -992,6 +974,11 @@ impl Table {
 		    if player.is_all_in() {
 			num_all_in += 1;
 		    } else {
+			if let Some(PlayerAction::PostBigBlind(_)) = player.last_action {
+			    // posting the big blind does not count as being "settled",
+			    // since they get a chance to raise again.
+			    continue
+			}
 			if gamehand.current_bet > 0 {
 			    // players can only be settled if something was bet!
 			    let player_cont = current_contributions[i];
