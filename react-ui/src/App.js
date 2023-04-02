@@ -134,7 +134,7 @@ class App extends React.Component {
         } else if (json.msg_type === "table_info") {
           that.updateTableInfo(json);
         } else if (json.msg_type === "created_table") {
-          let output = "You created a table. Type '/help' for a list of available admin commands. (Private games only)";
+          let output = "You created a table. Type '!help' for a list of available admin commands. (Private games only)";
           that.chat("Dealer", output);	
           that.setState({creatingTable: false});
           that.props.navigate("/table");
