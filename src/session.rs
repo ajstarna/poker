@@ -19,14 +19,14 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub fn get_help_message() -> Vec<String> {
-    vec!["/small_blind AMOUNT".to_string(),
-	 "/big_blind AMOUNT".to_string(),
-	 "/starting_stack AMOUNT".to_string(),
-	 "/set_password PASSWORD".to_string(),
-	 "/show_password".to_string(),	 
-	 "/add_bot".to_string(),
-	 "/remove_bot".to_string(),
-	 "/restart".to_string()	 
+    vec!["!small_blind AMOUNT".to_string(),
+	 "!big_blind AMOUNT".to_string(),
+	 "!starting_stack AMOUNT".to_string(),
+	 "!set_password PASSWORD".to_string(),
+	 "!show_password".to_string(),	 
+	 "!add_bot".to_string(),
+	 "!remove_bot".to_string(),
+	 "!restart".to_string()	 
     ]
 }
 
