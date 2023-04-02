@@ -136,6 +136,7 @@ class Table extends React.Component {
         if (gameState === null) return [0, 0];
 
         let main_player = gameState.players[gameState.your_index];
+        let minRaise = gameState.min_raise;
         let street_contributions = 0;
 
         if (gameState.street === "preflop") {
@@ -148,8 +149,9 @@ class Table extends React.Component {
             street_contributions = main_player.river_cont;
         }
 
-        let max = main_player.money + street_contributions
-        return [0, max];
+        let max = main_player.money + street_contributions;
+        let min = minRaise + gameState.current_bet;
+        return [min, max];
     }
 
     static isSittingOut(gameState) {
@@ -278,7 +280,7 @@ class Table extends React.Component {
     }
 
     handleMessageChange(event) {
-        this.setState({ chatMessage: parseInt(event.target.value) });
+        this.setState({ chatMessage: event.target.value });
     }
 
     render() {
@@ -451,6 +453,7 @@ class Table extends React.Component {
                                                 <table className="relative w-full text-sm text-left">
                                                     <thead className="text-xs uppercase">
                                                         <tr>
+                                                            <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Hand</th>
                                                             <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">My Cards</th>
                                                             <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Board</th>
                                                             <th className="sticky top-0 px-6 py-3 text-gray-200 bg-gray-800">Returns</th>
@@ -461,6 +464,11 @@ class Table extends React.Component {
                                                         {
                                                             this.props.handHistory?.map((hand) => (
                                                                 <tr>
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex flex-row space-x-1">
+                                                                            {hand.handNumber}
+                                                                        </div>
+                                                                    </td>
                                                                     <td className="px-6 py-4">
                                                                         <div className="flex flex-row space-x-1">
                                                                             {stringToCards(hand.holeCards)}
