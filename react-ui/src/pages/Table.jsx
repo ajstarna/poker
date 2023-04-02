@@ -592,7 +592,7 @@ class Table extends React.Component {
                                             Check
                                         </ActionButton>
                                         <ActionButton onClick={this.handleCall}>
-                                            Call
+                                            Call {this.props.gameState?.current_bet}
                                         </ActionButton>
                                         <ActionButton onClick={this.handleBet}>
                                             Bet
