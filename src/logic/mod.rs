@@ -1,5 +1,5 @@
 mod card;
-mod pots;
+mod pot;
 mod game_hand;
 
 pub mod player;

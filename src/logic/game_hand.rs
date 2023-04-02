@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::card::{Card, HandResult};
 use super::player::{Player, PlayerConfig, PlayerAction};
-use super::pots::PotManager;
+use super::pot::PotManager;
 
 use json::object;
 use uuid::Uuid;
