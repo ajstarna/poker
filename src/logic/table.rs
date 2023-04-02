@@ -7,7 +7,7 @@ use std::convert::TryInto;
 
 use super::card::Card;
 use super::deck::{Deck, StandardDeck};
-use super::game_hand::{GameHand, Street};
+use super::game_hand::{GameHand, Street, HandStatus};
 
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::TableHub;
@@ -965,54 +965,30 @@ impl Table {
 
             // double check if any players left as a meta-action during the previous
             // player's turn.
-	    // Also, count how many active, all_in, and settled players we have
-	    let current_contributions = gamehand.street_contributions.get(&gamehand.street).unwrap();	
-	    let mut num_active = 0;    
-	    let mut num_settled = 0;
-	    let mut num_all_in = 0;	    	    
-            for (i, player_spot) in self.players.iter_mut().enumerate() {		
+            for player_spot in self.players.iter_mut() {		
 		if let Some(player) = player_spot {
                     if !self.player_ids_to_configs.contains_key(&player.id) {
 			println!("player is no longer in the config");
 			*player_spot = None;
-			continue;
                     }
-		    if player.is_active {
-			num_active += 1;
-		    }
-		    if player.is_all_in() {
-			num_all_in += 1;
-		    } else {
-			if let Some(PlayerAction::PostBigBlind(_)) = player.last_action {
-			    // posting the big blind does not count as being "settled",
-			    // since they get a chance to raise again.
-			    continue
-			}
-			if gamehand.current_bet > 0 {
-			    // players can only be settled if something was bet!
-			    let player_cont = current_contributions[i];
-			    if player_cont >= gamehand.current_bet {
-				num_settled += 1;
-			    }
-			}
-		    }
 		}
-            }
-            if num_active == 1 {
-                println!("Only one active player left so lets break the steet loop");
-                // end the street and indicate to the caller that the hand is finished
-		hand_over = true;
-                break;
-            }
-            if num_settled + num_all_in == num_active {
-                println!(
-                    "everyone is ready to go to the next street! num_settled = {}",
-                    num_settled
-                );
-                // end the street and indicate to the caller that the hand is going to the next street
-                break;
-            }
-	    
+	    }
+	    // check the status of the game in terms of active players, all-in players,
+	    // and players settled
+	    let hand_status = gamehand.get_hand_status(&mut self.players);
+	    match hand_status {
+		HandStatus::HandOver => {
+		    // we are done the entire hand
+		    hand_over = true;
+                    break;
+		}
+		HandStatus::NextStreet => {
+		    // we are done the street
+		    break;
+		}
+		HandStatus::KeepPlaying => () // there is more action to be had
+	    }
+	    	    
 	    if let Some(player) = &self.players[i]  {
 		println!("Player = {:?}, i = {}", player, i);		
 		if !(player.is_active && player.money > 0) {
@@ -1148,8 +1124,6 @@ impl Table {
         let pause_duration = time::Duration::from_secs(1);
         thread::sleep(pause_duration);
 
-	println!("blah current bet = {:?}", gamehand.current_bet);
-	
 	// note: several times in this method we access player within a scope, so that
 	// we can call handle_meta_actions in between. Since that method wants to modify self.players,
 	// we cannot have one borrowed at the same time.
@@ -1665,7 +1639,6 @@ mod tests {
     }
 
     /// if the big blind player doesn't have enough to post the big blind amount,
-    /// the current bet still goes up to the big blind
     #[test]
     fn big_blind_not_enough_money() {
         let mut deck = RiggedDeck::new();
@@ -4005,6 +3978,141 @@ mod tests {
 
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 1000);
+    }
+
+    /// test that we can check all the way to the end
+    #[test]
+    fn check_through() {
+        let mut deck = RiggedDeck::new();
+
+        // we want the button/big blind to lose
+        deck.push(Card {
+            rank: Rank::Two,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Three,
+            suit: Suit::Club,
+        });	
+        // now the small blind's hole cards
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Heart,
+        });	
+        // now the full run out
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Diamond,
+        });
+        deck.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Spade,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+        deck.push(Card {
+            rank: Rank::King,
+            suit: Suit::Heart,
+        });
+        deck.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut table = Table::default();
+        table.deck = Box::new(deck);
+
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button/big blind
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human1".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+        // flatten to get all the Some() players
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.5)); 
+	
+        // SB calls
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Call);
+	// BB checks to flop
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+        // wait for the flop
+        let wait_duration = time::Duration::from_secs(7);
+        thread::sleep(wait_duration);
+
+	// checks through
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Check);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+	// wait for turn
+        thread::sleep(wait_duration);
+
+	// checks through
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Check);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+
+	// wait for river
+        thread::sleep(wait_duration);
+
+	// checks through
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Check);
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Check);
+	
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+        // check that the money changed hands
+        assert_eq!(table.players[0].as_ref().unwrap().money, 992);
+        assert_eq!(table.players[1].as_ref().unwrap().money, 1008);
     }
     
 }

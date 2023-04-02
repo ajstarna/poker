@@ -30,7 +30,13 @@ impl fmt::Display for Street {
         write!(f, "{}", output)
     }
 }
-			
+
+pub enum HandStatus {
+    KeepPlaying,
+    NextStreet,
+    HandOver,
+}
+
 #[derive(Debug)]
 pub struct GameHand {
     big_blind: u32,
@@ -65,6 +71,54 @@ impl GameHand {
         }
     }
 
+    pub fn get_hand_status(&self,  players: &mut [Option<Player>; 9]) -> HandStatus {
+	// Also, count how many active, all_in, and settled players we have
+	let current_contributions = self.street_contributions.get(&self.street).unwrap();	
+	let mut num_active = 0;    
+	let mut num_settled = 0;
+	let mut num_all_in = 0;	    	    
+        for (i, player_spot) in players.iter_mut().enumerate() {		
+	    if let Some(player) = player_spot {
+		if player.is_active {
+		    num_active += 1;
+		}
+		if player.is_all_in() {
+		    num_all_in += 1;
+		} else {
+		    if let Some(PlayerAction::PostBigBlind(_)) = player.last_action {
+			// posting the big blind does not count as being "settled",
+			// since they get a chance to raise again.
+			continue
+		    }
+		    if player.last_action.is_some() {
+			// players can only be settled if they have dome something this street at least
+			let player_cont = current_contributions[i];
+			if player_cont >= self.current_bet {
+			    num_settled += 1;
+			}
+		    }
+		}
+	    }
+        }
+        if num_active == 1 {
+            println!("Only one active player left so lets end the hand");
+            // end the street and indicate to the caller that the hand is finished
+	    HandStatus::HandOver
+        }
+        else if num_settled + num_all_in == num_active {
+            println!(
+                "everyone is ready to go to the next street! num_settled = {}",
+                num_settled
+            );
+            // indicate to the caller that the hand is going to the next street
+	    HandStatus::NextStreet
+        } else {
+	    // otherwise, there is more action to be had this street
+	    HandStatus::KeepPlaying
+	}
+	
+    }
+    
     pub fn pot_repr(&self) -> Vec<u32> {
 	self.pot_manager.simple_repr()
     }
