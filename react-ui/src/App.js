@@ -139,6 +139,16 @@ class App extends React.Component {
           that.setState({creatingTable: false});
           that.props.navigate("/table");
         } else if (json.msg_type === "game_state") {
+          if (json.your_index === json.index_to_act) {
+            if (that.state.soundEnabled) {
+              that.notificationActionSound.current?.play();
+            }
+            if (json.current_bet > 0) {
+              that.chat("Dealer", `Your turn to act. The current bet is ${json.current_bet}.`);
+            } else {
+              that.chat("Dealer", `Your turn to act. There is currently no bet.`);
+            }
+          }
           that.setState({
             creatingTable: false,
             gameState: json,
@@ -155,15 +165,6 @@ class App extends React.Component {
 
           // Reset past hand states
           that.setState({pastHandStates: []});
-        } else if (json.msg_type === "prompt") {
-          if (that.state.soundEnabled) {
-            that.notificationActionSound.current?.play();
-          }
-          if (json.current_bet > 0) {
-            that.chat("Dealer", `Your turn to act. The current bet is ${json.current_bet}.`);
-          } else {
-            that.chat("Dealer", `Your turn to act. There is currently no bet.`);
-          }
         } else if (json.msg_type === "finish_hand") {
           that.handleShowdown(json.settlements);
 
@@ -386,6 +387,7 @@ class App extends React.Component {
     }
 
     let history = {
+      handNumber: gameState.hand_num,
       holeCards: holeCards,
       board: board,
       returns: Math.abs(returns),
