@@ -98,24 +98,28 @@ impl Table {
         }
     }
 
-    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, game_suspended: bool) {
-	let mut state_message = self.get_game_state_json(gamehand_opt, game_suspended);
+    fn send_game_state(&self, gamehand_opt: Option<&GameHand>, extra_fields: Option<json::JsonValue>) {
+	let game_state = self.get_game_state_json(gamehand_opt, extra_fields);
+	self.send_individual_game_states(game_state);
+    }
+
+    fn send_individual_game_states(&self, mut game_state: json::JsonValue) {
 	// go through each player, and update the personal information for their message
 	// (i.e. hole cards, player index)
         for (i, player_spot) in self.players.iter().enumerate() {
             if let Some(player) = player_spot {
-		state_message["your_index"] = i.into();
+		game_state["your_index"] = i.into();
 		if player.hole_cards.len() == 2 {
-		    state_message["hole_cards"] = format!("{}{}",
+		    game_state["hole_cards"] = format!("{}{}",
 							  player.hole_cards[0],
 							  player.hole_cards[1])
 			.into();
 		} else {
-		    state_message["hole_cards"] = json::Null;
+		    game_state["hole_cards"] = json::Null;
 		}
 		
 		PlayerConfig::send_specific_message(
-		    &state_message.dump(),
+		    &game_state.dump(),
 		    player.id,
                     &self.player_ids_to_configs,
 		);
@@ -123,29 +127,12 @@ impl Table {
             }
 	}
     }
-
-    /// An all-in-situation is when no more actions are needed for the hand
-    /// This means at least one person must be all in, and at most one non-all-in active
-    /// player remains. Since if at least 2 active non-all-in-players are left, then they can
-    /// keep betting with each other in a side pot.
-    fn is_all_in_situation(&self) -> bool {
-	let mut someone_all_in = false;
-	let mut num_other_active = 0;
-	for player in self.players.iter().flatten() {
-	    if player.is_all_in() {
-		someone_all_in = true;
-	    } else if player.is_active{
-		num_other_active += 1;
-	    }
-	}
-	someone_all_in && num_other_active < 2
-    }
     
     /// returns the game state as a json-String, for sending to the front-end
     fn get_game_state_json(
 	&self,
 	gamehand_opt: Option<&GameHand>,
-	game_suspended: bool,
+	extra_fields: Option<json::JsonValue>,
     ) -> json::JsonValue {
 	// if every active player is all-in, then add hole card info for each player
 	let all_in_situation = self.is_all_in_situation();
@@ -160,9 +147,17 @@ impl Table {
             password: self.password.to_owned(),	    
             button_idx: self.button_idx,
             hand_num: self.hand_num,
-	    game_suspended: game_suspended,
+	    game_suspended: false, // in rare cases this may be overwritten
+	    hand_over: false, // in rare cases this may be overwritten	    
 	    all_in_situation: all_in_situation,
 	};
+
+	if let Some(mut extra_fields) = extra_fields {
+	    // extra fields were provided, so add to the state
+	    for (k, v) in extra_fields.entries_mut() {
+		state_message[k] = v.take();
+	    }
+	}
 	
 	// add a list of player infos
 	let mut player_infos = vec![];
@@ -249,7 +244,24 @@ impl Table {
 
 	state_message
     }
-	
+
+    /// An all-in-situation is when no more actions are needed for the hand
+    /// This means at least one person must be all in, and at most one non-all-in active
+    /// player remains. Since if at least 2 active non-all-in-players are left, then they can
+    /// keep betting with each other in a side pot.
+    fn is_all_in_situation(&self) -> bool {
+	let mut someone_all_in = false;
+	let mut num_other_active = 0;
+	for player in self.players.iter().flatten() {
+	    if player.is_all_in() {
+		someone_all_in = true;
+	    } else if player.is_active{
+		num_other_active += 1;
+	    }
+	}
+	someone_all_in && num_other_active < 2
+    }
+		       
     /// add a given playerconfig to an empty seat
     /// if the game requires a password, then a matching password must be provided for the user to be added
     /// TODO: eventually we wanmt the player to select an open seat I guess
@@ -483,7 +495,7 @@ impl Table {
                     match self.add_human(player_config, password) {
                         Ok(index) => {
                             println!("Joining table at index: {}", index);
-			    self.send_game_state(gamehand, false);
+			    self.send_game_state(gamehand, None);
                         }
                         Err(err) => {
                             // we were unable to add the player
@@ -545,7 +557,7 @@ impl Table {
                 }
                 MetaAction::UpdateAddress(id, new_addr) => {
                     PlayerConfig::set_player_address(id, new_addr, &mut self.player_ids_to_configs);
-		    self.send_game_state(gamehand, false);		    
+		    self.send_game_state(gamehand, None);		    
                 }
                 MetaAction::TableInfo(addr) => {
 		    println!("about to send table info to {:?}", addr);
@@ -571,7 +583,7 @@ impl Table {
 		    if let Some(player_config) = self.player_ids_to_configs.get_mut(&id) {
 			player_config.heart_beat = time::Instant::now(); // this counts as activity
 		    }
-		    self.send_game_state(gamehand, false);		    		    
+		    self.send_game_state(gamehand, None);		    		    
                 }
                 MetaAction::SitOut(id) => {
                     for player in self.players.iter_mut().flatten() {
@@ -580,7 +592,7 @@ impl Table {
                             player.is_sitting_out = true;
                         }
                     }
-		    self.send_game_state(gamehand, false);		    		    
+		    self.send_game_state(gamehand, None);		    		    
                 }
 		MetaAction::Admin(id, admin_command) => {
 		    if !between_hands {
@@ -777,7 +789,7 @@ impl Table {
             }
             Street::ShowDown => (), // we are already in the end street (from players folding during the street)
         }
-	self.send_game_state(Some(gamehand), false);	
+	self.send_game_state(Some(gamehand), None);	
     }
 
     fn deal_hands(&mut self) {
@@ -819,18 +831,16 @@ impl Table {
             // the game is currently empty, so there is nothing to finish
             return;
         }
-        // Notify players the hand is over
-        let mut finish_hand_message = object! {
-            msg_type: "finish_hand".to_owned()
-        };
-
 	let starting_idx = self.get_starting_idx();
 	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
 	let num_in_showdown = self.players.iter().flatten().filter(|player| player.is_active).count();
         let wait_time = 3 * num_in_showdown + 2; // 2 bonus seconds at the very end 
-        finish_hand_message["settlements"] = settlements.into();	
-        PlayerConfig::send_group_message(&finish_hand_message.dump(), &self.player_ids_to_configs);
-        
+	let extra_fields = object! {
+	    hand_over: true,
+	    settlements: settlements.to_owned(),
+	};
+	self.send_game_state(Some(&gamehand), Some(extra_fields));
+	
         let pause_duration = time::Duration::from_secs(wait_time.try_into().unwrap());
         thread::sleep(pause_duration);	
         // take the players' cards
@@ -864,8 +874,10 @@ impl Table {
 	    // not enough players or active players to play a hand,
 	    // send a game state indicating that the same is suspended,
 	    // and return false to the main loop.
-	    let game_suspended = true;
-	    self.send_game_state(Some(&gamehand), game_suspended);		    
+	    let extra_fields = object! {
+		game_suspended: true
+	    };
+	    self.send_game_state(Some(&gamehand), Some(extra_fields));
             return false;
         }
 
@@ -881,7 +893,7 @@ impl Table {
 	actions.drain();
 	std::mem::drop(actions); // give back the lock
 	
-	self.send_game_state(Some(&gamehand), false);	
+	self.send_game_state(Some(&gamehand), None);	
         self.deck.shuffle();
         self.deal_hands();
 
@@ -1001,7 +1013,7 @@ impl Table {
 	    }
 	    
 	    gamehand.index_to_act = Some(i);
-	    self.send_game_state(Some(&gamehand), false);
+	    self.send_game_state(Some(&gamehand), None);
 	    	    
             let action = self.get_and_validate_action(
                 incoming_actions,
@@ -1069,7 +1081,7 @@ impl Table {
                 }
             }
         };
-	self.send_game_state(Some(&gamehand), false);	
+	self.send_game_state(Some(&gamehand), None);	
 	hand_over
     }
     

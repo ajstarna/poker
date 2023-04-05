@@ -83,7 +83,7 @@ class Table extends React.Component {
 
         let gameState = props.gameState;
 
-        if (gameState === null) return state;
+        if (gameState === null || gameState === undefined) return state;
 
         // Update sitting out
         let isSittingOut = Table.isSittingOut(gameState);
@@ -156,6 +156,7 @@ class Table extends React.Component {
 
     static isSittingOut(gameState) {
         if (gameState === null) return true;
+        if (gameState.players === null) return true;
 
         let main_player = gameState.players[gameState.your_index];
         if ("is_sitting_out" in main_player)

@@ -139,6 +139,7 @@ class App extends React.Component {
           that.setState({creatingTable: false});
           that.props.navigate("/table");
         } else if (json.msg_type === "game_state") {
+          // If players turn to act
           if (json.your_index === json.index_to_act) {
             if (that.state.soundEnabled) {
               that.notificationActionSound.current?.play();
@@ -149,11 +150,36 @@ class App extends React.Component {
               that.chat("Dealer", `Your turn to act. There is currently no bet.`);
             }
           }
-          that.setState({
-            creatingTable: false,
-            gameState: json,
-            pastHandStates: [...that.state.pastHandStates, json]
-          });
+
+          // Handle hand end
+          if (json.hand_over) {
+            let newGameState = that.handleShowdown(json);
+
+            for (let settlement of json.settlements) {
+              if (settlement.winner) {
+                let showdown = "";
+                if (settlement.is_showdown) {
+                  showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
+                }
+
+                that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
+              }
+            }
+
+            that.setState({
+              creatingTable: false,
+              gameState: newGameState,
+              pastHandStates: [...that.state.pastHandStates, newGameState]
+            });
+          } else {
+            // Hand is not over
+            that.setState({
+              creatingTable: false,
+              gameState: json,
+              pastHandStates: [...that.state.pastHandStates, json]
+            });
+          }
+          
           that.props.navigate("/table");
         } else if (json.msg_type === "chat") {
           that.chat(json.player_name, json.text);
@@ -165,19 +191,6 @@ class App extends React.Component {
 
           // Reset past hand states
           that.setState({pastHandStates: []});
-        } else if (json.msg_type === "finish_hand") {
-          that.handleShowdown(json.settlements);
-
-          for (let settlement of json.settlements) {
-            if (settlement.winner) {
-              let showdown = "";
-              if (settlement.is_showdown) {
-                showdown = ` in a showdown with ${settlement.hand_result}: ${settlement.constituent_cards} and ${settlement.kickers} kicker.`;
-              }
-
-              that.chat("Dealer", `${settlement.player_name} won ${settlement.payout}${showdown}`);
-            }
-          }
         } else if (json.msg_type === "left_game") {
           that.props.navigate("/menu");
         } else if (json.msg_type === "help_message") {
@@ -254,12 +267,11 @@ class App extends React.Component {
     this.forceUpdate();
   }
 
-  handleShowdown(settlements) {
-    let { gameState } = this.state;
+  handleShowdown(gameState) {
 
     let showdown = [];
     // Get main pot winner
-    let mainPot = settlements.filter((settlement) => settlement.pot_index === 0);
+    let mainPot = gameState.settlements.filter((settlement) => settlement.pot_index === 0);
 
     for (let player of mainPot) {
         let playerShowdown = {
@@ -285,7 +297,7 @@ class App extends React.Component {
     }
 
     // Get side pot winners
-    let sidePots = settlements.filter((settlement) => settlement.pot_index > 0);
+    let sidePots = gameState.settlements.filter((settlement) => settlement.pot_index > 0);
     let sidePotIndices = new Set(sidePots.map((pot) => pot.pot_index));
     let sidePotSizes = {};
 
@@ -325,18 +337,14 @@ class App extends React.Component {
         }
     }
 
-    if (gameState.street !== "showdown") {
-      gameState.street = "end_of_hand";
-    }
-
     gameState.showdown = showdown;
 
-    this.saveHandHistory(gameState, settlements);
+    this.saveHandHistory(gameState);
 
-    this.setState({ gameState: gameState });
+    return gameState;
   }
 
-  saveHandHistory(gameState, settlements) {
+  saveHandHistory(gameState) {
     let playerIndex = gameState.your_index;
     let holeCards = gameState.hole_cards;
     let board = "";
@@ -356,7 +364,7 @@ class App extends React.Component {
     let returns = 0;
     let player = gameState.players[playerIndex];
     
-    for (let settlement of settlements) {
+    for (let settlement of gameState.settlements) {
       if (settlement.index === playerIndex && "payout" in settlement) {
         returns += settlement.payout;
       }

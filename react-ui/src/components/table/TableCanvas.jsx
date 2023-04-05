@@ -10,7 +10,6 @@ const TableCanvas = props => {
     const [context, setContext] = useState(null);
 
     const renderFrame = useCallback((gameState, frameCount) => {
-        console.log(`renderFrame: ${frameCount}`);
         const canvas = canvasRef.current;
         if (canvas === null) return;
 
@@ -28,8 +27,8 @@ const TableCanvas = props => {
         drawTable(context, canvasW, canvasH);
 
         if (gameState) {
-            let isShowdown = gameState.street === "showdown" && "showdown" in gameState;
-            let isEndOfHand = gameState.street === "end_of_hand" && "showdown" in gameState;
+            let isHandOver = gameState.hand_over;
+            let isShowdown = isHandOver && gameState.street === "showdown" && "showdown" in gameState;
             let bestHand = [];
             let bestHandResult = "";
             let whoShowed = [];
@@ -133,7 +132,7 @@ const TableCanvas = props => {
                             new PlayerCard(false)
                         );
                     }
-                } else if (isEndOfHand) {
+                } else if (isHandOver) {
                     let finalPlayers = gameState.showdown.filter((showdownPlayer) => { return showdownPlayer.index === playerState.index });
                     if (finalPlayers.length > 0) {
                         let finalPlayer = finalPlayers[0];
