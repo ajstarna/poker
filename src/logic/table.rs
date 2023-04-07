@@ -1294,9 +1294,11 @@ impl Table {
 			    );
 			    continue;
 			}
-			if new_bet < gamehand.current_bet + gamehand.min_raise &&
-			    (player_cumulative + player.money != new_bet) {
-				// the new bet must meet the min raise,
+			if (new_bet <= gamehand.current_bet) ||
+			    (new_bet < gamehand.current_bet + gamehand.min_raise &&
+			     (player_cumulative + player.money != new_bet)) {
+				// The new bet MUST be larger than the current bet.
+				// Also, the new bet must meet the min raise,
 				// UNLESS it puts them all-in, then it is fine
 				println!("new bet must be at least the minimum raise!");
 				let min_bet = gamehand.current_bet + gamehand.min_raise;
@@ -4125,6 +4127,78 @@ mod tests {
         // check that the money changed hands
         assert_eq!(table.players[0].as_ref().unwrap().money, 992);
         assert_eq!(table.players[1].as_ref().unwrap().money, 1008);
+    }
+
+    /// you can never "bet" less than the current bet
+    /// adding this test since since this currently blows up on the line:
+    /// let raise_amount = new_bet - gamehand.current_bet;
+    /// 'attempt to subtract with overflow'
+    #[test]
+    fn bet_too_small() {
+        let mut table = Table::default();
+	table.player_action_timeout = 5;
+        let incoming_actions = Arc::new(Mutex::new(HashMap::<Uuid, PlayerAction>::new()));
+        let incoming_meta_actions = Arc::new(Mutex::new(VecDeque::<MetaAction>::new()));
+        let cloned_actions = incoming_actions.clone();
+        let cloned_meta_actions = incoming_meta_actions.clone();
+
+        // player1 will start as the button
+        let id1 = uuid::Uuid::new_v4();
+        let name1 = "Human1".to_string();
+        let settings1 = PlayerConfig::new(id1, Some(name1), None);
+        table.add_human(settings1, None).unwrap();
+        table.players[0].as_mut().unwrap().money = 70; // starts with 70 bucks
+	
+        // player2 will start as the small blind
+        let id2 = uuid::Uuid::new_v4();
+        let name2 = "Human2".to_string();
+        let settings2 = PlayerConfig::new(id2, Some(name2), None);
+        table.add_human(settings2, None).unwrap();
+
+        // flatten to get all the Some() players for a sanity check
+        let some_players = table.players.iter().flatten().count();
+        assert_eq!(some_players, 2);
+
+        let handler = std::thread::spawn(move || {
+            table.play_one_hand(&cloned_actions, &cloned_meta_actions);
+            table // return the table back
+        });
+
+	// sleep so we dont drain the actions accidentally right at the beginning of play_one_hand
+        thread::sleep(time::Duration::from_secs_f32(0.2)); 
+	
+        // player2 bets 100 (more than player1's total)
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id2, PlayerAction::Bet(100));
+	
+        // player1 attempts to go all-in with a bet of 70
+	// this should be rejected (currently leads to a panic)
+	// 'attempt to subtract with overflow'
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Bet(70));
+
+	println!("sleeping after the bet:70 attempt");
+        thread::sleep(time::Duration::from_secs_f32(4.5)); 
+
+	println!("now fold action");
+        // player1 now folds
+        incoming_actions
+            .lock()
+            .unwrap()
+            .insert(id1, PlayerAction::Fold);
+		
+        // get the game back from the thread
+        let table = handler.join().unwrap();
+
+	// player1 lost their BB
+	let player_1_money = table.players[0].as_ref().unwrap().money;
+	let player_2_money = table.players[1].as_ref().unwrap().money;
+	assert_eq!(player_1_money, 62);
+	assert_eq!(player_2_money, 1008);	
     }
     
 }
