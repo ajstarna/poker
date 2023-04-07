@@ -3,7 +3,6 @@ use json::object;
 use rand::Rng;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
-use std::convert::TryInto;
 
 use super::card::Card;
 use super::deck::{Deck, StandardDeck};
@@ -98,6 +97,31 @@ impl Table {
         }
     }
 
+    /// this function sleeps for a given amount of time, but handles meta actions during the loop every
+    /// once in a while.
+    /// This lets us be more responsive to leave actions and sitout, in particular
+    fn sleep_loop(&mut self,
+		  mut time: f32,
+		  incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,		  
+		  between_hands: bool,
+		  gamehand: Option<&GameHand>,		  
+    ) {
+	let sleep_time = 0.35;
+	let sleep_duration = time::Duration::from_secs_f32(sleep_time);				
+	while time > 0.0 {
+            self.handle_meta_actions(&incoming_meta_actions, between_hands, gamehand);
+	    if time < sleep_time {
+		// this is the last time we sleep, and sleep just the remaining time left
+		let final_duration = time::Duration::from_secs_f32(time);
+		thread::sleep(final_duration);			    		
+	    } else {
+		// otherwise sleep a full sleep_duration
+		thread::sleep(sleep_duration);			    
+	    }
+	    time -= sleep_time;	    
+	}
+    }
+    
     fn send_game_state(&self, gamehand_opt: Option<&GameHand>, extra_fields: Option<json::JsonValue>) {
 	let game_state = self.get_game_state_json(gamehand_opt, extra_fields);
 	self.send_individual_game_states(game_state);
@@ -422,8 +446,7 @@ impl Table {
 	    
             // wait for next hand
 	    // this is especially needed when there is only one player at the table
-            let wait_duration = time::Duration::from_secs(1);
-            thread::sleep(wait_duration);
+	    self.sleep_loop(1.0, &incoming_meta_actions, between_hands, None);    	    
 	    
         }
         println!("about to send the gameover signal to the hub");
@@ -826,7 +849,10 @@ impl Table {
         gamehand.river = self.deck.draw_card();
     }
 
-    fn finish_hand(&mut self, gamehand: &mut GameHand) {
+    fn finish_hand(&mut self,
+		   gamehand: &mut GameHand,
+		   incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,		   
+    ) {
         if self.player_ids_to_configs.is_empty() {
             // the game is currently empty, so there is nothing to finish
             return;
@@ -834,15 +860,13 @@ impl Table {
 	let starting_idx = self.get_starting_idx();
 	let settlements = gamehand.divvy_pots(&mut self.players, &self.player_ids_to_configs, starting_idx);
 	let num_in_showdown = self.players.iter().flatten().filter(|player| player.is_active).count();
-        let wait_time = 3 * num_in_showdown + 2; // 2 bonus seconds at the very end 
+        let wait_time = 3.0 * num_in_showdown as f32 + 1.5; // 2 bonus seconds at the very end 
 	let extra_fields = object! {
 	    hand_over: true,
 	    settlements: settlements.to_owned(),
 	};
 	self.send_game_state(Some(&gamehand), Some(extra_fields));
-	
-        let pause_duration = time::Duration::from_secs(wait_time.try_into().unwrap());
-        thread::sleep(pause_duration);	
+	self.sleep_loop(wait_time, &incoming_meta_actions, false, Some(gamehand));    	    	
         // take the players' cards
         for player in self.players.iter_mut().flatten() {
             player.hole_cards.drain(..);
@@ -908,10 +932,7 @@ impl Table {
 	    gamehand.min_raise = self.big_blind; 
             let finished =
                 self.play_street(incoming_actions, incoming_meta_actions, &mut gamehand);
-            // pause for a second for dramatic effect heh
-            let pause_duration = time::Duration::from_secs(2);
-            thread::sleep(pause_duration);
-	    
+	    self.sleep_loop(2.0, &incoming_meta_actions, false, Some(&gamehand));    	    		    
             if finished {
                 // if the game is over from players folding
                 println!("\nGame is ending before showdown!");
@@ -922,7 +943,7 @@ impl Table {
             }
         }
         // now we finish up and pay the pot to the winner
-        self.finish_hand(&mut gamehand);
+        self.finish_hand(&mut gamehand, incoming_meta_actions);
 	true // the hand was indeed played
     }
 
@@ -1133,9 +1154,7 @@ impl Table {
         // position is our spot in the order, with 0 == small blind, etc
 	
         // we sleep a little bit each time so that the output doesnt flood the user at one moment
-        let pause_duration = time::Duration::from_secs(1);
-        thread::sleep(pause_duration);
-
+	self.sleep_loop(1.0, &incoming_meta_actions, false, Some(&gamehand));    	    		    
 	// note: several times in this method we access player within a scope, so that
 	// we can call handle_meta_actions in between. Since that method wants to modify self.players,
 	// we cannot have one borrowed at the same time.
@@ -1158,7 +1177,7 @@ impl Table {
 	};
         let mut action = None;
         let mut attempts = 0;
-        let retry_duration = time::Duration::from_secs(1); // how long to wait between trying again
+        let retry_duration = 1.0; // how long to wait between trying again
 	let between_hands = false;		
         while attempts < self.player_action_timeout && action.is_none() {
             // the first thing we do on each loop is handle meta action
@@ -1190,7 +1209,7 @@ impl Table {
 		match self.get_action_from_player(incoming_actions, &player) {
 		    None => {
 			// we give the user a second to place their action
-			thread::sleep(retry_duration);
+			self.sleep_loop(retry_duration, &incoming_meta_actions, false, Some(&gamehand));
 		    }
 		    Some(PlayerAction::Fold) => {
 			if gamehand.current_bet <= player_cumulative {
