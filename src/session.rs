@@ -21,7 +21,7 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(20);
 pub fn get_help_message() -> Vec<String> {
     vec!["!small_blind AMOUNT".to_string(),
 	 "!big_blind AMOUNT".to_string(),
-	 "!starting_stack AMOUNT".to_string(),
+	 "!buy_in AMOUNT".to_string(),
 	 "!set_password PASSWORD".to_string(),
 	 "!show_password".to_string(),	 
 	 "!add_bot".to_string(),
@@ -478,8 +478,8 @@ impl WsPlayerSession {
 			true
 		    }
                 }
-                "starting_stack" => {
-		    if let Some(Value::String(amount)) = object.get("starting_stack") {
+                "buy_in" => {
+		    if let Some(Value::String(amount)) = object.get("buy_in") {
 			if let Ok(amount) = amount.to_string().parse::<u32>() {	
 			    self.hub_addr.do_send(messages::MetaActionMessage {
 				id: self.id,

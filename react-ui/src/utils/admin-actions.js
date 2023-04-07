@@ -3,7 +3,7 @@ export const ADMIN_PREFIX = "!";
 const ADMIN_CMDS = [
     new RegExp(`(${ADMIN_PREFIX})(small_blind) (\\d)`),
     new RegExp(`(${ADMIN_PREFIX})(big_blind) (\\d)`),
-    new RegExp(`(${ADMIN_PREFIX})(starting_stack) (\\d)`),
+    new RegExp(`(${ADMIN_PREFIX})(buy_in) (\\d)`),
     new RegExp(`(${ADMIN_PREFIX})(set_password) ([^\\s]*)`),
     new RegExp(`(${ADMIN_PREFIX})(show_password)`),
     new RegExp(`(${ADMIN_PREFIX})(add_bot)`),
