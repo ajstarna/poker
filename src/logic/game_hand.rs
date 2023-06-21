@@ -8,7 +8,10 @@ use super::pot::PotManager;
 use json::object;
 use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+use strum_macros::EnumIter;
+use strum::IntoEnumIterator;
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, EnumIter)]
 pub enum Street {
     Preflop,
     Flop,
@@ -39,7 +42,7 @@ pub enum HandStatus {
 
 #[derive(Debug)]
 pub struct GameHand {
-    big_blind: u32,
+    pub big_blind: u32,
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
@@ -56,11 +59,15 @@ impl GameHand {
 
     /// a new() constructor when we know the min raise upfront
     pub fn new(big_blind: u32) -> Self {
+	let mut street_contributions = HashMap::new();
+	for street in Street::iter() {
+            street_contributions.insert(street, [0;9]);
+	}
         GameHand {
 	    big_blind,
             street: Street::Preflop,
             pot_manager: PotManager::new(),
-            street_contributions: HashMap::new(),
+            street_contributions,
 	    last_action: None,
 	    current_bet: 0,
 	    min_raise: big_blind,
@@ -127,6 +134,11 @@ impl GameHand {
 	Street::ShowDown == self.street
     }
 
+    pub fn get_current_contributions_for_index(&self, index: usize) -> u32 {
+	let current_contributions = self.street_contributions.get(&self.street).unwrap();
+	current_contributions[index]
+    }
+    
     pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool) {
 	let current_contributions = self.street_contributions.get_mut(&self.street).unwrap();	
         current_contributions[index] += amount;	

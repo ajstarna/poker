@@ -12,7 +12,7 @@ use std::fmt;
 /// before we remove them from any game AND the hub.
 pub const PLAYER_TIMEOUT: Duration = Duration::from_secs(1800);
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PlayerAction {
     PostSmallBlind(u32),
     PostBigBlind(u32),
@@ -131,6 +131,7 @@ impl PlayerConfig {
 #[derive(Debug, Clone)]
 pub struct Player {
     pub id: Uuid,
+    pub index: Option<usize>, // index at the table
     pub human_controlled: bool, // do we need user input or let the computer control it
     pub money: u32,
     pub is_active: bool,      // is still playing the current hand
@@ -143,6 +144,7 @@ impl Player {
     pub fn new(id: Uuid, human_controlled: bool, money: u32) -> Self {
         Player {
             id,
+	    index: None,
             human_controlled,
             money,
             is_active: false, // a branch new player is not active in a hand
