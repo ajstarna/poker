@@ -1,6 +1,7 @@
 mod card;
 mod pot;
 mod game_hand;
+mod bot;
 
 pub mod player;
 pub mod deck;

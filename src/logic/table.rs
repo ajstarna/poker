@@ -1,12 +1,12 @@
 use actix::Addr;
 use json::object;
-use rand::Rng;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use super::card::Card;
 use super::deck::{Deck, StandardDeck};
 use super::game_hand::{GameHand, Street, HandStatus};
+use super::bot;
 
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::TableHub;
@@ -1124,21 +1124,7 @@ impl Table {
                 None
             }
         } else {
-            let num = rand::thread_rng().gen_range(0..100);
-            match num {
-                0..=20 => Some(PlayerAction::Fold),
-                21..=55 => Some(PlayerAction::Check),
-                56..=70 => {
-                    let amount: u32 = if player.money <= 100 {
-                        // just go all in if we are at 10% starting
-                        player.money
-                    } else {
-                        rand::thread_rng().gen_range(1..player.money / 2_u32)
-                    };
-                    Some(PlayerAction::Bet(amount))
-                }
-                _ => Some(PlayerAction::Call),
-            }
+	    Some(bot::get_action(player))
         }
     }
 
