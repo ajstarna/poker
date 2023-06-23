@@ -179,14 +179,18 @@ impl Player {
     /// If the player is not active, or if the hand never made it to showdown, then we simply
     /// return None as the optional best hand.
     pub fn determine_best_hand(&self, gamehand: &GameHand) -> Option<HandResult> {
+	println!("poop inisde determine");
         if !self.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
         }
+	/*
 	if !gamehand.is_showdown() {
 	    // there is no "best hand" if we didn't even make it to showdown
 	    return None;
-	}
+    }*/
+
+	println!("poop2222 inisde determine");	
 	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
 	let mut best_result: Option<HandResult> = None;
 	let mut hand_count = 0;

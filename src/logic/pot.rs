@@ -68,10 +68,6 @@ impl PotManager {
     /// and whether this is putting them all-in), this method puts the proper
     /// amount into the proper pot(s), and possibly create and redistribute into a new side pot
     pub fn contribute(&mut self, player_id: Uuid, amount: u32, all_in: bool) {
-        println!(
-            "inside contribute: {:?}, {:?}, all_in={:?}",
-            player_id, amount, all_in
-        );
         let mut to_contribute = amount;
         // insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
         // and the new cap for the pot at that index

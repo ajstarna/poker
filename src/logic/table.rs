@@ -1116,7 +1116,6 @@ impl Table {
         if player.human_controlled {
             let mut actions = incoming_actions.lock().unwrap();
             if let Some(action) = actions.get_mut(&player.id) {
-                println!("Player: {:?} has action {:?}", player.id, action);
                 let value = *action;
                 actions.remove(&player.id); // wipe this action so we don't repeat it next time
                 Some(value)
@@ -1190,7 +1189,6 @@ impl Table {
 		    action = Some(PlayerAction::Fold);
 		    break;
 		}
-
 		println!("Attempting to get player action on attempt {:?}", attempts);
 		match self.get_action_from_player(incoming_actions, &player, gamehand) {
 		    None => {
