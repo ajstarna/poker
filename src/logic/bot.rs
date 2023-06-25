@@ -296,7 +296,7 @@ fn get_big_action(
     let num = rand::thread_rng().gen_range(0..100);
     
     match num {
-	0..=90 => {
+	0..=95 => {
 	    println!("big hand and we rolled a {num}");
 	    let amount: u32 = std::cmp::min(player.money, bet_size);
 	    PlayerAction::Bet(amount)
