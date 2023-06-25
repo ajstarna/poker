@@ -152,6 +152,48 @@ fn get_random_action(player: &Player, _gamehand: &GameHand) -> PlayerAction {
     }
 }
 
+fn get_garbage_action(
+    player: &Player,
+    gamehand: &GameHand,    
+    cannot_check: bool,
+    facing_raise: bool,
+    bet_size: u32,
+) -> PlayerAction {
+    let num = rand::thread_rng().gen_range(0..100);
+
+    if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
+	  && gamehand.street == Street::Flop )
+	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) {
+	    // don't be weak to mini bets
+	    println!("tyring to mini bet me!");
+	    match num {
+		0..=80 => PlayerAction::Call,
+		81..=90 => PlayerAction::Fold,
+		_ => {
+		    let amount: u32 = std::cmp::min(player.money, bet_size);
+		    PlayerAction::Bet(amount)
+		}
+	    }	    
+	} else {
+	    match num {
+		0..=80 => {
+		    if cannot_check {		    
+			PlayerAction::Fold
+		    } else {
+			PlayerAction::Check			
+		    }
+		},
+		81..=90 => PlayerAction::Fold,
+		_ => {
+		    let amount: u32 = std::cmp::min(player.money, bet_size);
+		    PlayerAction::Bet(amount)
+		}
+	    }
+	   
+	}
+    
+}
+
 fn get_mediocre_action(
     player: &Player,
     gamehand: &GameHand,    
@@ -165,11 +207,20 @@ fn get_mediocre_action(
 	println!("facing a raise");
 	match num {
             0..=50 => PlayerAction::Call,
-            51..=85 => PlayerAction::Fold,
+            51..=85 => {
+		if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.30
+		      && gamehand.street == Street::Flop )
+		    || ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25 ) {
+			println!("tyring to mini bet me!");			
+			PlayerAction::Call
+		    } else {
+			PlayerAction::Fold
+		    }
+	    }
 	    _ => {
 		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)
-            }
+	    }
 	}
     } else {
 	println!("NOT facing a raise");	
@@ -186,33 +237,6 @@ fn get_mediocre_action(
 		PlayerAction::Bet(amount)		
 	    }
 	}	
-    }
-}
-
-fn get_big_action(
-    player: &Player,
-    gamehand: &GameHand,    
-    cannot_check: bool,
-    facing_raise: bool,
-    bet_size: u32,    
-) -> PlayerAction {
-    let num = rand::thread_rng().gen_range(0..100);
-    
-    match num {
-	0..=90 => {
-	    println!("big hand and we rolled a {num}");
-	    let amount: u32 = std::cmp::min(player.money, bet_size);
-	    PlayerAction::Bet(amount)
-	}
-	_ => {
-	    if facing_raise || cannot_check {
-		println!("big hand the rare call");		
-		PlayerAction::Call
-	    } else {
-		println!("big hand the rare check");		
-		PlayerAction::Check		
-	    }
-	}
     }
 }
 
@@ -252,6 +276,33 @@ fn get_good_action(
 		    println!("good hand rare check");		
 		    PlayerAction::Check
 		}
+	    }
+	}
+    }
+}
+
+fn get_big_action(
+    player: &Player,
+    gamehand: &GameHand,    
+    cannot_check: bool,
+    facing_raise: bool,
+    bet_size: u32,    
+) -> PlayerAction {
+    let num = rand::thread_rng().gen_range(0..100);
+    
+    match num {
+	0..=90 => {
+	    println!("big hand and we rolled a {num}");
+	    let amount: u32 = std::cmp::min(player.money, bet_size);
+	    PlayerAction::Bet(amount)
+	}
+	_ => {
+	    if facing_raise || cannot_check {
+		println!("big hand the rare call");		
+		PlayerAction::Call
+	    } else {
+		println!("big hand the rare check");		
+		PlayerAction::Check		
 	    }
 	}
     }
@@ -305,14 +356,15 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
     let bet_size = 3*gamehand.current_bet;
     match score as i64 {
 	// TODO: need to consider number of players and position
-	-1..=6 => {
+	-1..=5 => {
+	    // setting the number at 5 to be more fun to play against. maybe 6 or 7 is better poker
 	    if cannot_check {
 		Ok(PlayerAction::Fold)	    
 	    } else {
 		Ok(PlayerAction::Check)
 	    }
 	}
-	7..=9 => {
+	6..=9 => {
 	    println!("about to get a mediocre action");
 	    Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	}
@@ -345,11 +397,7 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
 	    // TODO: need to consider number of players and position
 	    HandQuality::Garbage => {
 		println!("garbage hand {:?}", best_hand);
-		if cannot_check {
-		    Ok(PlayerAction::Fold)	    
-		} else {
-		    Ok(PlayerAction::Check)
-		}
+		Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	    }
 	    HandQuality::Mediocre => {
 		println!("about to get a mediocre action");		
@@ -605,6 +653,54 @@ mod tests {
         assert_eq!(action, PlayerAction::Fold);
     }
 
+    /// if the flop bet is small enough, then we wont fold garbage
+    #[test]
+    fn dont_fold_garbage_flop_if_bet_small() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	let index = 0;
+	bot0.index = Some(index);
+	    
+        let mut gamehand = GameHand::new(2);
+	
+	// 40 bucks already in
+	gamehand.contribute(index, bot0.id, 40, false);
+	
+	// the current bet of the hand is a bit higher, i.e. facing a bet
+	// but this bet is too small to fold to
+	gamehand.current_bet = 6;
+	
+	// flop really bad for the bot	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Five,
+		suit: Suit::Diamond,
+            }
+	]);
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Fold);
+    }
+    
 
     /// if a bot has a mediocre hand, then they will check the flop
     #[test]
@@ -669,9 +765,8 @@ mod tests {
 	bot0.index = Some(index);
 	    
         let mut gamehand = GameHand::new(2);
-	
-	// the current bet of the hand is a bit higher, i.e. facing a bet	
-	gamehand.current_bet = 1;
+
+	gamehand.current_bet = 1;	
 
 	// flop gives us pair of Kings, which is top pair, so we can call
 	gamehand.street = Street::Flop;
