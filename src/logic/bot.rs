@@ -160,7 +160,6 @@ fn get_garbage_action(
     bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-
     if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
 	  && gamehand.street == Street::Flop )
 	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) {
@@ -353,7 +352,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > gamehand.big_blind;
-    let bet_size = 3*gamehand.current_bet;
+    let bet_size = 3 * gamehand.current_bet;
     match score as i64 {
 	// TODO: need to consider number of players and position
 	-1..=5 => {
@@ -397,22 +396,22 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
 	    // TODO: need to consider number of players and position
 	    HandQuality::Garbage => {
 		println!("garbage hand {:?}", best_hand);
-		Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
+		Ok(get_garbage_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	    }
 	    HandQuality::Mediocre => {
 		println!("about to get a mediocre action");		
 		Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))
 	    }
 	    HandQuality::Good => {
-	    println!("about to get a good action");		
+		println!("about to get a good action");		
 		Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
 	    }
 	    HandQuality::Great => {
-	    println!("about to get a great action");				
+		println!("about to get a great action");				
 		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
 	    }
 	    HandQuality::Exceptional => {
-	    println!("about to get an exceptional action");						
+		println!("about to get an exceptional action");						
 		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
 	    }
 	    
@@ -672,6 +671,7 @@ mod tests {
 	bot0.index = Some(index);
 	    
         let mut gamehand = GameHand::new(2);
+	gamehand.street = Street::Flop;
 	
 	// 40 bucks already in
 	gamehand.contribute(index, bot0.id, 40, false);
@@ -697,8 +697,7 @@ mod tests {
             }
 	]);
 	let action = get_bot_action(&bot0, &gamehand);
-	
-        assert_eq!(action, PlayerAction::Fold);
+        assert!(action != PlayerAction::Fold);
     }
     
 
