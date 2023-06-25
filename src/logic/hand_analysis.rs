@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use super::card::{Card, Rank};
+use super::card::{Card, Rank, Suit};
 
 use strum_macros::EnumIter;
 

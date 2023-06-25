@@ -174,7 +174,7 @@ fn get_mediocre_action(
     } else {
 	println!("NOT facing a raise");	
 	match num {
-            0..=50 => {
+            0..=80 => {
 		if cannot_check {
 		    PlayerAction::Call
 		} else {
@@ -199,7 +199,7 @@ fn get_big_action(
     let num = rand::thread_rng().gen_range(0..100);
     
     match num {
-	0..=85 => {
+	0..=90 => {
 	    println!("big hand and we rolled a {num}");
 	    let amount: u32 = std::cmp::min(player.money, bet_size);
 	    PlayerAction::Bet(amount)
@@ -226,7 +226,7 @@ fn get_good_action(
     let num = rand::thread_rng().gen_range(0..100);
     if facing_raise {
 	match num {
-	    0..=85 => {
+	    0..=75 => {
 		println!("good hand just call");
 		PlayerAction::Call		
 	    }
@@ -266,7 +266,6 @@ fn get_draw_action(
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
     if facing_raise {
-	println!("facing a raise");
 	match num {
             0..=50 => PlayerAction::Call,
             51..=85 => PlayerAction::Fold,
@@ -278,8 +277,9 @@ fn get_draw_action(
     } else {
 	println!("NOT facing a raise");	
 	match num {
-            0..=50 => {
+            0..=30 => {
 		if cannot_check {
+		    // note sure this makes any sense post flop?
 		    PlayerAction::Call
 		} else {
 		    PlayerAction::Check		    
@@ -298,7 +298,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 	return Err(BotActionError::NoIndexSet);
     }
     let score = score_preflop_hand(&player.hole_cards)?;
-    println!("inside bot. score = {:?} with hole cards = {:?}", score, &player.hole_cards);
+    println!("inside preflop. score = {:?} with hole cards = {:?}", score, &player.hole_cards);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > gamehand.big_blind;
@@ -313,7 +313,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 	    }
 	}
 	7..=9 => {
-	    println!("about to get a medioce action");
+	    println!("about to get a mediocre action");
 	    Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	}
 	_ => {
@@ -331,43 +331,44 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     println!("inside flop action. best hand = {:?}", best_hand);
     let quality = qualify_hand(player, &best_hand, gamehand);
     let draw_type = player.determine_draw_type(gamehand);
-    println!("sup quality = {:?}", quality);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > 0;
     let bet_size = gamehand.total_money() / 2;
 
     if draw_type.is_some() {
+	println!("about to get a draw action");
 	Ok(get_draw_action(player, gamehand, cannot_check, facing_raise, bet_size))
     }   
     else {
 	match quality {
-	// TODO: need to consider number of players and position
-	HandQuality::Garbage => {
-	    if cannot_check {
-		Ok(PlayerAction::Fold)	    
-	    } else {
-		Ok(PlayerAction::Check)
+	    // TODO: need to consider number of players and position
+	    HandQuality::Garbage => {
+		println!("garbage hand {:?}", best_hand);
+		if cannot_check {
+		    Ok(PlayerAction::Fold)	    
+		} else {
+		    Ok(PlayerAction::Check)
+		}
 	    }
-	}
-	HandQuality::Mediocre => {
-	    if cannot_check {
-		Ok(PlayerAction::Fold)	    
-	    } else {
-		Ok(PlayerAction::Check)
-	    }	    
-	}
-	HandQuality::Good => {
-	    Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	}
-	HandQuality::Great => {
-	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	}
-	HandQuality::Exceptional => {
-	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	}
-	
-    }}	    
+	    HandQuality::Mediocre => {
+		println!("about to get a mediocre action");		
+		Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    }
+	    HandQuality::Good => {
+	    println!("about to get a good action");		
+		Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    }
+	    HandQuality::Great => {
+	    println!("about to get a great action");				
+		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    }
+	    HandQuality::Exceptional => {
+	    println!("about to get an exceptional action");						
+		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    }
+	    
+	}}	    
 }
 
 
@@ -604,49 +605,6 @@ mod tests {
         assert_eq!(action, PlayerAction::Fold);
     }
 
-    /// if a bot has a mediocre hand, then they will fold at the slightest aggression
-    #[test]
-    fn fold_mediocre_flop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-        bot0.hole_cards.push(Card {
-            rank: Rank::King,
-            suit: Suit::Club,
-        });
-	
-        bot0.hole_cards.push(Card {
-            rank: Rank::Queen,
-            suit: Suit::Heart,
-        });
-
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
-	
-	// the current bet of the hand is a bit higher, i.e. facing a bet	
-	gamehand.current_bet = 1;
-
-	// flop gives us pair of Kings, but not top pair (Ace)
-	gamehand.street = Street::Flop;
-	gamehand.flop = Some(vec![
-	    Card {
-		rank: Rank::Three,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::King,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::Ace,
-		suit: Suit::Diamond,
-            }
-	]);
-	let action = get_bot_action(&bot0, &gamehand);
-	
-        assert_eq!(action, PlayerAction::Fold);
-    }
 
     /// if a bot has a mediocre hand, then they will check the flop
     #[test]

@@ -274,7 +274,13 @@ impl Player {
 		}
 	    }
 	}
-	Some(DrawType::Backdoor)
-    }
-    
+	None
+    }    
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logic::card::{Card, Rank, Suit};
+
 }
