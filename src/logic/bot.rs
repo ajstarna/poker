@@ -209,7 +209,9 @@ fn get_mediocre_action(
     if facing_raise {
 	println!("facing a raise");
 	match num {
-            0..=50 => PlayerAction::Call,
+            0..=50 => {
+		PlayerAction::Call
+	    },
             51..=90 => {
 		let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
 		println!("bet_ratio = {:?}", bet_ratio);
@@ -276,7 +278,7 @@ fn get_good_action(
 	}
     } else {
 	match num {
-	    0..=85 => {
+	    0..=80 => {
 		println!("good hand bet");
 		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)
