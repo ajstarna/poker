@@ -159,10 +159,11 @@ fn get_garbage_action(
     bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
+    let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
+    
     if facing_raise
-	&& ( ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
-	      && gamehand.street == Street::Flop )
-	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) ){
+	&& ( ( bet_ratio < 0.25 && gamehand.street == Street::Flop) 
+	|| ( bet_ratio <  0.20) ){
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
 	    match num {
@@ -172,25 +173,28 @@ fn get_garbage_action(
 		    let amount: u32 = std::cmp::min(player.money, bet_size);
 		    PlayerAction::Bet(amount)
 		}
-	    }	    
+	    }
 	} else {
 	    match num {
-		0..=80 => {
+		0..=90 => {
 		    if cannot_check {		    
 			PlayerAction::Fold
 		    } else {
 			PlayerAction::Check			
 		    }
 		},
-		81..=90 => PlayerAction::Fold,
 		_ => {
-		    let amount: u32 = std::cmp::min(player.money, bet_size);
-		    PlayerAction::Bet(amount)
+		    if gamehand.street == Street::Preflop {
+			// if preflop, just fold garbage
+			PlayerAction::Fold			
+		    } else {
+			// post flop, throw in a rare garbage bluff
+			let amount: u32 = std::cmp::min(player.money, bet_size);
+			PlayerAction::Bet(amount)
+		    }
 		}
-	    }
-	   
-	}
-    
+	    }	   
+	}    
 }
 
 fn get_mediocre_action(
@@ -201,17 +205,23 @@ fn get_mediocre_action(
     bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-    
+    let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());        
     if facing_raise {
 	println!("facing a raise");
 	match num {
             0..=50 => PlayerAction::Call,
             51..=90 => {
-		if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.30
-		      && gamehand.street == Street::Flop )
-		    || ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25 ) {
+		let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
+		println!("bet_ratio = {:?}", bet_ratio);
+		if ( bet_ratio < 0.30
+		     && gamehand.street == Street::Flop )
+		    || ( bet_ratio < 0.25 ) {
 			println!("tyring to mini bet me!");			
 			PlayerAction::Call
+		    } else if bot_contribution > 0 && bet_ratio < 0.75 {
+			// we already put some money in, so don't then cave so easy
+			println!("lets defend our mmoney");
+			PlayerAction::Calls			
 		    } else {
 			PlayerAction::Fold
 		    }
