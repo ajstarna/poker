@@ -1,7 +1,9 @@
 use std::fmt;
 use std::collections::{HashMap, HashSet};
 
-use super::card::{Card, Rank, HandResult};
+use super::card::{Card, Rank};
+use super::hand_analysis::HandResult;
+
 use super::player::{Player, PlayerConfig, PlayerAction};
 use super::pot::PotManager;
 

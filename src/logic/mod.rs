@@ -1,4 +1,5 @@
 mod card;
+mod hand_analysis;
 mod pot;
 mod game_hand;
 mod bot;

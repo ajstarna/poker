@@ -1,4 +1,5 @@
-use super::card::{Card, HandResult};
+use super::card::Card;
+use super::hand_analysis::{DrawType, HandResult};
 use super::game_hand::GameHand;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
@@ -228,4 +229,52 @@ impl Player {
 	best_result
     }
 
+    pub fn determine_draw_type(&self, gamehand: &GameHand) -> Option<DrawType> {
+        if !self.is_active {
+            // if the player isn't active, then can't have a best hand
+            return None;
+        }
+	if gamehand.is_preflop() {
+	    // there is no "best hand" if we didn't even make it to the flop
+	    return None;
+	}
+	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
+	let mut best_result: Option<HandResult> = None;
+	let mut hand_count = 0;	
+	for exclude_idx1 in 0..7 {
+	    for exclude_idx2 in exclude_idx1+1..7 {
+		let mut possible_hand = Vec::with_capacity(5);
+		for (idx, card) in self
+		    .hole_cards.iter().map(|c| Some(c))
+		    .chain(gamehand.flop.as_ref().unwrap().iter().map(|c| Some(c)))
+		    .chain(iter::once(gamehand.turn.as_ref()))
+		    .chain(iter::once(gamehand.river.as_ref()))
+		    .enumerate()
+		{
+		    //println!("sup {:?}, card = {:?}", idx, card);
+		    if let Some(card) = card {
+			if idx != exclude_idx1 && idx != exclude_idx2 {
+			    //println!("pushing!");
+			    possible_hand.push(*card);
+			}
+		    }
+		}
+		if possible_hand.len() != 5 {
+		    continue;
+		}
+		hand_count += 1;		
+		// we have built a hand of five cards, now evaluate it
+		let current_result = HandResult::analyze_hand(possible_hand);
+		match best_result {
+		    None => best_result = Some(current_result),
+		    Some(result) if current_result > result => {
+			best_result = Some(current_result)
+		    }
+		    _ => (),
+		}
+	    }
+	}
+	Some(DrawType::Backdoor)
+    }
+    
 }
