@@ -19,7 +19,6 @@ pub fn get_bot_action(player: &Player, gamehand: &GameHand) -> PlayerAction {
     match gamehand.street {
         Street::Preflop => {
 	    let blah = get_preflop_action(player, gamehand); //
-	    println!("blah = {:?}", blah);
 	    blah.unwrap_or(PlayerAction::Fold)
         }
         Street::Flop => {
@@ -161,9 +160,9 @@ fn get_garbage_action(
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
     if facing_raise
-	&& ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
+	&& ( ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
 	      && gamehand.street == Street::Flop )
-	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) {
+	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) ){
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
 	    match num {
@@ -207,7 +206,7 @@ fn get_mediocre_action(
 	println!("facing a raise");
 	match num {
             0..=50 => PlayerAction::Call,
-            51..=85 => {
+            51..=90 => {
 		if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.30
 		      && gamehand.street == Street::Flop )
 		    || ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25 ) {
@@ -385,6 +384,9 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 }
 
 fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAction, BotActionError> {
+
+    // TODO the bots need to know that a board pair doesn't contribute to their hand quality
+    
     if player.index.is_none(){
 	return Err(BotActionError::NoIndexSet);
     }
@@ -405,7 +407,7 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
 	match quality {
 	    // TODO: need to consider number of players and position
 	    HandQuality::Garbage => {
-		println!("garbage hand {:?}", best_hand);
+		println!("about to get garbage action");				
 		Ok(get_garbage_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	    }
 	    HandQuality::Mediocre => {
