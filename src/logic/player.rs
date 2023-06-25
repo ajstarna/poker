@@ -4,6 +4,7 @@ use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;
 use std::iter;
+
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use std::fmt;
@@ -174,43 +175,43 @@ impl Player {
         self.is_active && self.money == 0
     }
 
-    /// Given a gamehand (usually with a full run-out to the river),
+    /// Given a gamehand,
     /// we need to determine which 5 cards make the best hand for this player
-    /// If the player is not active, or if the hand never made it to showdown, then we simply
-    /// return None as the optional best hand.
+    /// If the player is not active or it is preflop, return None as the optional best hand.
     pub fn determine_best_hand(&self, gamehand: &GameHand) -> Option<HandResult> {
-	println!("poop inisde determine");
         if !self.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
         }
-	/*
-	if !gamehand.is_showdown() {
-	    // there is no "best hand" if we didn't even make it to showdown
+	if gamehand.is_preflop() {
+	    // there is no "best hand" if we didn't even make it to the flop
 	    return None;
-    }*/
-
-	println!("poop2222 inisde determine");	
+	}
 	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
 	let mut best_result: Option<HandResult> = None;
-	let mut hand_count = 0;
+	let mut hand_count = 0;	
 	for exclude_idx1 in 0..7 {
-	    for exclude_idx2 in exclude_idx1 + 1..7 {
+	    for exclude_idx2 in exclude_idx1+1..7 {
 		let mut possible_hand = Vec::with_capacity(5);
-		hand_count += 1;
 		for (idx, card) in self
-		    .hole_cards
-		    .iter()
-		    .chain(gamehand.flop.as_ref().unwrap().iter())
-		    .chain(iter::once(&gamehand.turn.unwrap()))
-		    .chain(iter::once(&gamehand.river.unwrap()))
+		    .hole_cards.iter().map(|c| Some(c))
+		    .chain(gamehand.flop.as_ref().unwrap().iter().map(|c| Some(c)))
+		    .chain(iter::once(gamehand.turn.as_ref()))
+		    .chain(iter::once(gamehand.river.as_ref()))
 		    .enumerate()
 		{
-		    if idx != exclude_idx1 && idx != exclude_idx2 {
-			//println!("pushing!");
-			possible_hand.push(*card);
+		    //println!("sup {:?}, card = {:?}", idx, card);
+		    if let Some(card) = card {
+			if idx != exclude_idx1 && idx != exclude_idx2 {
+			    //println!("pushing!");
+			    possible_hand.push(*card);
+			}
 		    }
 		}
+		if possible_hand.len() != 5 {
+		    continue;
+		}
+		hand_count += 1;		
 		// we have built a hand of five cards, now evaluate it
 		let current_result = HandResult::analyze_hand(possible_hand);
 		match best_result {
@@ -222,8 +223,9 @@ impl Player {
 		}
 	    }
 	}
-	assert!(hand_count == 21); // 7 choose 5
+	println!("hand_count = {:?}", hand_count);
+	//assert!(hand_count == 21); // 7 choose 5
 	best_result
     }
-    
+
 }

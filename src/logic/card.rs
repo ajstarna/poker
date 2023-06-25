@@ -96,7 +96,7 @@ impl PartialEq for Card {
 }
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone, EnumIter)]
-enum HandRanking {
+pub enum HandRanking {
     HighCard = 1,
     Pair = 2,
     TwoPair = 3,
@@ -125,10 +125,10 @@ enum HandRanking {
 /// }
 #[derive(Debug, Eq)]
 pub struct HandResult {
-    hand_ranking: HandRanking,
-    constituent_cards: Vec<Card>,
-    kickers: Vec<Card>,
-    value: u32, // the absolute value of this hand, which can be used to compare against another hand
+    pub hand_ranking: HandRanking,
+    pub constituent_cards: Vec<Card>,
+    pub kickers: Vec<Card>,
+    pub value: u32, // the absolute value of this hand, which can be used to compare against another hand
 }
 
 /// We simply compare HandResults based on their value field.

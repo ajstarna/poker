@@ -1,7 +1,7 @@
 use std::fmt;
 use std::collections::{HashMap, HashSet};
 
-use super::card::{Card, HandResult};
+use super::card::{Card, Rank, HandResult};
 use super::player::{Player, PlayerConfig, PlayerAction};
 use super::pot::PotManager;
 
@@ -129,9 +129,17 @@ impl GameHand {
     pub fn pot_repr(&self) -> Vec<u32> {
 	self.pot_manager.simple_repr()
     }
+
+    pub fn total_money(&self) -> u32 {
+	self.pot_manager.total_money()
+    }
     
     pub fn is_showdown(&self) -> bool {
 	Street::ShowDown == self.street
+    }
+    
+    pub fn is_preflop(&self) -> bool {
+	Street::Preflop == self.street
     }
 
     pub fn get_current_contributions_for_index(&self, index: usize) -> u32 {
@@ -299,6 +307,17 @@ impl GameHand {
         }
     }
 
+    pub fn highest_rank(&self) -> Option<Rank> {
+	if self.flop.is_none() {
+	    // no cards present yet
+	    return None;
+	}
+	let high = self.flop.as_ref().unwrap().iter().map(|c| Some(c))
+	    .chain(std::iter::once(self.turn.as_ref()))
+	    .chain(std::iter::once(self.river.as_ref())).flatten().map(|c| c.rank).max();
+	high
+    }
+    
     // determine where to start the showing of cards
     // if there is a last-aggressor, then it starts with them,
     // otherwise, it defaults to the street starting idx    

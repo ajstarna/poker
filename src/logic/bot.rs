@@ -1,6 +1,6 @@
 use std::cmp;
 
-use super::card::{Card};
+use super::card::{Card, HandRanking, HandResult};
 use super::player::{Player, PlayerAction};
 use super::game_hand::{GameHand, Street};
 
@@ -15,17 +15,14 @@ enum BotActionError {
 
 /// given a player and gamehand, this function returns a player action depending on the state of the game
 pub fn get_bot_action(player: &Player, gamehand: &GameHand) -> PlayerAction {
-
     match gamehand.street {
         Street::Preflop => {
-	    get_random_action(player, gamehand)
-		/*
 	    let blah = get_preflop_action(player, gamehand); //
 	    println!("blah = {:?}", blah);
-	    blah.unwrap_or(PlayerAction::Fold)*/
+	    blah.unwrap_or(PlayerAction::Fold)
         }
         Street::Flop => {
-	    get_random_action(player, gamehand)
+	    get_flop_action(player, gamehand).unwrap_or(PlayerAction::Fold)
         }
         Street::Turn => {
 	    get_random_action(player, gamehand)
@@ -90,10 +87,51 @@ fn score_preflop_hand(hole_cards: &Vec<Card>) -> Result<f32, BotActionError>  {
     Ok(score.ceil())
 }
 
-fn get_random_action(player: &Player, gamehand: &GameHand) -> PlayerAction {
-    let best_hand = player.determine_best_hand(gamehand);
-    println!("inside random action. best hand = {:?}", best_hand);
-    
+#[derive(Debug)]
+enum HandQuality {
+    Garbage,
+    Mediocre,
+    Good,
+    Great,
+    Exceptional
+}
+
+// returns a hand quality enum (for use by bots)
+fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) -> HandQuality {
+    let top_rank = gamehand.highest_rank().unwrap();
+    match hand_result.hand_ranking {
+	HandRanking::HighCard => HandQuality::Garbage,
+	HandRanking::Pair => {
+	    println!("we have a pair with {:?} and top rank = {:?}",
+		     hand_result.constituent_cards[0].rank,
+		     top_rank);
+	    if hand_result.constituent_cards[0].rank >= top_rank {	
+		// top pair or better	
+		HandQuality::Good
+	    } else {
+		// not a great pair
+		HandQuality::Mediocre		
+	    }
+	}
+	HandRanking::TwoPair => HandQuality::Good,
+	HandRanking::ThreeOfAKind => {
+	    if player.hole_cards[0].rank == player.hole_cards[1].rank {
+		// we have a set
+		HandQuality::Great
+	    } else {
+		// just trips
+		HandQuality::Good
+	    }
+	},
+	HandRanking::Straight | HandRanking::Flush => HandQuality::Great,
+	HandRanking::FullHouse | HandRanking::FourOfAKind
+	    | HandRanking::StraightFlush | HandRanking::RoyalFlush => HandQuality::Exceptional,	    
+	}
+	
+    }
+
+
+fn get_random_action(player: &Player, _gamehand: &GameHand) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
     match num {
         0..=20 => PlayerAction::Fold,
@@ -116,10 +154,12 @@ fn get_mediocre_action(
     player: &Player,
     gamehand: &GameHand,    
     cannot_check: bool,
+    facing_raise: bool,
+    bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
 
-    let facing_raise = gamehand.current_bet > gamehand.big_blind;
+    //let facing_raise = gamehand.current_bet > gamehand.big_blind;
     
     if facing_raise {
 	println!("facing a raise");
@@ -127,7 +167,7 @@ fn get_mediocre_action(
             0..=50 => PlayerAction::Call,
             51..=85 => PlayerAction::Fold,
 	    _ => {
-		let amount: u32 = std::cmp::min(player.money, 3*gamehand.current_bet);
+		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)
             }
 	}
@@ -142,7 +182,7 @@ fn get_mediocre_action(
 		}
 	    },
 	    _ =>  {
-		let amount: u32 = std::cmp::min(player.money, 3*gamehand.current_bet);
+		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)		
 	    }
 	}	
@@ -153,14 +193,16 @@ fn get_big_action(
     player: &Player,
     gamehand: &GameHand,    
     cannot_check: bool,
+    facing_raise: bool,
+    bet_size: u32,    
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-    let facing_raise = gamehand.current_bet > gamehand.big_blind;
+    //let facing_raise = gamehand.current_bet > gamehand.big_blind;
     
     match num {
 	0..=85 => {
 	    println!("big hand and we rolled a {num}");
-	    let amount: u32 = std::cmp::min(player.money, 3*gamehand.current_bet);
+	    let amount: u32 = std::cmp::min(player.money, bet_size);
 	    PlayerAction::Bet(amount)
 	}
 	_ => {
@@ -175,6 +217,47 @@ fn get_big_action(
     }
 }
 
+fn get_good_action(
+    player: &Player,
+    gamehand: &GameHand,    
+    cannot_check: bool,
+    facing_raise: bool,
+    bet_size: u32,    
+) -> PlayerAction {
+    let num = rand::thread_rng().gen_range(0..100);
+    if facing_raise {
+	match num {
+	    0..=85 => {
+		println!("good hand just call");
+		PlayerAction::Call		
+	    }
+	    _ => {
+		println!("good hand rare raise");		
+		let amount: u32 = std::cmp::min(player.money, bet_size);
+		PlayerAction::Bet(amount)
+	    }
+	}
+    } else {
+	match num {
+	    0..=85 => {
+		println!("good hand bet");
+		let amount: u32 = std::cmp::min(player.money, bet_size);
+		PlayerAction::Bet(amount)
+	    }
+	    _ => {
+		if cannot_check {
+		    // not sure this can really happen after preflop
+		    let amount: u32 = std::cmp::min(player.money, bet_size);
+		    PlayerAction::Bet(amount)
+		} else {
+		    println!("good hand rare check");		
+		    PlayerAction::Check
+		}
+	    }
+	}
+    }
+}
+
 fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAction, BotActionError> {
     if player.index.is_none(){
 	return Err(BotActionError::NoIndexSet);
@@ -183,6 +266,8 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
     println!("inside bot. score = {:?} with hole cards = {:?}", score, &player.hole_cards);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
+    let facing_raise = gamehand.current_bet > gamehand.big_blind;
+    let bet_size = 3*gamehand.current_bet;
     match score as i64 {
 	// TODO: need to consider number of players and position
 	-1..=6 => {
@@ -194,15 +279,54 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 	}
 	7..=9 => {
 	    println!("about to get a medioce action");
-	    Ok(get_mediocre_action(player, gamehand, cannot_check))		
+	    Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	}
 	_ => {
 	    println!("about to get a big action");
-	    Ok(get_big_action(player, gamehand, cannot_check))				
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	}
-    }
-	    
+    }	   
+}
 
+fn get_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAction, BotActionError> {
+    if player.index.is_none(){
+	return Err(BotActionError::NoIndexSet);
+    }
+    let best_hand = player.determine_best_hand(gamehand).unwrap();
+    println!("inside flop action. best hand = {:?}", best_hand);
+    let quality = qualify_hand(player, &best_hand, gamehand);
+    println!("sup quality = {:?}", quality);
+    let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
+    let cannot_check = bot_contribution < gamehand.current_bet;
+    let facing_raise = gamehand.current_bet > 0;
+    let bet_size = gamehand.total_money() / 2;
+    match quality {
+	// TODO: need to consider number of players and position
+	HandQuality::Garbage => {
+	    if cannot_check {
+		Ok(PlayerAction::Fold)	    
+	    } else {
+		Ok(PlayerAction::Check)
+	    }
+	}
+	HandQuality::Mediocre => {
+	    if cannot_check {
+		Ok(PlayerAction::Fold)	    
+	    } else {
+		Ok(PlayerAction::Check)
+	    }	    
+	}
+	HandQuality::Good => {
+	    Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	HandQuality::Great => {
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	HandQuality::Exceptional => {
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	
+    }	    
 }
 
 
@@ -323,7 +447,6 @@ mod tests {
 	
         assert_eq!(action, PlayerAction::Check);
     }
-
     /// if a bot has a garbage hand, then they will fold preflop at the slightest aggression
     #[test]
     fn fold_garbage_preflop() {
@@ -352,6 +475,180 @@ mod tests {
 	let action = get_bot_action(&bot0, &gamehand);
 	
         assert_eq!(action, PlayerAction::Fold);
+    }
+
+    /// if a bot has a garbage hand, then they will check if possible
+    #[test]
+    fn check_garbage_flop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	let index = 0;
+	bot0.index = Some(index);
+	
+        let mut gamehand = GameHand::new(2);
+
+	// flop really bad for the bot
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Five,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Check);
+    }
+    
+    /// if a bot has a garbage hand, then they will fold at the slightest aggression
+    #[test]
+    fn fold_garbage_flop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	let index = 0;
+	bot0.index = Some(index);
+	    
+        let mut gamehand = GameHand::new(2);
+	
+	// the current bet of the hand is a bit higher, i.e. facing a bet	
+	gamehand.current_bet = 1;
+
+	// flop really bad for the bot	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Five,
+		suit: Suit::Diamond,
+            }
+	]);
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Fold);
+    }
+
+    /// if a bot has a mediocre hand, then they will fold at the slightest aggression
+    #[test]
+    fn fold_mediocre_flop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	let index = 0;
+	bot0.index = Some(index);
+	    
+        let mut gamehand = GameHand::new(2);
+	
+	// the current bet of the hand is a bit higher, i.e. facing a bet	
+	gamehand.current_bet = 1;
+
+	// flop gives us pair of Kings, but not top pair (Ace)
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            }
+	]);
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Fold);
+    }
+
+    /// if a bot has a good hand, then they will call aggression
+    #[test]
+    fn call_good_flop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	let index = 0;
+	bot0.index = Some(index);
+	    
+        let mut gamehand = GameHand::new(2);
+	
+	// the current bet of the hand is a bit higher, i.e. facing a bet	
+	gamehand.current_bet = 1;
+
+	// flop gives us pair of Kings, which is top pair, so we can call
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Call);
     }
     
 }
