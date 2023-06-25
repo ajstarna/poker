@@ -160,8 +160,9 @@ fn get_garbage_action(
     bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-    if ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
-	  && gamehand.street == Street::Flop )
+    if facing_raise
+	&& ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.25
+	      && gamehand.street == Street::Flop )
 	|| ( (gamehand.current_bet as f32 / gamehand.total_money() as f32) < 0.20) {
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
@@ -221,6 +222,11 @@ fn get_mediocre_action(
 		PlayerAction::Bet(amount)
 	    }
 	}
+    } else if gamehand.street == Street::Preflop {
+	// dont limp preflop
+	let amount: u32 = std::cmp::min(player.money, bet_size);
+	PlayerAction::Bet(amount)		
+	
     } else {
 	println!("NOT facing a raise");	
 	match num {
@@ -363,9 +369,13 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 		Ok(PlayerAction::Check)
 	    }
 	}
-	6..=9 => {
+	6..=8 => {
 	    println!("about to get a mediocre action");
 	    Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
+	}
+	9 => {
+	    println!("about to get a good action");
+	    Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	}
 	_ => {
 	    println!("about to get a big action");
