@@ -220,8 +220,8 @@ fn get_mediocre_action(
 			PlayerAction::Call
 		    } else if bot_contribution > 0 && bet_ratio < 0.75 {
 			// we already put some money in, so don't then cave so easy
-			println!("lets defend our mmoney");
-			PlayerAction::Calls			
+			println!("lets defend our mediocre money");
+			PlayerAction::Call
 		    } else {
 			PlayerAction::Fold
 		    }
