@@ -100,13 +100,25 @@ enum HandQuality {
 // returns a hand quality enum (for use by bots)
 fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) -> HandQuality {
     let top_rank = gamehand.highest_rank().unwrap();
+    let mut on_the_board = true; // if a hand result came from board cards and not hole cards
+    for used_card in &hand_result.constituent_cards {
+	for hole_card in &player.hole_cards {
+	    if used_card == hole_card {
+		on_the_board = false;
+		break;
+	    }
+	}
+    }
     match hand_result.hand_ranking {
 	HandRanking::HighCard => HandQuality::Garbage,
 	HandRanking::Pair => {
 	    println!("we have a pair with {:?} and top rank = {:?}",
 		     hand_result.constituent_cards[0].rank,
 		     top_rank);
-	    if hand_result.constituent_cards[0].rank >= top_rank {	
+	    if on_the_board {
+		println!("this is a board pair");
+		HandQuality::Garbage		
+	    } else if hand_result.constituent_cards[0].rank >= top_rank {	
 		// top pair or better	
 		HandQuality::Good
 	    } else {
@@ -899,5 +911,18 @@ mod tests {
 	// we folded, too rich for our blood
         assert_eq!(action, PlayerAction::Fold);
     }
+
+    #[test]
+    fn qualify_board_pair() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+
+	
+	let best_hand = player.determine_best_hand(gamehand).unwrap();
+	let quality = qualify_hand(player, &best_hand, gamehand);
+
+	TODO: finish this test
+	fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) -> HandQuality 
     
 }
