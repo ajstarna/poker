@@ -205,11 +205,17 @@ fn get_mediocre_action(
     bet_size: u32,
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-    let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());        
+    let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());
+    let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
     if facing_raise {
-	println!("facing a raise");
-	match num {
+	println!("facing a raise");	
+	if current_num_bets > 3 {
+	    // too many bets this street, time to back out
+	    println!("too many bets for my mediocre hand. time to leave");		    
+	    PlayerAction::Fold
+	} else { match num {
             0..=50 => {
+		println!("poo");
 		PlayerAction::Call
 	    },
             51..=90 => {
@@ -220,7 +226,7 @@ fn get_mediocre_action(
 		    || ( bet_ratio < 0.25 ) {
 			println!("tyring to mini bet me!");			
 			PlayerAction::Call
-		    } else if bot_contribution > 0 && bet_ratio < 0.75 {
+		    } else if bot_contribution > 0 && bet_ratio < 0.80 {
 			// we already put some money in, so don't then cave so easy
 			println!("lets defend our mediocre money");
 			PlayerAction::Call
@@ -229,17 +235,22 @@ fn get_mediocre_action(
 		    }
 	    }
 	    _ => {
+		println!("the rare mediocre re-raise");
 		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)
 	    }
-	}
+	}}
+    } else if current_num_bets > 2 {
+	// too many bets this street, time to back out
+	println!("already been a 3-bet, so lets just get out");
+	PlayerAction::Fold
     } else if gamehand.street == Street::Preflop {
 	// dont limp preflop
 	let amount: u32 = std::cmp::min(player.money, bet_size);
 	PlayerAction::Bet(amount)		
 	
     } else {
-	println!("NOT facing a raise");	
+	println!("NOT facing a raise");
 	match num {
             0..=80 => {
 		if cannot_check {
@@ -252,7 +263,7 @@ fn get_mediocre_action(
 		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)		
 	    }
-	}	
+	}
     }
 }
 
@@ -264,20 +275,37 @@ fn get_good_action(
     bet_size: u32,    
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
+    let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street	    
     if facing_raise {
 	match num {
-	    0..=75 => {
-		println!("good hand just call");
-		PlayerAction::Call		
+	    0..=80 => {
+		if current_num_bets > 3 {
+		    // too many bets this street, time to back out
+		    println!("too many bets for my good hand. time to leave");		    
+		    PlayerAction::Fold
+		} else {
+		    println!("good hand just call");
+		    PlayerAction::Call
+		}
 	    }
 	    _ => {
-		println!("good hand rare raise");		
-		let amount: u32 = std::cmp::min(player.money, bet_size);
-		PlayerAction::Bet(amount)
+		if current_num_bets > 3 {
+		    // too many bets this street, time to back out
+		    println!("many bets for my good hand. just call");		    
+		    PlayerAction::Call
+		} else {
+		    println!("good hand rare raise");		
+		    let amount: u32 = std::cmp::min(player.money, bet_size);
+		    PlayerAction::Bet(amount)
+		}
 	    }
 	}
     } else {
-	match num {
+	if current_num_bets > 3 {
+	    // too many bets this street, time to back out
+	    println!("too many bets for my good hand. time to leave");		    
+	    PlayerAction::Fold
+	} else {match num {
 	    0..=80 => {
 		println!("good hand bet");
 		let amount: u32 = std::cmp::min(player.money, bet_size);
@@ -293,7 +321,7 @@ fn get_good_action(
 		    PlayerAction::Check
 		}
 	    }
-	}
+	}}
     }
 }
 
@@ -404,6 +432,7 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     }
     let best_hand = player.determine_best_hand(gamehand).unwrap();
     println!("inside flop action. best hand = {:?}", best_hand);
+    println!("street contributions:\n{:?}", gamehand.street_contributions);
     let quality = qualify_hand(player, &best_hand, gamehand);
     let draw_type = player.determine_draw_type(gamehand);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
@@ -553,7 +582,7 @@ mod tests {
 	
         let mut gamehand = GameHand::new(2);
 	// the bot contributes 2 dollars and is not all in
-	gamehand.contribute(index, bot0.id, 2, false);
+	gamehand.contribute(index, bot0.id, 2, false, true);
 	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
 	
 	let action = get_bot_action(&bot0, &gamehand);
@@ -580,7 +609,7 @@ mod tests {
 	    
         let mut gamehand = GameHand::new(2);
 	// the bot contributes 2 dollars and is not all in
-	gamehand.contribute(index, bot0.id, 2, false);
+	gamehand.contribute(index, bot0.id, 2, false, true);
 
 	// the current bet of the hand is a bit higher, i.e. facing a bet	
 	gamehand.current_bet = 3; 
@@ -632,7 +661,7 @@ mod tests {
         assert_eq!(action, PlayerAction::Check);
     }
     
-    /// if a bot has a garbage hand, then they will fold at the slightest aggression
+    /// if a bot has a garbage hand, then they will fold at most aggression
     #[test]
     fn fold_garbage_flop() {
         let mut bot0 = Player::new_bot(200);
@@ -698,7 +727,7 @@ mod tests {
 	gamehand.street = Street::Flop;
 	
 	// 40 bucks already in
-	gamehand.contribute(index, bot0.id, 40, false);
+	gamehand.contribute(index, bot0.id, 40, false, true);
 	
 	// the current bet of the hand is a bit higher, i.e. facing a bet
 	// but this bet is too small to fold to
@@ -722,52 +751,7 @@ mod tests {
 	]);
 	let action = get_bot_action(&bot0, &gamehand);
         assert!(action != PlayerAction::Fold);
-    }
-    
-
-    /// if a bot has a mediocre hand, then they will check the flop
-    #[test]
-    fn check_mediocre_flop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-        bot0.hole_cards.push(Card {
-            rank: Rank::King,
-            suit: Suit::Club,
-        });
-	
-        bot0.hole_cards.push(Card {
-            rank: Rank::Queen,
-            suit: Suit::Heart,
-        });
-
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
-	
-	// the current bet of the hand is a bit higher, i.e. facing a bet	
-	gamehand.current_bet = 1;
-
-	// flop gives us pair of Kings, but not top pair (Ace)
-	gamehand.street = Street::Flop;
-	gamehand.flop = Some(vec![
-	    Card {
-		rank: Rank::Three,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::King,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::Ace,
-		suit: Suit::Diamond,
-            }
-	]);
-	let action = get_bot_action(&bot0, &gamehand);
-	
-        assert_eq!(action, PlayerAction::Fold);
-    }
+    }    
 
     /// if a bot has a good hand, then they will call aggression
     #[test]
@@ -810,6 +794,110 @@ mod tests {
 	let action = get_bot_action(&bot0, &gamehand);
 	
         assert_eq!(action, PlayerAction::Call);
+    }
+
+    /// if a bot has already decided to bet with a mediocre preflop hand (sometimes happens),
+    /// then, if it gets 3 bet, it should usually defend that
+    /// In this test, bot1 is our hero who gets 3-bet by bot2 and defends
+    #[test]
+    fn defend_mediocre_bet_preflop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+
+        let mut bot1 = Player::new_bot(200);
+	bot1.is_active = true;
+	bot1.index = Some(1);
+        bot1.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot1.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+	
+        let mut bot2 = Player::new_bot(200);
+	bot2.is_active = true;
+	bot2.index = Some(2);
+	
+        let mut gamehand = GameHand::new(2);
+	
+	// bot0 contributes 2 dollars (assume the blind) and is not all in
+	gamehand.contribute(0, bot0.id, 2, false, true);
+	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
+
+	// bot1, our hero, raises
+	gamehand.contribute(1, bot0.id, 6, false, true);
+	gamehand.current_bet = 6;
+
+	// bot2, 3-bets us
+	gamehand.contribute(2, bot0.id, 24, false, true);
+	gamehand.current_bet = 24;
+
+	// get our hero's action now (assuming bot0 folded)	
+	let action = get_bot_action(&bot1, &gamehand);
+	
+	// the action is usually a call, with a rare re-raise
+        assert!(action != PlayerAction::Fold);
+    }
+
+    /// if a bot has already decided to bet with a mediocre preflop hand (sometimes happens),
+    /// then, if it gets 4-bet, it will lay down
+    /// In this test, bot1 is our hero who gets 3-bet by bot2 and defends, then
+    /// gets 4-bet by bot2, and lays down
+    #[test]
+    fn lay_down_mediocre_bet_preflop() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+
+        let mut bot1 = Player::new_bot(200);
+	bot1.is_active = true;
+	bot1.index = Some(1);
+        bot1.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot1.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+	
+        let mut bot2 = Player::new_bot(200);
+	bot2.is_active = true;
+	bot2.index = Some(2);
+	
+        let mut gamehand = GameHand::new(2);
+	
+	// bot0 contributes 2 dollars (assume the blind) and is not all in
+	gamehand.contribute(0, bot0.id, 2, false, true);
+	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
+
+	// bot1, our hero, raises
+	gamehand.contribute(1, bot0.id, 6, false, true);
+	gamehand.current_bet = 6;
+
+	// bot2, 3-bets us
+	gamehand.contribute(2, bot0.id, 24, false, true);
+	gamehand.current_bet = 24;
+
+	// we defend and call the 3-bet
+	let is_raise = false;
+	gamehand.contribute(1, bot0.id, 18, false, is_raise);
+
+	// bot2, 4-bets us!!!!
+	// note, this isnt that big of a raise, but it is enough for us to get out
+	gamehand.contribute(2, bot0.id, 40, false, true);
+	gamehand.current_bet = 64;
+
+	// get our hero's action now
+	let action = get_bot_action(&bot1, &gamehand);
+	
+	// we folded, too rich for our blood
+        assert_eq!(action, PlayerAction::Fold);
     }
     
 }

@@ -1055,14 +1055,17 @@ impl Table {
                 PlayerAction::PostSmallBlind(amount) => {	
                     player.money -= amount;		    	    
                     gamehand.current_bet = amount;
-                    gamehand.contribute(i, player.id, amount, player.is_all_in());
+                    gamehand.contribute(i, player.id, amount, player.is_all_in(), false);
                 }
                 PlayerAction::PostBigBlind(amount) => {
                     player.money -= amount;		    		    
                     // the new street bet is either the new amount posted or the existing bet
 		    // This handles the rare cases where the big blind can't afford the BB
                     gamehand.current_bet = std::cmp::max(amount, gamehand.current_bet);
-                    gamehand.contribute(i, player.id, amount, player.is_all_in());
+
+		    // The blinds together count as the first bet of preflop.
+		    // Just count the big blind as to not double count them.
+                    gamehand.contribute(i, player.id, amount, player.is_all_in(), true);
                 }
                 PlayerAction::Fold => {
                     player.deactivate();
@@ -1077,7 +1080,7 @@ impl Table {
                     let difference = gamehand.current_bet - player_cumulative;
 		    let amount = std::cmp::min(difference, player.money); // can only put in as much as everything!
                     player.money -= amount;		    
-                    gamehand.contribute(i, player.id, amount, player.is_all_in());
+                    gamehand.contribute(i, player.id, amount, player.is_all_in(), false);
 		    
                 }
                 PlayerAction::Bet(new_bet) => {
@@ -1097,7 +1100,7 @@ impl Table {
 			// just to make sure the code is doing what we think it is
 			assert!(player.is_all_in());
 		    }
-                    gamehand.contribute(i, player.id, difference, player.is_all_in());
+                    gamehand.contribute(i, player.id, difference, player.is_all_in(), false);
                 }
             }
         };

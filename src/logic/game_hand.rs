@@ -15,11 +15,11 @@ use strum::IntoEnumIterator;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, EnumIter)]
 pub enum Street {
-    Preflop,
-    Flop,
-    Turn,
-    River,
-    ShowDown,
+    Preflop = 0,
+    Flop = 1,
+    Turn = 2,
+    River = 3,
+    ShowDown = 4,
 }
 
 impl fmt::Display for Street {
@@ -48,6 +48,7 @@ pub struct GameHand {
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
+    pub street_num_bets: [u32; 5], // how many bets per street. each index is for a given street
     pub last_action: Option<PlayerAction>, // the last thing anyone did (or None)	
     pub current_bet: u32, // the current street bet at any moment
     pub min_raise: u32, // the minimum amount that the next raise must be
@@ -70,6 +71,7 @@ impl GameHand {
             street: Street::Preflop,
             pot_manager: PotManager::new(),
             street_contributions,
+	    street_num_bets: [0;5],
 	    last_action: None,
 	    current_bet: 0,
 	    min_raise: big_blind,
@@ -149,9 +151,16 @@ impl GameHand {
 	current_contributions[index]
     }
     
-    pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool) {
+    pub fn get_current_num_bets(&self)  -> u32 {
+	self.street_num_bets[self.street as usize]
+    }
+    
+    pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool, is_raise: bool) {
 	let current_contributions = self.street_contributions.get_mut(&self.street).unwrap();	
-        current_contributions[index] += amount;	
+        current_contributions[index] += amount;
+	if is_raise {
+	    self.street_num_bets[self.street as usize] += 1;
+	}
         self.pot_manager.contribute(player_id, amount, all_in);	    
     }
 	
