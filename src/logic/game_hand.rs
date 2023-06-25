@@ -1,14 +1,19 @@
 use std::fmt;
 use std::collections::{HashMap, HashSet};
 
-use super::card::{Card, HandResult};
+use super::card::{Card, Rank};
+use super::hand_analysis::HandResult;
+
 use super::player::{Player, PlayerConfig, PlayerAction};
 use super::pot::PotManager;
 
 use json::object;
 use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+use strum_macros::EnumIter;
+use strum::IntoEnumIterator;
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, EnumIter)]
 pub enum Street {
     Preflop,
     Flop,
@@ -39,7 +44,7 @@ pub enum HandStatus {
 
 #[derive(Debug)]
 pub struct GameHand {
-    big_blind: u32,
+    pub big_blind: u32,
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
@@ -56,11 +61,15 @@ impl GameHand {
 
     /// a new() constructor when we know the min raise upfront
     pub fn new(big_blind: u32) -> Self {
+	let mut street_contributions = HashMap::new();
+	for street in Street::iter() {
+            street_contributions.insert(street, [0;9]);
+	}
         GameHand {
 	    big_blind,
             street: Street::Preflop,
             pot_manager: PotManager::new(),
-            street_contributions: HashMap::new(),
+            street_contributions,
 	    last_action: None,
 	    current_bet: 0,
 	    min_raise: big_blind,
@@ -122,11 +131,24 @@ impl GameHand {
     pub fn pot_repr(&self) -> Vec<u32> {
 	self.pot_manager.simple_repr()
     }
+
+    pub fn total_money(&self) -> u32 {
+	self.pot_manager.total_money()
+    }
     
     pub fn is_showdown(&self) -> bool {
 	Street::ShowDown == self.street
     }
+    
+    pub fn is_preflop(&self) -> bool {
+	Street::Preflop == self.street
+    }
 
+    pub fn get_current_contributions_for_index(&self, index: usize) -> u32 {
+	let current_contributions = self.street_contributions.get(&self.street).unwrap();
+	current_contributions[index]
+    }
+    
     pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool) {
 	let current_contributions = self.street_contributions.get_mut(&self.street).unwrap();	
         current_contributions[index] += amount;	
@@ -287,6 +309,17 @@ impl GameHand {
         }
     }
 
+    pub fn highest_rank(&self) -> Option<Rank> {
+	if self.flop.is_none() {
+	    // no cards present yet
+	    return None;
+	}
+	let high = self.flop.as_ref().unwrap().iter().map(|c| Some(c))
+	    .chain(std::iter::once(self.turn.as_ref()))
+	    .chain(std::iter::once(self.river.as_ref())).flatten().map(|c| c.rank).max();
+	high
+    }
+    
     // determine where to start the showing of cards
     // if there is a last-aggressor, then it starts with them,
     // otherwise, it defaults to the street starting idx    

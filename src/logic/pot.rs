@@ -23,7 +23,7 @@ impl Pot {
         }
     }
 
-    /// a public getter, since we don't want people outside the pot manager to be chaning the field
+    /// a public getter, since we don't want people outside the pot manager to be changing the field
     pub fn get_money(&self) -> u32 {
 	self.money
     }
@@ -64,14 +64,15 @@ impl PotManager {
         self.pots.iter().filter(|x| x.money > 0).map(|x| x.money).collect()
     }
 
+    /// all the money across all pots
+    pub fn total_money(&self) -> u32 {
+        self.pots.iter().map(|x| x.money).sum()
+    }
+    
     /// given a player id and an amount they need to contribute to the pot
     /// and whether this is putting them all-in), this method puts the proper
     /// amount into the proper pot(s), and possibly create and redistribute into a new side pot
     pub fn contribute(&mut self, player_id: Uuid, amount: u32, all_in: bool) {
-        println!(
-            "inside contribute: {:?}, {:?}, all_in={:?}",
-            player_id, amount, all_in
-        );
         let mut to_contribute = amount;
         // insert_pot keeps track of the index at which we want to insert a pot (index+1) to,
         // and the new cap for the pot at that index
