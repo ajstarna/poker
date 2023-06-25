@@ -3,7 +3,8 @@ mod hand_analysis;
 mod pot;
 mod game_hand;
 mod bot;
-
+mod random;
+    
 pub mod player;
 pub mod deck;
 pub mod table;

@@ -5,6 +5,8 @@ use super::hand_analysis::{HandRanking, HandResult};
 use super::player::{Player, PlayerAction};
 use super::game_hand::{GameHand, Street};
 
+use super::random::{RngGenerator};
+
 use rand::Rng;
 
 #[derive(Debug)]
@@ -14,8 +16,16 @@ enum BotActionError {
 }
 
 
+
 /// given a player and gamehand, this function returns a player action depending on the state of the game
-pub fn get_bot_action(player: &Player, gamehand: &GameHand) -> PlayerAction {
+pub fn get_bot_action<T>(
+    player: &Player,
+    gamehand: &GameHand,
+    rng_generator: Box<dyn RngGenerator<T>>
+) -> PlayerAction
+where
+    T: rand::distributions::uniform::SampleUniform + std::cmp::PartialOrd
+{
     match gamehand.street {
         Street::Preflop => {
 	    let blah = get_preflop_action(player, gamehand); //

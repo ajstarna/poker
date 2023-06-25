@@ -10,6 +10,7 @@ use super::bot;
 
 use super::player::{Player, PlayerAction, PlayerConfig};
 use crate::hub::TableHub;
+use super::random::{RngGenerator, TrueRandom};
 
 use crate::messages::{AdminCommand, GameOver, JoinTableError, MetaAction, Returned, ReturnedReason, WsMessage};
 
@@ -25,6 +26,7 @@ pub struct Table {
     hub_addr: Option<Addr<TableHub>>, // needs to be able to communicate back to the hub sometimes
     pub name: String,
     deck: Box<dyn Deck>,
+    rng_generator: Box<dyn RngGenerator<u32>>,
     players: [Option<Player>; 9], // 9 spots where players can sit
     player_ids_to_configs: HashMap<Uuid, PlayerConfig>,
     max_players: u8, // how many will we let in the game
@@ -45,6 +47,7 @@ impl Default for Table {
             hub_addr: None,
             name: "Table".to_owned(),
             deck: Box::new(StandardDeck::new()),
+	    rng_generator: Box::new(TrueRandom::new()),
             players: Default::default(),
             player_ids_to_configs: HashMap::<Uuid, PlayerConfig>::new(),
             max_players: 9,
@@ -1123,7 +1126,7 @@ impl Table {
                 None
             }
         } else {
-	    Some(bot::get_bot_action(player, gamehand))
+	    Some(bot::get_bot_action(player, gamehand, self.rng_generator))
         }
     }
 
