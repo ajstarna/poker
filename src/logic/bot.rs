@@ -446,13 +446,13 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     println!("inside flop action. best hand = {:?}", best_hand);
     println!("street contributions:\n{:?}", gamehand.street_contributions);
     let quality = qualify_hand(player, &best_hand, gamehand);
-    let draw_type = player.determine_draw_type(gamehand);
+    let draw_types = player.determine_draw_types(gamehand);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > 0;
     let bet_size = gamehand.total_money() / 2;
 
-    if draw_type.is_some() {
+    if draw_types.is_some() {
 	println!("about to get a draw action");
 	Ok(get_draw_action(player, gamehand, cannot_check, facing_raise, bet_size))
     }   

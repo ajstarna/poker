@@ -20,9 +20,12 @@ pub enum HandRanking {
 }
 
 
+#[derive(Debug, PartialEq)]
 pub enum DrawType {
-    Frontdoor,
-    Backdoor,
+    GutshotStraight,
+    OpenEndedStraight,
+    ThreeToAFlush,
+    FourToAFlush,    
 }
 
 /// The hand result has the HandRanking, for quick comparisons, then the cads that make
@@ -259,6 +262,142 @@ impl HandResult {
         }
     }
 
+    /// Given a hand of 5 cards, we return a possible 
+    /// us the hand ranking, the constituent cards, kickers, and hand score    
+    pub fn find_all_draw_types(mut five_cards: Vec<Card>) -> Option<Vec<DrawType>> {
+        assert!(five_cards.len() == 5);
+        five_cards.sort(); // first sort by Rank
+
+        let hand_ranking: HandRanking;
+
+        let mut rank_counts: HashMap<Rank, u8> = HashMap::new();
+        let mut is_flush = true;
+        let first_suit = five_cards[0].suit;
+        let mut is_straight = true;
+        let mut is_low_ace_straight = false;
+        let first_rank = five_cards[0].rank as usize;
+        for (i, card) in five_cards.iter().enumerate() {
+            let count = rank_counts.entry(card.rank).or_insert(0);
+            *count += 1;
+            if card.suit != first_suit {
+                is_flush = false;
+            }
+            if is_straight && i == 4 && card.rank == Rank::Ace && first_rank == 2 {
+                // completing the straight with an Ace on 2-->Ace
+                is_low_ace_straight = true;
+            } else if card.rank as usize != first_rank + i {
+                is_straight = false;
+            }
+        }
+        let mut constituent_cards = Vec::new();
+
+        let mut kickers = Vec::new();
+
+        if is_flush && is_straight {
+            if let Rank::Ace = five_cards[4].rank {
+                hand_ranking = HandRanking::RoyalFlush;
+            } else {
+                hand_ranking = HandRanking::StraightFlush;
+            }
+            constituent_cards.extend(five_cards);
+        } else {
+            let mut num_fours = 0;
+            let mut num_threes = 0;
+            let mut num_twos = 0;
+            for count in rank_counts.values() {
+                //println!("rank = {:?}, count = {}", rank, count);
+                match count {
+                    4 => num_fours += 1,
+                    3 => num_threes += 1,
+                    2 => num_twos += 1,
+                    _ => (),
+                }
+            }
+
+            if num_fours == 1 {
+                hand_ranking = HandRanking::FourOfAKind;
+                for card in five_cards {
+                    match *rank_counts.get(&card.rank).unwrap() {
+                        4 => constituent_cards.push(card),
+                        _ => kickers.push(card),
+                    }
+                }
+            } else if num_threes == 1 && num_twos == 1 {
+                hand_ranking = HandRanking::FullHouse;
+                for card in five_cards {
+                    match *rank_counts.get(&card.rank).unwrap() {
+                        2 | 3 => constituent_cards.push(card),
+                        _ => kickers.push(card),
+                    }
+                }
+            } else if is_flush {
+                hand_ranking = HandRanking::Flush;
+                constituent_cards.extend(five_cards);
+            } else if is_straight {
+                hand_ranking = HandRanking::Straight;
+                constituent_cards.extend(five_cards);
+            } else if num_threes == 1 {
+                hand_ranking = HandRanking::ThreeOfAKind;
+                for card in five_cards {
+                    match *rank_counts.get(&card.rank).unwrap() {
+                        3 => constituent_cards.push(card),
+                        _ => kickers.push(card),
+                    }
+                }
+            } else if num_twos == 2 {
+                hand_ranking = HandRanking::TwoPair;
+                for card in five_cards {
+                    match *rank_counts.get(&card.rank).unwrap() {
+                        2 => constituent_cards.push(card),
+                        _ => kickers.push(card),
+                    }
+                }
+            } else if num_twos == 1 {
+                hand_ranking = HandRanking::Pair;
+                for card in five_cards {
+                    match *rank_counts.get(&card.rank).unwrap() {
+                        2 => constituent_cards.push(card),
+                        _ => kickers.push(card),
+                    }
+                }
+            } else {
+                hand_ranking = HandRanking::HighCard;
+                constituent_cards.push(five_cards[4]);
+                for &card in five_cards.iter().take(4) {
+                    kickers.push(card);
+                }
+            }
+        }
+        constituent_cards.sort();
+
+	// special case constituent sorting:
+	
+        if hand_ranking == HandRanking::FullHouse {
+            // for a full house we actually want to make sure the sort has the 3 of a kind
+            // sorted "higher" than the pair (since that is what matters more when determining
+            // hand value)
+            if constituent_cards[0].rank == constituent_cards[2].rank {
+                constituent_cards.reverse();
+            }
+	}
+        if is_low_ace_straight {
+            // we want the constituent cards to be sorted with the Ace being "low",
+            // so we need to move it to the beginning
+            let ace = constituent_cards.pop().unwrap();
+            constituent_cards.insert(0, ace);
+        }
+
+        kickers.sort();
+        let value = HandResult::score_hand(hand_ranking, &constituent_cards, &kickers);
+        Self {
+            hand_ranking,
+            constituent_cards,
+            kickers,
+            value,
+        };
+	None
+    }
+    
     pub fn hand_ranking_string(&self) -> String {
         format!(
             "{:?}",

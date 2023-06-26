@@ -229,16 +229,16 @@ impl Player {
 	best_result
     }
 
-    pub fn determine_draw_type(&self, gamehand: &GameHand) -> Option<DrawType> {
+    pub fn determine_draw_types(&self, gamehand: &GameHand) -> Option<Vec<DrawType>> {
         if !self.is_active {
             // if the player isn't active, then can't have a best hand
             return None;
         }
-	if gamehand.is_preflop() {
-	    // there is no "best hand" if we didn't even make it to the flop
+	if gamehand.flop.is_none() || gamehand.river.is_some() {
+	    // no draws by definition at preflop or the river
 	    return None;
 	}
-	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
+	
 	let mut best_result: Option<HandResult> = None;
 	let mut hand_count = 0;	
 	for exclude_idx1 in 0..7 {
@@ -251,7 +251,6 @@ impl Player {
 		    .chain(iter::once(gamehand.river.as_ref()))
 		    .enumerate()
 		{
-		    //println!("sup {:?}, card = {:?}", idx, card);
 		    if let Some(card) = card {
 			if idx != exclude_idx1 && idx != exclude_idx2 {
 			    //println!("pushing!");
@@ -282,5 +281,343 @@ impl Player {
 mod tests {
     use super::*;
     use crate::logic::card::{Card, Rank, Suit};
+    use crate::logic::game_hand::Street;
 
+    #[test]
+    fn flop_four_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![DrawType::FourToAFlush]);
+    }
+
+    #[test]
+    fn turn_four_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Turn;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![DrawType::FourToAFlush]);
+    }
+
+    #[test]
+    fn turn_three_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Turn;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![DrawType::ThreeToAFlush]);
+    }
+    
+    /// On the river, the hand is the hand.
+    /// Speaking of a draw is nonsensical
+    #[test]
+    fn river_no_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::River;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+
+	gamehand.river = Some(
+	    Card {
+		rank: Rank::Two,
+		suit: Suit::Diamond,
+            }
+	);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand);
+	assert!(draw_types.is_none());
+    }
+    
+    #[test]
+    fn flop_gutshot_straight_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![DrawType::GutshotStraight]);
+    }
+
+    #[test]
+    fn flop_open_ended_straight_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Jack,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![DrawType::OpenEndedStraight]);
+    }
+
+    #[test]
+    fn flop_three_flush_and_open_ended_draws() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Jack,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Club,
+            }
+	]);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![
+	    DrawType::OpenEndedStraight,
+	    DrawType::ThreeToAFlush,	    
+	]);
+    }
+
+    #[test]
+    fn flop_four_flush_and_gutshot_draws() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	]);
+	
+	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
+	assert_eq!(draw_types, vec![
+	    DrawType::GutshotStraight,
+	    DrawType::FourToAFlush,	    
+	]);
+    }
+    
 }
