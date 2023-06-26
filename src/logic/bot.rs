@@ -88,7 +88,7 @@ fn score_preflop_hand(hole_cards: &Vec<Card>) -> Result<f32, BotActionError>  {
     Ok(score.ceil())
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum HandQuality {
     Garbage,
     Mediocre,
@@ -632,6 +632,8 @@ mod tests {
     }
 
     /// if a bot has a garbage hand, then they will check if possible
+    /// USUALLY.... once in a while a pure garbage bluff,so technically this test can fail
+    /// until I sort out injecting fake randomness
     #[test]
     fn check_garbage_flop() {
         let mut bot0 = Player::new_bot(200);
@@ -917,12 +919,39 @@ mod tests {
         let mut bot0 = Player::new_bot(200);
 	bot0.is_active = true;
 	bot0.index = Some(0);
-
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
 	
-	let best_hand = player.determine_best_hand(gamehand).unwrap();
-	let quality = qualify_hand(player, &best_hand, gamehand);
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
 
-	TODO: finish this test
-	fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) -> HandQuality 
-    
+        let mut gamehand = GameHand::new(2);
+
+	// flop a pair of 4s on the board
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let best_hand = bot0.determine_best_hand(&gamehand).unwrap();
+	assert_eq!(best_hand.hand_ranking, HandRanking::Pair);
+	let quality = qualify_hand(&bot0, &best_hand, &gamehand);
+	assert_eq!(quality, HandQuality::Garbage);
+    }    
 }
