@@ -172,10 +172,13 @@ fn get_garbage_action(
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
     let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
-    
-    if facing_raise
-	&& ( ( bet_ratio < 0.25 && gamehand.street == Street::Flop) 
-	|| ( bet_ratio <  0.20) ){
+    let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
+    if current_num_bets > 2 {
+	println!("too many bets for this garbage hand");
+	PlayerAction::Fold	
+    } else { if facing_raise
+	&& ( ( bet_ratio < 0.20 && gamehand.street == Street::Flop) 
+	|| ( bet_ratio <  0.15) ){
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
 	    match num {
@@ -206,7 +209,7 @@ fn get_garbage_action(
 		    }
 		}
 	    }	   
-	}    
+	}}    
 }
 
 fn get_mediocre_action(
