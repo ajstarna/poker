@@ -174,18 +174,31 @@ fn get_garbage_action(
     let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
     let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
     let draw_analysis = player.determine_draw_analysis(gamehand);
+    
     if current_num_bets > 2 {
-	println!("too many bets for this garbage hand");
-	return PlayerAction::Fold;
+	if gamehand.street == Street::Flop && draw_analysis.good_draw {
+	    // it is the flop and we have a good draw, so we can call
+	    println!("many  bets with this garbage hand, BUT we have a good draw {:?}", draw_analysis);	    
+	    PlayerAction::Call
+	} else {
+	    PlayerAction::Fold
+	}
     }
-    if facing_raise
+    else { if facing_raise
 	&& ( ( bet_ratio < 0.20 && gamehand.street == Street::Flop) 
 	|| ( bet_ratio <  0.15) ){
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
 	    match num {
 		0..=80 => PlayerAction::Call,
-		81..=90 => PlayerAction::Fold,
+		81..=90 =>
+		{
+		    if draw_analysis.good_draw || draw_analysis.weak_draw {
+			PlayerAction::Call			
+		    } else {
+			PlayerAction::Fold
+		    }
+		},
 		_ => {
 		    let amount: u32 = std::cmp::min(player.money, bet_size);
 		    PlayerAction::Bet(amount)
@@ -194,8 +207,13 @@ fn get_garbage_action(
 	} else {
 	    match num {
 		0..=90 => {
-		    if cannot_check {		    
-			PlayerAction::Fold
+		    if cannot_check {
+			if draw_analysis.good_draw ||
+			    (draw_analysis.weak_draw && gamehand.street == Street::Flop) {
+			    PlayerAction::Call			
+			} else {
+			    PlayerAction::Fold
+			}
 		    } else {
 			PlayerAction::Check			
 		    }
@@ -211,7 +229,7 @@ fn get_garbage_action(
 		    }
 		}
 	    }	   
-	}
+	}}
 }
 
 fn get_mediocre_action(
