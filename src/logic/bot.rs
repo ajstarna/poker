@@ -210,6 +210,8 @@ fn get_garbage_action(
 		    if cannot_check {
 			if draw_analysis.good_draw ||
 			    (draw_analysis.weak_draw && gamehand.street == Street::Flop) {
+				println!("we got a draw going so call");
+				println!("{:?}", draw_analysis);
 			    PlayerAction::Call			
 			} else {
 			    PlayerAction::Fold
@@ -381,7 +383,6 @@ fn get_good_action(
 
 fn get_big_action(
     player: &Player,
-    gamehand: &GameHand,    
     cannot_check: bool,
     facing_raise: bool,
     bet_size: u32,    
@@ -403,42 +404,6 @@ fn get_big_action(
 		PlayerAction::Check		
 	    }
 	}
-    }
-}
-
-fn get_draw_action(
-    player: &Player,
-    gamehand: &GameHand,    
-    cannot_check: bool,
-    facing_raise: bool,
-    bet_size: u32,
-) -> PlayerAction {
-    let num = rand::thread_rng().gen_range(0..100);
-    if facing_raise {
-	match num {
-            0..=50 => PlayerAction::Call,
-            51..=85 => PlayerAction::Fold,
-	    _ => {
-		let amount: u32 = std::cmp::min(player.money, bet_size);
-		PlayerAction::Bet(amount)
-            }
-	}
-    } else {
-	println!("NOT facing a raise");	
-	match num {
-            0..=30 => {
-		if cannot_check {
-		    // note sure this makes any sense post flop?
-		    PlayerAction::Call
-		} else {
-		    PlayerAction::Check		    
-		}
-	    },
-	    _ =>  {
-		let amount: u32 = std::cmp::min(player.money, bet_size);
-		PlayerAction::Bet(amount)		
-	    }
-	}	
     }
 }
 
@@ -472,7 +437,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerActi
 	}
 	_ => {
 	    println!("about to get a big action");
-	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))		
+	    Ok(get_big_action(player, cannot_check, facing_raise, bet_size))		
 	}
     }	   
 }
@@ -508,11 +473,11 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
 	}
 	HandQuality::Great => {
 	    println!("about to get a great action");				
-	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    Ok(get_big_action(player, cannot_check, facing_raise, bet_size))
 	}
 	HandQuality::Exceptional => {
 	    println!("about to get an exceptional action");						
-	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	    Ok(get_big_action(player, cannot_check, facing_raise, bet_size))
 	}
     }    
 }
@@ -672,11 +637,11 @@ mod tests {
 	bot0.is_active = true;
         bot0.hole_cards.push(Card {
             rank: Rank::King,
-            suit: Suit::Club,
+            suit: Suit::Heart
         });
 	
         bot0.hole_cards.push(Card {
-            rank: Rank::Queen,
+            rank: Rank::Ten,
             suit: Suit::Heart,
         });
 
@@ -692,7 +657,7 @@ mod tests {
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
 	    Card {
-		rank: Rank::Three,
+		rank: Rank::Jack,
 		suit: Suit::Diamond,
             },
 	    Card {

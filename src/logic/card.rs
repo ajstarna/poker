@@ -43,7 +43,7 @@ impl fmt::Display for Rank {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone, EnumIter)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Debug, Copy, Clone, EnumIter, Hash)]
 pub enum Suit {
     Club,
     Diamond,
