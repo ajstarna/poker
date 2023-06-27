@@ -241,8 +241,6 @@ impl Player {
 	    return DrawAnalysis::from_draws(all_draws)	    	    
 	}
 	
-	let mut best_result: Option<HandResult> = None;
-
 	for exclude_idx1 in 0..7 {
 	    for exclude_idx2 in exclude_idx1+1..7 {
 		let mut possible_hand = Vec::with_capacity(5);
@@ -263,17 +261,16 @@ impl Player {
 		if possible_hand.len() != 5 {
 		    continue;
 		}
+		println!("check out possible hand {:?}", possible_hand);
 		// we have built a hand of five cards, now evaluate it
-		let current_result = HandResult::analyze_hand(possible_hand);
-		match best_result {
-		    None => best_result = Some(current_result),
-		    Some(result) if current_result > result => {
-			best_result = Some(current_result)
-		    }
-		    _ => (),
-		}
+		let mut current_draws = HandResult::determine_all_draw_types(possible_hand, gamehand);
+		all_draws.append(&mut current_draws);
 	    }
 	}
+
+	// sort and remove any duplicates from all the collected draws
+	all_draws.sort_unstable();
+	all_draws.dedup();
 	DrawAnalysis::from_draws(all_draws)
     }    
 }

@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use super::card::{Card, Rank, Suit};
+use super::{card::{Card, Rank, Suit}, game_hand::GameHand};
 
 use strum_macros::EnumIter;
 
@@ -20,12 +20,12 @@ pub enum HandRanking {
 }
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DrawType {
+    FourToAFlush,    
     GutshotStraight,
     OpenEndedStraight,
     ThreeToAFlush,
-    FourToAFlush,
     TwoOvers,
 }
 
@@ -292,7 +292,7 @@ impl HandResult {
 
     /// Given a hand of 5 cards, we return a possible 
     /// us the hand ranking, the constituent cards, kickers, and hand score    
-    pub fn find_all_draw_types(mut five_cards: Vec<Card>) -> Option<Vec<DrawType>> {
+    pub fn determine_all_draw_types(mut five_cards: Vec<Card>, gamehand: &GameHand) -> Vec<DrawType> {
         assert!(five_cards.len() == 5);
         five_cards.sort(); // first sort by Rank
 
