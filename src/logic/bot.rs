@@ -242,14 +242,17 @@ fn get_mediocre_action(
     let num = rand::thread_rng().gen_range(0..100);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());
     let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
-    let draw_analysis = player.determine_draw_analysis(gamehand);
-    
+    let draw_analysis = player.determine_draw_analysis(gamehand);    
     if facing_raise {
 	println!("facing a raise");	
 	if current_num_bets > 3 {
 	    // too many bets this street, time to back out
-	    println!("too many bets for my mediocre hand. time to leave");		    
-	    PlayerAction::Fold
+	    if draw_analysis.good_draw {
+		PlayerAction::Call		
+	    } else {
+		println!("too many bets for my mediocre hand. time to leave");		    
+		PlayerAction::Fold
+	    }
 	} else { match num {
             0..=50 => {
 		println!("poo");
@@ -267,6 +270,9 @@ fn get_mediocre_action(
 			// we already put some money in, so don't then cave so easy
 			println!("lets defend our mediocre money");
 			PlayerAction::Call
+		    } else if draw_analysis.good_draw ||
+		    (draw_analysis.weak_draw && gamehand.street == Street::Flop) {
+			PlayerAction::Call
 		    } else {
 			PlayerAction::Fold
 		    }
@@ -279,8 +285,13 @@ fn get_mediocre_action(
 	}}
     } else if current_num_bets > 2 {
 	// too many bets this street, time to back out
-	println!("already been a 3-bet, so lets just get out");
-	PlayerAction::Fold
+	if draw_analysis.good_draw {
+	    println!("we CAN call with a good draw");
+	    PlayerAction::Call		
+	} else {
+	    println!("already been a 3-bet, so lets just get out");
+	    PlayerAction::Fold
+	}
     } else if gamehand.street == Street::Preflop {
 	// dont limp preflop
 	let amount: u32 = std::cmp::min(player.money, bet_size);
@@ -290,11 +301,16 @@ fn get_mediocre_action(
 	println!("NOT facing a raise");
 	match num {
             0..=80 => {
-		if cannot_check {
-		    PlayerAction::Call
-		} else {
-		    PlayerAction::Check		    
-		}
+		if draw_analysis.good_draw ||
+		    (draw_analysis.weak_draw && gamehand.street == Street::Flop) {
+			println!("lets bet our draw with a mediocre hand!");
+			let amount: u32 = std::cmp::min(player.money, bet_size);
+			PlayerAction::Bet(amount)		
+		    } else if cannot_check {
+			PlayerAction::Call
+		    } else {
+			PlayerAction::Check		    
+		    }
 	    },
 	    _ =>  {
 		let amount: u32 = std::cmp::min(player.money, bet_size);
@@ -312,11 +328,12 @@ fn get_good_action(
     bet_size: u32,    
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
-    let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street	    
+    let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
+    let draw_analysis = player.determine_draw_analysis(gamehand);        
     if facing_raise {
 	match num {
 	    0..=80 => {
-		if current_num_bets > 3 {
+		if current_num_bets > 3 && !draw_analysis.good_draw {
 		    // too many bets this street, time to back out
 		    println!("too many bets for my good hand. time to leave");		    
 		    PlayerAction::Fold
@@ -338,7 +355,7 @@ fn get_good_action(
 	    }
 	}
     } else {
-	if current_num_bets > 3 {
+	if current_num_bets > 3 && !draw_analysis.good_draw {
 	    // too many bets this street, time to back out
 	    println!("too many bets for my good hand. time to leave");		    
 	    PlayerAction::Fold
