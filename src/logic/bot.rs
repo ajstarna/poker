@@ -173,10 +173,12 @@ fn get_garbage_action(
     let num = rand::thread_rng().gen_range(0..100);
     let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;
     let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
+    let draw_analysis = player.determine_draw_analysis(gamehand);
     if current_num_bets > 2 {
 	println!("too many bets for this garbage hand");
-	PlayerAction::Fold	
-    } else { if facing_raise
+	return PlayerAction::Fold;
+    }
+    if facing_raise
 	&& ( ( bet_ratio < 0.20 && gamehand.street == Street::Flop) 
 	|| ( bet_ratio <  0.15) ){
 	    // don't be weak to mini bets
@@ -209,7 +211,7 @@ fn get_garbage_action(
 		    }
 		}
 	    }	   
-	}}    
+	}
 }
 
 fn get_mediocre_action(
@@ -222,6 +224,8 @@ fn get_mediocre_action(
     let num = rand::thread_rng().gen_range(0..100);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());
     let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
+    let draw_analysis = player.determine_draw_analysis(gamehand);
+    
     if facing_raise {
 	println!("facing a raise");	
 	if current_num_bets > 3 {
@@ -449,41 +453,33 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     println!("inside flop action. best hand = {:?}", best_hand);
     println!("street contributions:\n{:?}", gamehand.street_contributions);
     let quality = qualify_hand(player, &best_hand, gamehand);
-    let draw_types = player.determine_draw_types(gamehand);
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > 0;
     let bet_size = gamehand.total_money() / 2;
-
-    if draw_types.is_some() {
-	println!("about to get a draw action");
-	Ok(get_draw_action(player, gamehand, cannot_check, facing_raise, bet_size))
-    }   
-    else {
-	match quality {
-	    // TODO: need to consider number of players and position
-	    HandQuality::Garbage => {
-		println!("about to get garbage action");				
-		Ok(get_garbage_action(player, gamehand, cannot_check, facing_raise, bet_size))		
-	    }
-	    HandQuality::Mediocre => {
-		println!("about to get a mediocre action");		
-		Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	    }
-	    HandQuality::Good => {
-		println!("about to get a good action");		
-		Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	    }
-	    HandQuality::Great => {
-		println!("about to get a great action");				
-		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	    }
-	    HandQuality::Exceptional => {
-		println!("about to get an exceptional action");						
-		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
-	    }
-	    
-	}}	    
+    match quality {
+	// TODO: need to consider number of players and position
+	HandQuality::Garbage => {
+	    println!("about to get garbage action");				
+	    Ok(get_garbage_action(player, gamehand, cannot_check, facing_raise, bet_size))		
+	}
+	HandQuality::Mediocre => {
+	    println!("about to get a mediocre action");		
+	    Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	HandQuality::Good => {
+	    println!("about to get a good action");		
+	    Ok(get_good_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	HandQuality::Great => {
+	    println!("about to get a great action");				
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+	HandQuality::Exceptional => {
+	    println!("about to get an exceptional action");						
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
+	}
+    }    
 }
 
 
@@ -632,50 +628,6 @@ mod tests {
 	let action = get_bot_action(&bot0, &gamehand);
 	
         assert_eq!(action, PlayerAction::Fold);
-    }
-
-    /// if a bot has a garbage hand, then they will check if possible
-    /// USUALLY.... once in a while a pure garbage bluff,so technically this test can fail
-    /// until I sort out injecting fake randomness
-    #[test]
-    fn check_garbage_flop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-        bot0.hole_cards.push(Card {
-            rank: Rank::King,
-            suit: Suit::Club,
-        });
-	
-        bot0.hole_cards.push(Card {
-            rank: Rank::Queen,
-            suit: Suit::Heart,
-        });
-
-	let index = 0;
-	bot0.index = Some(index);
-	
-        let mut gamehand = GameHand::new(2);
-
-	// flop really bad for the bot
-	gamehand.street = Street::Flop;
-	gamehand.flop = Some(vec![
-	    Card {
-		rank: Rank::Three,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::Four,
-		suit: Suit::Diamond,
-            },
-	    Card {
-		rank: Rank::Five,
-		suit: Suit::Diamond,
-            }
-	]);
-	
-	let action = get_bot_action(&bot0, &gamehand);
-	
-        assert_eq!(action, PlayerAction::Check);
     }
     
     /// if a bot has a garbage hand, then they will fold at most aggression

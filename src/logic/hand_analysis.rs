@@ -25,7 +25,35 @@ pub enum DrawType {
     GutshotStraight,
     OpenEndedStraight,
     ThreeToAFlush,
-    FourToAFlush,    
+    FourToAFlush,
+    TwoOvers,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DrawAnalysis {
+    pub all_draws: Vec<DrawType>,
+    pub good_draw: bool, 
+    pub weak_draw: bool,
+}
+
+impl DrawAnalysis {
+    pub fn from_draws(all_draws: Vec<DrawType>) -> Self {
+	let mut good_draw = false;
+	let mut weak_draw = false;    
+	
+	for d_type in &all_draws {
+	    match d_type {
+		DrawType::FourToAFlush | DrawType::OpenEndedStraight  => good_draw = true,
+		_ => weak_draw = true,
+	    }
+	}
+	
+	Self {
+	    all_draws,
+	    good_draw,
+	    weak_draw,
+	}
+    }
 }
 
 /// The hand result has the HandRanking, for quick comparisons, then the cads that make

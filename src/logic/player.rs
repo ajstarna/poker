@@ -1,5 +1,5 @@
 use super::card::Card;
-use super::hand_analysis::{DrawType, HandResult};
+use super::hand_analysis::{DrawType, DrawAnalysis, HandResult};
 use super::game_hand::GameHand;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
@@ -229,18 +229,20 @@ impl Player {
 	best_result
     }
 
-    pub fn determine_draw_types(&self, gamehand: &GameHand) -> Option<Vec<DrawType>> {
+    pub fn determine_draw_analysis(&self, gamehand: &GameHand) -> DrawAnalysis {
+	let mut all_draws = vec![];
+	
         if !self.is_active {
             // if the player isn't active, then can't have a best hand
-            return None;
+	    return DrawAnalysis::from_draws(all_draws)	    
         }
 	if gamehand.flop.is_none() || gamehand.river.is_some() {
 	    // no draws by definition at preflop or the river
-	    return None;
+	    return DrawAnalysis::from_draws(all_draws)	    	    
 	}
 	
 	let mut best_result: Option<HandResult> = None;
-	let mut hand_count = 0;	
+
 	for exclude_idx1 in 0..7 {
 	    for exclude_idx2 in exclude_idx1+1..7 {
 		let mut possible_hand = Vec::with_capacity(5);
@@ -261,7 +263,6 @@ impl Player {
 		if possible_hand.len() != 5 {
 		    continue;
 		}
-		hand_count += 1;		
 		// we have built a hand of five cards, now evaluate it
 		let current_result = HandResult::analyze_hand(possible_hand);
 		match best_result {
@@ -273,7 +274,7 @@ impl Player {
 		}
 	    }
 	}
-	None
+	DrawAnalysis::from_draws(all_draws)
     }    
 }
 
@@ -317,8 +318,15 @@ mod tests {
             }
 	]);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![DrawType::FourToAFlush]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::FourToAFlush],
+		good_draw: true,
+		weak_draw: false,
+	    }
+	);
     }
 
     #[test]
@@ -361,8 +369,15 @@ mod tests {
             }
 	);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![DrawType::FourToAFlush]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::FourToAFlush],
+		good_draw: true,
+		weak_draw: false,
+	    }
+	);
     }
 
     #[test]
@@ -405,8 +420,15 @@ mod tests {
             }
 	);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![DrawType::ThreeToAFlush]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::ThreeToAFlush],
+		good_draw: false,
+		weak_draw: true,
+	    }
+	);
     }
     
     /// On the river, the hand is the hand.
@@ -458,8 +480,15 @@ mod tests {
             }
 	);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand);
-	assert!(draw_types.is_none());
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![],
+		good_draw: false,
+		weak_draw: false,
+	    }
+	);
     }
     
     #[test]
@@ -496,10 +525,62 @@ mod tests {
             }
 	]);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![DrawType::GutshotStraight]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::GutshotStraight],
+		good_draw: false,
+		weak_draw: true,
+	    }
+	);
     }
 
+    #[test]
+    fn flop_two_overs_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::TwoOvers],
+		good_draw: false,
+		weak_draw: true,
+	    }
+	);
+    }
+    
     #[test]
     fn flop_open_ended_straight_draw() {
         let mut bot0 = Player::new_bot(200);
@@ -534,8 +615,15 @@ mod tests {
             }
 	]);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![DrawType::OpenEndedStraight]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::OpenEndedStraight],
+		good_draw: true,
+		weak_draw: false,
+	    }
+	);
     }
 
     #[test]
@@ -572,11 +660,15 @@ mod tests {
             }
 	]);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![
-	    DrawType::OpenEndedStraight,
-	    DrawType::ThreeToAFlush,	    
-	]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::OpenEndedStraight, DrawType::ThreeToAFlush],
+		good_draw: true,
+		weak_draw: true,
+	    }
+	);
     }
 
     #[test]
@@ -613,11 +705,15 @@ mod tests {
             }
 	]);
 	
-	let draw_types = bot0.determine_draw_types(&gamehand).unwrap();
-	assert_eq!(draw_types, vec![
-	    DrawType::GutshotStraight,
-	    DrawType::FourToAFlush,	    
-	]);
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		all_draws: vec![DrawType::GutshotStraight, DrawType::FourToAFlush],
+		good_draw: true,
+		weak_draw: true,
+	    }
+	);
     }
     
 }
