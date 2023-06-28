@@ -45,6 +45,7 @@ pub enum HandStatus {
 #[derive(Debug)]
 pub struct GameHand {
     pub big_blind: u32,
+    pub num_starting_players: usize,
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
@@ -60,14 +61,16 @@ pub struct GameHand {
 
 impl GameHand {
 
-    /// a new() constructor when we know the min raise upfront
-    pub fn new(big_blind: u32) -> Self {
+    /// a new() constructor when we know the blind and the starting players
+    pub fn new(big_blind: u32, players: &[Option<Player>]) -> Self {
 	let mut street_contributions = HashMap::new();
 	for street in Street::iter() {
             street_contributions.insert(street, [0;9]);
 	}
+	let num_starting_players = players.iter().flatten().filter(|p| p.money > 0).count();
         GameHand {
 	    big_blind,
+	    num_starting_players,
             street: Street::Preflop,
             pot_manager: PotManager::new(),
             street_contributions,
@@ -82,8 +85,7 @@ impl GameHand {
         }
     }
 
-    pub fn get_hand_status(&self,  players: &mut [Option<Player>; 9]) -> HandStatus {
-	// Also, count how many active, all_in, and settled players we have
+    pub fn count_player_categories(&self, players: &mut [Option<Player>; 9]) -> (u32, u32, u32) {
 	let current_contributions = self.street_contributions.get(&self.street).unwrap();	
 	let mut num_active = 0;    
 	let mut num_settled = 0;
@@ -111,6 +113,11 @@ impl GameHand {
 		}
 	    }
         }
+	(num_active, num_settled, num_all_in)
+    }
+    
+    pub fn get_hand_status(&self, players: &mut [Option<Player>; 9]) -> HandStatus {
+	let (num_active, num_settled, num_all_in) = self.count_player_categories(players);	    
         if num_active == 1 {
             println!("Only one active player left so lets end the hand");
             // end the street and indicate to the caller that the hand is finished

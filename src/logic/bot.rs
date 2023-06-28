@@ -591,7 +591,7 @@ mod tests {
 	let index = 0;
 	bot0.index = Some(index);
 	
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
 	// the bot contributes 2 dollars and is not all in
 	gamehand.contribute(index, bot0.id, 2, false, true);
 	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
@@ -600,11 +600,52 @@ mod tests {
 	
         assert_eq!(action, PlayerAction::Check);
     }
+
+    fn set_up_game_hand(big_blind: u32, num_players: usize) -> (Vec<Option<Player>>, GameHand){
+	let mut players = vec![];
+	for i in 0..num_players {
+            let mut bot = Player::new_bot(200);
+	    bot.is_active = true;
+	    bot.index = Some(i);
+	    players.push(Some(bot));
+	}
+
+        let gamehand = GameHand::new(big_blind, &players);
+	(players, gamehand)
+    }
     /// if a bot has a garbage hand, then they will fold preflop at the slightest aggression
     #[test]
     fn fold_garbage_preflop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+        bot0.hole_cards.push(Card {
+            rank: Rank::Two,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Seven,
+            suit: Suit::Heart,
+        });
+	    
+	// the bot contributes 2 dollars and is not all in
+	gamehand.contribute(index, bot0.id, 2, false, true);
+	// the current bet of the hand is a bit higher, i.e. facing a bet	
+	gamehand.current_bet = 3; 
+	
+	let action = get_bot_action(&bot0, &gamehand);
+	
+        assert_eq!(action, PlayerAction::Fold);
+    }
+
+    /// if the table is very small, then more hands are considered good enough pre flop
+    #[test]
+    fn one_mans_garbage_preflop() {
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+	
         bot0.hole_cards.push(Card {
             rank: Rank::Two,
             suit: Suit::Club,
@@ -615,10 +656,6 @@ mod tests {
             suit: Suit::Heart,
         });
 
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
 	// the bot contributes 2 dollars and is not all in
 	gamehand.contribute(index, bot0.id, 2, false, true);
 
@@ -633,7 +670,10 @@ mod tests {
     /// if a bot has a garbage hand, then they will fold at most aggression
     #[test]
     fn fold_garbage_flop() {
-        let mut bot0 = Player::new_bot(200);
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+	
 	bot0.is_active = true;
         bot0.hole_cards.push(Card {
             rank: Rank::King,
@@ -645,11 +685,6 @@ mod tests {
             suit: Suit::Heart,
         });
 
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
-	
 	// the current bet of the hand is a bit higher, i.e. facing a bet	
 	gamehand.current_bet = 1;
 
@@ -677,7 +712,10 @@ mod tests {
     /// if the flop bet is small enough, then we wont fold garbage
     #[test]
     fn dont_fold_garbage_flop_if_bet_small() {
-        let mut bot0 = Player::new_bot(200);
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+
 	bot0.is_active = true;
         bot0.hole_cards.push(Card {
             rank: Rank::King,
@@ -689,10 +727,6 @@ mod tests {
             suit: Suit::Heart,
         });
 
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
 	gamehand.street = Street::Flop;
 	
 	// 40 bucks already in
@@ -725,7 +759,10 @@ mod tests {
     /// if a bot has a good hand, then they will call aggression
     #[test]
     fn call_good_flop() {
-        let mut bot0 = Player::new_bot(200);
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+	
 	bot0.is_active = true;
         bot0.hole_cards.push(Card {
             rank: Rank::King,
@@ -736,11 +773,6 @@ mod tests {
             rank: Rank::Queen,
             suit: Suit::Heart,
         });
-
-	let index = 0;
-	bot0.index = Some(index);
-	    
-        let mut gamehand = GameHand::new(2);
 
 	gamehand.current_bet = 1;	
 
@@ -770,41 +802,37 @@ mod tests {
     /// In this test, bot1 is our hero who gets 3-bet by bot2 and defends
     #[test]
     fn defend_mediocre_bet_preflop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-	bot0.index = Some(0);
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
 
-        let mut bot1 = Player::new_bot(200);
-	bot1.is_active = true;
-	bot1.index = Some(1);
+
+	let id0 = players[0].as_ref().unwrap().id;
+	let id2 = players[2].as_ref().unwrap().id;
+	
+	let bot1 = players[1].as_mut().unwrap();
+	let id1 = bot1.id;
         bot1.hole_cards.push(Card {
-            rank: Rank::King,
-            suit: Suit::Club,
+	    rank: Rank::King,
+	    suit: Suit::Club,
         });
 	
         bot1.hole_cards.push(Card {
-            rank: Rank::Queen,
-            suit: Suit::Heart,
+	    rank: Rank::Queen,
+	    suit: Suit::Heart,
         });
 	
-        let mut bot2 = Player::new_bot(200);
-	bot2.is_active = true;
-	bot2.index = Some(2);
-	
-        let mut gamehand = GameHand::new(2);
-	
+    
 	// bot0 contributes 2 dollars (assume the blind) and is not all in
-	gamehand.contribute(0, bot0.id, 2, false, true);
+	gamehand.contribute(0, id0, 2, false, true);
 	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
 
 	// bot1, our hero, raises
-	gamehand.contribute(1, bot0.id, 6, false, true);
+	gamehand.contribute(1, id1, 6, false, true);
 	gamehand.current_bet = 6;
-
+	
 	// bot2, 3-bets us
-	gamehand.contribute(2, bot0.id, 24, false, true);
+	gamehand.contribute(2, id2, 24, false, true);
 	gamehand.current_bet = 24;
-
+	
 	// get our hero's action now (assuming bot0 folded)	
 	let action = get_bot_action(&bot1, &gamehand);
 	
@@ -818,13 +846,13 @@ mod tests {
     /// gets 4-bet by bot2, and lays down
     #[test]
     fn lay_down_mediocre_bet_preflop() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-	bot0.index = Some(0);
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	
+	let id0 = players[0].as_ref().unwrap().id;
+	let id2 = players[2].as_ref().unwrap().id;
 
-        let mut bot1 = Player::new_bot(200);
-	bot1.is_active = true;
-	bot1.index = Some(1);
+	let bot1 = players[1].as_mut().unwrap();
+	let id1 = bot1.id;
         bot1.hole_cards.push(Card {
             rank: Rank::King,
             suit: Suit::Club,
@@ -835,31 +863,25 @@ mod tests {
             suit: Suit::Heart,
         });
 	
-        let mut bot2 = Player::new_bot(200);
-	bot2.is_active = true;
-	bot2.index = Some(2);
-	
-        let mut gamehand = GameHand::new(2);
-	
 	// bot0 contributes 2 dollars (assume the blind) and is not all in
-	gamehand.contribute(0, bot0.id, 2, false, true);
+	gamehand.contribute(0, id0, 2, false, true);
 	gamehand.current_bet = 2; // the current bet of the hand is also 2 dollars
 
 	// bot1, our hero, raises
-	gamehand.contribute(1, bot0.id, 6, false, true);
+	gamehand.contribute(1, id1, 6, false, true);
 	gamehand.current_bet = 6;
 
 	// bot2, 3-bets us
-	gamehand.contribute(2, bot0.id, 24, false, true);
+	gamehand.contribute(2, id2, 24, false, true);
 	gamehand.current_bet = 24;
 
 	// we defend and call the 3-bet
 	let is_raise = false;
-	gamehand.contribute(1, bot0.id, 18, false, is_raise);
+	gamehand.contribute(1, id1, 18, false, is_raise);
 
 	// bot2, 4-bets us!!!!
 	// note, this isnt that big of a raise, but it is enough for us to get out
-	gamehand.contribute(2, bot0.id, 40, false, true);
+	gamehand.contribute(2, id2, 40, false, true);
 	gamehand.current_bet = 64;
 
 	// get our hero's action now
@@ -871,10 +893,9 @@ mod tests {
 
     #[test]
     fn qualify_board_pair() {
-        let mut bot0 = Player::new_bot(200);
-	bot0.is_active = true;
-	bot0.index = Some(0);
-	bot0.is_active = true;
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();	
         bot0.hole_cards.push(Card {
             rank: Rank::King,
             suit: Suit::Club,
@@ -884,8 +905,6 @@ mod tests {
             rank: Rank::Queen,
             suit: Suit::Heart,
         });
-
-        let mut gamehand = GameHand::new(2);
 
 	// flop a pair of 4s on the board
 	gamehand.street = Street::Flop;

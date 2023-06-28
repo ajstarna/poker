@@ -331,7 +331,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
@@ -376,8 +376,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
 	gamehand.street = Street::Turn;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -427,8 +427,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
 	gamehand.street = Street::Turn;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -480,7 +480,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
 
 	gamehand.street = Street::River;
 	gamehand.flop = Some(vec![
@@ -538,8 +538,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
+	
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -584,8 +584,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -630,8 +630,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -676,7 +676,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
@@ -721,7 +721,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);		
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
@@ -766,8 +766,8 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
-
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
 	    Card {
@@ -812,7 +812,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
@@ -857,7 +857,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![
@@ -902,7 +902,7 @@ mod tests {
             suit: Suit::Club,
         });
 
-        let mut gamehand = GameHand::new(2);
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
 
 	gamehand.street = Street::Flop;
 	gamehand.flop = Some(vec![

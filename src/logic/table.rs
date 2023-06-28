@@ -883,7 +883,7 @@ impl Table {
         incoming_meta_actions: &Arc<Mutex<VecDeque<MetaAction>>>,
     ) -> bool {
         println!("inside of play(). button_idx = {:?}", self.button_idx);
-        let mut gamehand = GameHand::new(self.big_blind);
+        let mut gamehand = GameHand::new(self.big_blind, &self.players);
 	let mut num_active = 0;
         for player in self.players.iter_mut().flatten() {
             if player.money == 0 {
