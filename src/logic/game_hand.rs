@@ -85,12 +85,14 @@ impl GameHand {
         }
     }
 
-    pub fn count_player_categories(&self, players: &mut [Option<Player>; 9]) -> (u32, u32, u32) {
+    /// go through a given list of players, and returns a tuple with:
+    /// (num_active, num_settled, num_all_in)
+    pub fn count_player_categories(&self, players: &[Option<Player>; 9]) -> (u32, u32, u32) {
 	let current_contributions = self.street_contributions.get(&self.street).unwrap();	
 	let mut num_active = 0;    
 	let mut num_settled = 0;
 	let mut num_all_in = 0;	    	    
-        for (i, player_spot) in players.iter_mut().enumerate() {		
+        for (i, player_spot) in players.iter().enumerate() {		
 	    if let Some(player) = player_spot {
 		if player.is_active {
 		    num_active += 1;

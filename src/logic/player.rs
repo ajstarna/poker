@@ -924,7 +924,8 @@ mod tests {
 	assert_eq!(
 	    draw_analysis,
 	    DrawAnalysis {
-		all_draws: HashSet::from([DrawType::FourToAFlush(Suit::Club), DrawType::GutshotStraight, DrawType::TwoOvers]),
+		all_draws: HashSet::from([DrawType::FourToAFlush(Suit::Club),
+					  DrawType::GutshotStraight, DrawType::TwoOvers]),
 		good_draw: true,
 		weak_draw: true,
 	    }

@@ -1126,7 +1126,7 @@ impl Table {
                 None
             }
         } else {
-	    Some(bot::get_bot_action(player, gamehand))
+	    Some(bot::get_bot_action(player, gamehand, &self.players))
         }
     }
 
