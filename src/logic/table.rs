@@ -1175,12 +1175,8 @@ impl Table {
 	    {
 		let player = self.players[index].as_ref().unwrap();	   	
 		let player_cumulative = gamehand.street_contributions.get(&gamehand.street).unwrap()[index];
-		if player.human_controlled {
-		    // we don't need to count the attempts at getting a response from a computer
-		    // TODO: the computer can give a better than random guess at a move
-		    // Currently it might try to check when it has to call for example,
-		    attempts += 1;
-		}
+		// increase attempts, now even for bots (in case we get caught in a weird bot bug dont hang
+		attempts += 1;
 		if player.is_sitting_out {
 		    println!("player is sitting out, so sitout/fold");
 		    action = Some(PlayerAction::SitOut);
@@ -1307,6 +1303,8 @@ impl Table {
 				// Also, the new bet must meet the min raise,
 				// UNLESS it puts them all-in, then it is fine
 				println!("new bet must be at least the minimum raise!");
+				println!("new_bet = {0}, current = {1}, min raise {2}",
+					 new_bet, gamehand.current_bet, gamehand.min_raise);
 				let min_bet = gamehand.current_bet + gamehand.min_raise;
 				let message = json::object! {
 				    msg_type: "error".to_owned(),

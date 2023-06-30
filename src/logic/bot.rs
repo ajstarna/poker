@@ -117,7 +117,7 @@ fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) 
     match hand_result.hand_ranking {
 	HandRanking::HighCard => HandQuality::Garbage,
 	HandRanking::Pair => {
-	    println!("we have a pair with {:?} and top rank = {:?}",
+	    println!("we have a pair of {:?}s, and board top card = {:?}",
 		     hand_result.constituent_cards[0].rank,
 		     top_rank);
 	    if on_the_board {
@@ -424,7 +424,9 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand, players: &[Option<Pl
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > gamehand.big_blind;
-    let bet_size = std::cmp::max(3 * gamehand.current_bet, gamehand.min_raise);
+    let bet_size = std::cmp::max(
+	3 * gamehand.current_bet,
+	gamehand.min_raise + gamehand.current_bet);
     let	(num_active, _, _) = gamehand.count_player_categories(players);
     let looser_play = {
 	// in a small table or if we are
@@ -488,7 +490,9 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     let facing_raise = gamehand.current_bet > 0;
     
     // make sure bet size at least min raise. this check needed when facing a raise
-    let bet_size = std::cmp::max(gamehand.total_money() / 2, gamehand.min_raise);    
+    let bet_size = std::cmp::max(
+	gamehand.total_money() / 2,
+	gamehand.min_raise + gamehand.current_bet);    
         
     match quality {
 	// TODO: need to consider number of players and position
