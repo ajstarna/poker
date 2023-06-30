@@ -348,7 +348,6 @@ impl HandResult {
 		}
 		if start_index == 0 && cards.last().unwrap().rank == Rank::Ace  {		    
 		    if cards[0].rank == Rank::Two {
-			println!("bonus Ace to 2 contguous low");
 			used_ace = true;
 			contiguous += 1;
 		    } else if cards[0].rank == Rank::Three {

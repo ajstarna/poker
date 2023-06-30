@@ -191,10 +191,13 @@ fn get_garbage_action(
 	    }
 	} else {
 	    match num {
-		0..=90 => {
+		0..=85 => {
 		    if cannot_check {
-			if draw_analysis.good_draw ||
-			    (draw_analysis.weak_draw && gamehand.street == Street::Flop) {
+			if bet_ratio < 0.5 && (draw_analysis.good_draw ||
+					       (draw_analysis.weak_draw && gamehand.street == Street::Flop
+						&& !draw_analysis.board_weak_draw)) {
+			    // we can call with a good draw or with a weak draw on the flop, as long as
+			    // the board doesnt already have a weak draw (e.g. three of same suit)
 				println!("we got a draw going so call");
 				println!("{:?}", draw_analysis);
 			    PlayerAction::Call			
@@ -381,6 +384,7 @@ fn get_good_action(
 
 fn get_big_action(
     player: &Player,
+    gamehand: &GameHand,        
     cannot_check: bool,
     facing_raise: bool,
     bet_size: u32,    
@@ -464,7 +468,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand, players: &[Option<Pl
 	    }
 	    _ => {
 		println!("about to get a big action");
-		Ok(get_big_action(player, cannot_check, facing_raise, bet_size))		
+		Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))		
 	    }
 	}
     }
@@ -502,11 +506,12 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
 	}
 	HandQuality::Great => {
 	    println!("about to get a great action");				
-	    Ok(get_big_action(player, cannot_check, facing_raise, bet_size))
+	    Ok(get_big_action(player, gamehand, cannot_check, facing_raise, bet_size))
 	}
 	HandQuality::Exceptional => {
-	    println!("about to get an exceptional action");						
-	    Ok(get_big_action(player, cannot_check, facing_raise, bet_size))
+	    println!("about to get an exceptional action");
+	    let amount: u32 = std::cmp::min(player.money, bet_size);
+	    Ok(PlayerAction::Bet(amount))
 	}
     }    
 }

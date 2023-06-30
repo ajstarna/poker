@@ -277,9 +277,7 @@ impl Player {
 	}
 	    
 	for exclude_idx1 in 0..7 {
-	    dbg!(exclude_idx1);
 	    for exclude_idx2 in exclude_idx1+1..7 {
-		dbg!(exclude_idx2);		
 		let mut possible_hand = Vec::with_capacity(5);
 		for (idx, card) in self
 		    .hole_cards.iter().map(|c| Some(c))
@@ -291,7 +289,6 @@ impl Player {
 		    if let Some(card) = card {
 			if idx != exclude_idx1 && idx != exclude_idx2 {
 			    //println!("pushing!");
-			    dbg!(idx);					    
 			    possible_hand.push(*card);
 			}
 		    }
@@ -300,10 +297,8 @@ impl Player {
 		    println!("should this small possible hand even happen");
 		    continue;
 		}
-		println!("lets go: {:?}", possible_hand);
 		// we have built a hand of five cards, now evaluate it
 		let current_draws = HandResult::determine_draw_types(possible_hand);
-		println!("current draws = {:?}", current_draws);
 		for draw in current_draws {
                     // dont add flush draws if neither of our hole cards have this suit
                     // (could be smarter and see how many are ours, but this is something at least)
