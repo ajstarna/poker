@@ -170,8 +170,8 @@ fn get_garbage_action(
 	}
     }
     else { if facing_raise
-	&& ( ( bet_ratio < 0.20 && gamehand.street == Street::Flop) 
-	|| ( bet_ratio <  0.15) ){
+	&& ( ( bet_ratio < 0.25 && gamehand.street == Street::Flop) 
+	|| ( bet_ratio <  0.20) ){
 	    // don't be weak to mini bets
 	    println!("tyring to mini bet me!");
 	    match num {
@@ -402,7 +402,7 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand, players: &[Option<Pl
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > gamehand.big_blind;
-    let bet_size = 3 * gamehand.current_bet;
+    let bet_size = std::cmp::max(3 * gamehand.current_bet, gamehand.min_raise);
     let	(num_active, _, _) = gamehand.count_player_categories(players);
     let looser_play = {
 	// in a small table or if we are
@@ -410,17 +410,18 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand, players: &[Option<Pl
 	    // there are at most 4 active players left in the hand, and there
 	    // has not been a raise yet, i.e. we are the button or cutoff,
 	    // so be a bit looser to steal
-	    println!("num active = {:?}", num_active);	    
+	    println!("num active = {:?}", num_active);
+	    println!("looser player");
 	    true
 	} else if gamehand.num_starting_players < 5 {
 	    // at a small table, can be a bit looser in general
-	    println!("num starting = {:?}", gamehand.num_starting_players);		    
+	    println!("num starting = {:?}", gamehand.num_starting_players);
+	    println!("looser player");	    
 	    true
 	} else {
 	    false
 	}
     };
-    println!("looser = {:?}", looser_play);
     if score == 5.0 && looser_play {
 	println!("about to get a LOOSE mediocre action");
 	Ok(get_mediocre_action(player, gamehand, cannot_check, facing_raise, bet_size))		
@@ -453,8 +454,6 @@ fn get_preflop_action(player: &Player, gamehand: &GameHand, players: &[Option<Pl
 
 fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAction, BotActionError> {
 
-    // TODO the bots need to know that a board pair doesn't contribute to their hand quality
-    
     if player.index.is_none(){
 	return Err(BotActionError::NoIndexSet);
     }
@@ -465,7 +464,10 @@ fn get_post_flop_action(player: &Player, gamehand: &GameHand) -> Result<PlayerAc
     let bot_contribution = gamehand.get_current_contributions_for_index(player.index.unwrap());    
     let cannot_check = bot_contribution < gamehand.current_bet;
     let facing_raise = gamehand.current_bet > 0;
-    let bet_size = gamehand.total_money() / 2;
+    
+    // make sure bet size at least min raise. this check needed when facing a raise
+    let bet_size = std::cmp::max(gamehand.total_money() / 2, gamehand.min_raise);    
+        
     match quality {
 	// TODO: need to consider number of players and position
 	HandQuality::Garbage => {

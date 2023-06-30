@@ -186,7 +186,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsPlayerSession {
 
                 if let Ok(object) = serde_json::from_str(m) {
                     self.command_hb = Instant::now(); // we got a command, so set the heartbeat
-                    println!("parsed: {}", object);
                     self.handle_client_command(object, m, ctx);
                 } else {
                     println!("message unable to parse as json: {}", m);
@@ -212,7 +211,6 @@ impl WsPlayerSession {
 	m: &str, // the original string in case we want to use it to parse
         ctx: &mut <WsPlayerSession as Actor>::Context,
     ) {
-        println!("Entered handle_client_command {:?}", object);
         let msg_type_opt = object.get("msg_type");
         if msg_type_opt.is_none() {
             println!("missing message type!");
