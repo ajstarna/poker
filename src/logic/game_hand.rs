@@ -15,11 +15,11 @@ use strum::IntoEnumIterator;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, EnumIter)]
 pub enum Street {
-    Preflop,
-    Flop,
-    Turn,
-    River,
-    ShowDown,
+    Preflop = 0,
+    Flop = 1,
+    Turn = 2,
+    River = 3,
+    ShowDown = 4,
 }
 
 impl fmt::Display for Street {
@@ -45,9 +45,12 @@ pub enum HandStatus {
 #[derive(Debug)]
 pub struct GameHand {
     pub big_blind: u32,
+    pub num_starting_players: usize,
     pub street: Street,
     pot_manager: PotManager,
     pub street_contributions: HashMap<Street, [u32; 9]>, // how much a player contributed to the pot during each street
+    pub street_num_bets: [u32; 5], // how many bets per street. each index is for a given street
+    pub actions_per_street_per_player: HashMap<Street, HashMap<usize, Vec<PlayerAction>>>,
     pub last_action: Option<PlayerAction>, // the last thing anyone did (or None)	
     pub current_bet: u32, // the current street bet at any moment
     pub min_raise: u32, // the minimum amount that the next raise must be
@@ -59,17 +62,28 @@ pub struct GameHand {
 
 impl GameHand {
 
-    /// a new() constructor when we know the min raise upfront
-    pub fn new(big_blind: u32) -> Self {
+    /// a new() constructor when we know the blind and the starting players
+    pub fn new(big_blind: u32, players: &[Option<Player>]) -> Self {
 	let mut street_contributions = HashMap::new();
+	let mut actions_per_street_per_player = HashMap::new();	
 	for street in Street::iter() {
             street_contributions.insert(street, [0;9]);
+	    let mut index_to_action = HashMap::new();
+	    for index in 0..9 {
+		index_to_action.insert(index, vec![]);
+	    }
+	    actions_per_street_per_player.insert(street, index_to_action);
 	}
+	let num_starting_players = players.iter().flatten().filter(|p| p.money > 0).count();
+
         GameHand {
 	    big_blind,
+	    num_starting_players,
             street: Street::Preflop,
             pot_manager: PotManager::new(),
             street_contributions,
+	    street_num_bets: [0;5],
+	    actions_per_street_per_player,
 	    last_action: None,
 	    current_bet: 0,
 	    min_raise: big_blind,
@@ -80,13 +94,94 @@ impl GameHand {
         }
     }
 
-    pub fn get_hand_status(&self,  players: &mut [Option<Player>; 9]) -> HandStatus {
-	// Also, count how many active, all_in, and settled players we have
+    fn get_previous_street(&self) -> Option<Street> {
+	match self.street {
+	    Street::Preflop => None,
+	    Street::Flop => Some(Street::Preflop),
+	    Street::Turn => Some(Street::Flop),
+	    Street::River => Some(Street::Turn),
+	    Street::ShowDown=> Some(Street::River),
+	}
+    }
+
+    pub fn enact_player_action(&mut self, index: usize, action: PlayerAction, players: &mut [Option<Player>; 9]) {
+	println!("action = {:?}", action);
+	self.last_action = Some(action);
+
+	self.actions_per_street_per_player.get_mut(&self.street).unwrap().get_mut(&index).unwrap().push(action);
+
+	println!("poo");
+	println!("{:?}", self.street_contributions);
+	println!("{:?}", self.street);
+	let player_cumulative = self.street_contributions.get_mut(&self.street).unwrap()[index];
+	// now that we have gotten the current player's action and handled
+	// any meta actions, we are free to respond and mutate the player
+	// so we re-borrow it as mutable
+	let player = players[index].as_mut().unwrap();
+	player.last_action = Some(action);
+	match action {
+	    PlayerAction::PostSmallBlind(amount) => {	
+		player.money -= amount;		    	    
+		self.current_bet = amount;
+		self.contribute(index, player.id, amount, player.is_all_in(), false);
+	    }
+	    PlayerAction::PostBigBlind(amount) => {
+		player.money -= amount;		    		    
+		// the new street bet is either the new amount posted or the existing bet
+		// This handles the rare cases where the big blind can't afford the BB
+		self.current_bet = std::cmp::max(amount, self.current_bet);
+
+		// The blinds together count as the first bet of preflop.
+		// Just count the big blind as to not double count them.
+		self.contribute(index, player.id, amount, player.is_all_in(), true);
+	    }
+	    PlayerAction::Fold => {
+		player.deactivate();
+	    }
+	    PlayerAction::SitOut => {
+		player.deactivate();
+	    }
+	    PlayerAction::Check => {
+
+	    }
+	    PlayerAction::Call => {
+		let difference = self.current_bet - player_cumulative;
+		let amount = std::cmp::min(difference, player.money); // can only put in as much as everything!
+		player.money -= amount;		    
+		self.contribute(index, player.id, amount, player.is_all_in(), false);
+
+	    }
+	    PlayerAction::Bet(new_bet) => {
+		let raise_amount = new_bet - self.current_bet;
+		let must_all_in = if raise_amount < self.min_raise {
+		    println!("the new bet did not meet the min raise amount, so there must be an all-in");
+		    true
+		} else {
+		    println!("setting new minumum raise to {raise_amount}");			
+		    self.min_raise = raise_amount;
+		    false
+		};
+		let difference = new_bet - player_cumulative;
+		self.current_bet = new_bet;
+		player.money -= difference;		    		    
+		if must_all_in {
+		    // just to make sure the code is doing what we think it is
+		    assert!(player.is_all_in());
+		}
+		self.contribute(index, player.id, difference, player.is_all_in(), false);
+	    }
+	}
+	
+    }
+    
+    /// go through a given list of players, and returns a tuple with:
+    /// (num_active, num_settled, num_all_in)
+    pub fn count_player_categories(&self, players: &[Option<Player>; 9]) -> (u32, u32, u32) {
 	let current_contributions = self.street_contributions.get(&self.street).unwrap();	
 	let mut num_active = 0;    
 	let mut num_settled = 0;
 	let mut num_all_in = 0;	    	    
-        for (i, player_spot) in players.iter_mut().enumerate() {		
+        for (i, player_spot) in players.iter().enumerate() {		
 	    if let Some(player) = player_spot {
 		if player.is_active {
 		    num_active += 1;
@@ -109,6 +204,11 @@ impl GameHand {
 		}
 	    }
         }
+	(num_active, num_settled, num_all_in)
+    }
+    
+    pub fn get_hand_status(&self, players: &[Option<Player>; 9]) -> HandStatus {
+	let (num_active, num_settled, num_all_in) = self.count_player_categories(players);	    
         if num_active == 1 {
             println!("Only one active player left so lets end the hand");
             // end the street and indicate to the caller that the hand is finished
@@ -144,14 +244,31 @@ impl GameHand {
 	Street::Preflop == self.street
     }
 
+    // quickly see what the given player did to finish the PREVIOUS street (possibly None)
+    pub fn get_previous_street_last_action_for_index(&self, index: usize) -> Option<PlayerAction> {
+	let prev_street = self.get_previous_street();
+	if let Some(street) = prev_street {
+	    self.actions_per_street_per_player[&street][&index].last().copied()
+	} else {
+	    None
+	}
+    }
+    
     pub fn get_current_contributions_for_index(&self, index: usize) -> u32 {
 	let current_contributions = self.street_contributions.get(&self.street).unwrap();
 	current_contributions[index]
     }
     
-    pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool) {
+    pub fn get_current_num_bets(&self)  -> u32 {
+	self.street_num_bets[self.street as usize]
+    }
+    
+    pub fn contribute(&mut self, index: usize, player_id: Uuid, amount: u32, all_in: bool, is_raise: bool) {
 	let current_contributions = self.street_contributions.get_mut(&self.street).unwrap();	
-        current_contributions[index] += amount;	
+        current_contributions[index] += amount;
+	if is_raise {
+	    self.street_num_bets[self.street as usize] += 1;
+	}
         self.pot_manager.contribute(player_id, amount, all_in);	    
     }
 	

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::card::{Card, Rank, Suit};
 
@@ -20,9 +20,56 @@ pub enum HandRanking {
 }
 
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DrawType {
-    Frontdoor,
-    Backdoor,
+    FourToAFlush(Suit),    
+    GutshotStraight,
+    OpenEndedStraight,
+    ThreeToAFlush(Suit),
+    TwoOvers,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DrawAnalysis {
+    pub my_draws: HashSet<DrawType>,
+    pub board_draws: HashSet<DrawType>,    
+    pub good_draw: bool, 
+    pub weak_draw: bool,
+    pub board_good_draw: bool, 
+    pub board_weak_draw: bool,
+}
+
+impl DrawAnalysis {
+    pub fn from_draws(my_draws: HashSet<DrawType>, board_draws: HashSet<DrawType>) -> Self {
+	let mut good_draw = false;
+	let mut weak_draw = false;    
+	
+	for d_type in &my_draws {
+	    match d_type {
+		DrawType::FourToAFlush(_) | DrawType::OpenEndedStraight  => good_draw = true,
+		_ => weak_draw = true,
+	    }
+	}
+
+	let mut board_good_draw = false;
+	let mut board_weak_draw = false;    
+	
+	for d_type in &board_draws {
+	    match d_type {
+		DrawType::FourToAFlush(_) | DrawType::OpenEndedStraight  => board_good_draw = true,
+		_ => board_weak_draw = true,
+	    }
+	}
+	
+	Self {
+	    my_draws,
+	    board_draws,
+	    good_draw,
+	    weak_draw,
+	    board_good_draw,
+	    board_weak_draw,
+	}
+    }
 }
 
 /// The hand result has the HandRanking, for quick comparisons, then the cads that make
@@ -259,6 +306,99 @@ impl HandResult {
         }
     }
 
+    /// Given a hand of cards, we return a possible 
+    /// us the hand ranking, the constituent cards, kickers, and hand score    
+    pub fn determine_draw_types(mut cards: Vec<Card>) -> Vec<DrawType> {
+	// need at least three cards to look at, e.g. when analyze just
+	// the flop cards
+	assert!(cards.len() >= 3); 
+	
+        cards.sort(); // first sort by Rank
+
+	let mut draw_types = vec![];	
+	
+
+        let mut is_straight = false;	
+	if cards.len() == 5 {
+	    is_straight = true;
+	    let first_rank = cards[0].rank as usize;	    
+	    for (i, card) in cards.iter().enumerate() {
+		if (is_straight && i == 4 && card.rank == Rank::Ace && first_rank == 2)
+		    || card.rank as usize != first_rank + i {
+			// completing the straight with an Ace on 2-->Ace
+			is_straight = false;
+		    }
+	    }
+	}	
+	
+	if !is_straight {
+	    // not a straight so now look for draws
+	    // The four cards that constitute a straight draw will
+	    // need to be in a row in our hand, i.e. not counting the lowest or the highest card
+	    for start_index in 0..=1 {
+		let mut contiguous = 0;
+		let mut one_gapper = 0;
+		let mut used_ace = false;		
+		for i in start_index+1..cards.len()-1+start_index {
+		    if cards[i].rank as usize == cards[i-1].rank as usize + 1 {
+			contiguous +=1;
+		    } else if cards[i].rank as usize == cards[i-1].rank as usize + 2 {
+			one_gapper +=1 ;
+		    }
+		}
+		if start_index == 0 && cards.last().unwrap().rank == Rank::Ace  {		    
+		    if cards[0].rank == Rank::Two {
+			used_ace = true;
+			contiguous += 1;
+		    } else if cards[0].rank == Rank::Three {
+			used_ace = true;			
+			one_gapper +=1 ;			
+		    }
+		}
+		if start_index == 1 && cards.last().unwrap().rank == Rank::Ace  {
+		    used_ace = true;
+		}
+		    
+		if contiguous == 3 {
+		    if used_ace {
+			// if we use an ace as part of the straight draw, it cannot be open ended
+			draw_types.push(
+			    DrawType::GutshotStraight
+			);
+		    } else {
+			draw_types.push(
+			    DrawType::OpenEndedStraight
+			);
+		    }			
+		} else if contiguous == 2 && one_gapper == 1 {
+		    // found a gut shot
+		    draw_types.push(
+			DrawType::GutshotStraight
+		    );
+		}
+	    }
+	}
+
+	// now look for a flush
+        let mut suit_counts: HashMap<Suit, u8> = HashMap::new();
+	for card in cards.iter() {
+	    let count = suit_counts.entry(card.suit).or_insert(0);
+	    *count += 1;
+	}
+	
+	let max_suit = suit_counts.iter().max_by_key(|entry | entry.1).unwrap().0;
+	match suit_counts.values().max().unwrap() {
+	    3 => draw_types.push(
+		DrawType::ThreeToAFlush(*max_suit)
+	    ),
+	    4 => draw_types.push(
+		DrawType::FourToAFlush(*max_suit)
+	    ),
+	    _ => () // doesn't matter (could even be a full flush)
+	}	
+	draw_types
+    }
+    
     pub fn hand_ranking_string(&self) -> String {
         format!(
             "{:?}",

@@ -1,10 +1,12 @@
-use super::card::Card;
-use super::hand_analysis::{DrawType, HandResult};
+use super::card::{Card, Suit};
+use super::hand_analysis::{DrawType, DrawAnalysis, HandResult};
 use super::game_hand::GameHand;
 use crate::messages::WsMessage;
 use actix::prelude::Recipient;
 use std::collections::HashMap;
 use std::iter;
+
+use std::collections::HashSet;
 
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -229,18 +231,51 @@ impl Player {
 	best_result
     }
 
-    pub fn determine_draw_type(&self, gamehand: &GameHand) -> Option<DrawType> {
+
+    /*
+    pub fn analyze_for_best_hand_and_draw_analysis(&self, gamehand: &GameHand)
+						   -> Option<(HandResult, DrawAnalysis)> {
+	let best_hand = self.determine_best_hand(gamehand);
+	if let Some(hand) = best_hand {
+	    let draw_analysis = self.determine_draw_analysis(gamehand);
+	    match hand.hand_ranking {
+		HandRanking::StraightFlush => {
+		    // we actually have a straight flush, so remove straights and flushes from the draws
+		    draw_analysis.retain(|&d| d
+		}
+		HandRanking::Flush => {
+		    // we actually have aflush, so remove flushes from the draws
+		}
+		HandRanking::Straight => {
+		    // we actually have a straight, so remove straights from the draws
+		}
+	    }
+	    return Some((hand, draw_analysis));
+	}
+	None
+    }*/
+    
+    /// returns a tuple of two DrawAnalysis types. the First is for the player, and the
+    /// latter is for the board itself (currently only works on the River)
+    pub fn determine_draw_analysis(&self, gamehand: &GameHand) -> DrawAnalysis {
+	let mut my_draws = HashSet::<DrawType>::new();
+	let mut board_draws = HashSet::<DrawType>::new();	
+	
         if !self.is_active {
             // if the player isn't active, then can't have a best hand
-            return None;
+	    return DrawAnalysis::from_draws(my_draws, board_draws);
         }
-	if gamehand.is_preflop() {
-	    // there is no "best hand" if we didn't even make it to the flop
-	    return None;
+	if gamehand.flop.is_none() {
+	    // no draws by definition at preflop
+	    return DrawAnalysis::from_draws(my_draws, board_draws);	    
 	}
-	// we look at all possible 7 choose 5 (21) hands from the hole cards, flop, turn, river
-	let mut best_result: Option<HandResult> = None;
-	let mut hand_count = 0;	
+
+	let top_rank = gamehand.highest_rank().unwrap();
+	if self.hole_cards[0].rank >= top_rank && self.hole_cards[1].rank >= top_rank {
+	    // we have two over cards
+	    my_draws.insert(DrawType::TwoOvers);
+	}
+	    
 	for exclude_idx1 in 0..7 {
 	    for exclude_idx2 in exclude_idx1+1..7 {
 		let mut possible_hand = Vec::with_capacity(5);
@@ -251,7 +286,6 @@ impl Player {
 		    .chain(iter::once(gamehand.river.as_ref()))
 		    .enumerate()
 		{
-		    //println!("sup {:?}, card = {:?}", idx, card);
 		    if let Some(card) = card {
 			if idx != exclude_idx1 && idx != exclude_idx2 {
 			    //println!("pushing!");
@@ -259,22 +293,54 @@ impl Player {
 			}
 		    }
 		}
-		if possible_hand.len() != 5 {
+		if possible_hand.len() < 3 {
+		    println!("should this small possible hand even happen");
 		    continue;
 		}
-		hand_count += 1;		
 		// we have built a hand of five cards, now evaluate it
-		let current_result = HandResult::analyze_hand(possible_hand);
-		match best_result {
-		    None => best_result = Some(current_result),
-		    Some(result) if current_result > result => {
-			best_result = Some(current_result)
+		let current_draws = HandResult::determine_draw_types(possible_hand);
+		for draw in current_draws {
+                    // dont add flush draws if neither of our hole cards have this suit
+                    // (could be smarter and see how many are ours, but this is something at least)
+                    if let DrawType::FourToAFlush(suit) = draw {
+			if self.hole_cards[0].suit != suit && self.hole_cards[1].suit != suit {
+			    board_draws.insert(draw);
+                            continue;
+			}
+                    }
+                    if let DrawType::ThreeToAFlush(suit) = draw {
+			if self.hole_cards[0].suit != suit && self.hole_cards[1].suit != suit {
+			    board_draws.insert(draw);
+			    continue;
+			}
 		    }
-		    _ => (),
+		    if exclude_idx1 == 0 && exclude_idx2 == 1 {
+			// this draw comes completely from the board
+			// i.e. when there are < 5 cards to look at
+			board_draws.insert(draw);
+		    } else {
+			my_draws.insert(draw);
+		    }
 		}
+
 	    }
 	}
-	None
+
+	// do some cleaning
+	// if we have four to a flush we clearly also have three to a flush, so remove it
+	let mut suits_to_prune = HashSet::<Suit>::new();
+	for draw in &my_draws {
+	    if let DrawType::FourToAFlush(suit) = draw {
+		suits_to_prune.insert(*suit);
+	    }
+	}
+	for suit in suits_to_prune {
+	    my_draws.remove(&DrawType::ThreeToAFlush(suit));
+	}
+	if my_draws.contains(&DrawType::OpenEndedStraight) {
+	    my_draws.remove(&DrawType::GutshotStraight);
+	}
+	DrawAnalysis::from_draws(my_draws, board_draws)
     }    
 }
 
@@ -282,5 +348,673 @@ impl Player {
 mod tests {
     use super::*;
     use crate::logic::card::{Card, Rank, Suit};
+    use crate::logic::game_hand::Street;
 
+    #[test]
+    fn flop_four_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::FourToAFlush(Suit::Club)]),
+		board_draws: HashSet::from([]),		
+		good_draw: true,
+		weak_draw: false,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    #[test]
+    fn turn_four_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
+	gamehand.street = Street::Turn;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::FourToAFlush(Suit::Club)]),
+		board_draws: HashSet::from([]),		
+		good_draw: true,
+		weak_draw: false,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    #[test]
+    fn turn_three_flush_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
+	gamehand.street = Street::Turn;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::ThreeToAFlush(Suit::Club)]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    /// Note this fails atm. Need a decent refactor to not count straights as a draw
+    /// for us when on the board... a known weakness of the bots I guess... shhhhhh lol
+    #[test]
+    fn river_with_actual_flush() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
+
+	gamehand.street = Street::River;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Five,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	);
+	gamehand.river = Some(
+	    Card {
+		rank: Rank::Two,
+		suit: Suit::Diamond,
+            }
+	);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::TwoOvers, DrawType::FourToAFlush(Suit::Club)]),
+		board_draws: HashSet::from([DrawType::OpenEndedStraight, DrawType::ThreeToAFlush(Suit::Club)]),
+		good_draw: true,
+		weak_draw: true,
+		board_good_draw: true,
+		board_weak_draw: true,
+		
+	    }
+	);
+    }
+    
+    #[test]
+    fn flop_gutshot_straight_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
+	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::GutshotStraight]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    /// this test has A-4 but we need to make sure we don't think it is open ended
+    #[test]
+    fn flop_low_ace_gutshot_straight_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Two,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Three,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::GutshotStraight]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    /// In this one we are testing that A,3-5 can be seens as a gutshot
+    #[test]
+    fn flop_low_ace_gutshot_straight_draw_2() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Three,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::GutshotStraight]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false
+		
+	    }
+	);
+    }
+
+    /// In this one we are testing that J-A can be seens as a gutshot
+    #[test]
+    fn flop_low_ace_gutshot_straight_draw_3() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);	
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ace,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::GutshotStraight]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+    
+    #[test]
+    fn flop_two_overs_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);		
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::TwoOvers]),
+		board_draws: HashSet::from([]),		
+		good_draw: false,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+    
+    #[test]
+    fn flop_open_ended_straight_draw() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+	
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::OpenEndedStraight]),
+		board_draws: HashSet::from([]),		
+		good_draw: true,
+		weak_draw: false,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    /// we dont want three of the same suit to count unless we have some in our hole cards
+    #[test]
+    fn flop_three_flush_for_the_board() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::Jack,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Five,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Diamond,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([]),
+		board_draws: HashSet::from([DrawType::ThreeToAFlush(Suit::Diamond)]),
+		good_draw: false,
+		weak_draw: false,
+		board_good_draw: false,
+		board_weak_draw: true,
+		
+	    }
+	);
+    }
+    
+    #[test]
+    fn flop_three_flush_and_open_ended_draws() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Ten,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Jack,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Queen,
+		suit: Suit::Club,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::OpenEndedStraight, DrawType::ThreeToAFlush(Suit::Club)]),
+		board_draws: HashSet::from([]),		
+		good_draw: true,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+		
+	    }
+	);
+    }
+
+    #[test]
+    fn flop_four_flush_and_gutshot_and_two_overs_draws() {
+        let mut bot0 = Player::new_bot(200);
+	bot0.is_active = true;
+	bot0.index = Some(0);
+	bot0.is_active = true;
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Club,
+        });
+
+        let mut gamehand = GameHand::new(2, &[Some(bot0.clone())]);
+
+	gamehand.street = Street::Flop;
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Ten,
+		suit: Suit::Spade,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Club,
+            },
+	    Card {
+		rank: Rank::Nine,
+		suit: Suit::Club,
+            }
+	]);
+	
+	let draw_analysis = bot0.determine_draw_analysis(&gamehand);	
+	assert_eq!(
+	    draw_analysis,
+	    DrawAnalysis {
+		my_draws: HashSet::from([DrawType::FourToAFlush(Suit::Club),
+					 DrawType::GutshotStraight, DrawType::TwoOvers]),
+		board_draws: HashSet::from([]),
+		good_draw: true,
+		weak_draw: true,
+		board_good_draw: false,
+		board_weak_draw: false,
+	    }
+	);
+    }
+    
 }
