@@ -104,6 +104,10 @@ enum HandQuality {
 
 // returns a hand quality enum (for use by bots)
 fn qualify_hand(player: &Player, hand_result: &HandResult, gamehand: &GameHand) -> HandQuality {
+    // TODO: i think top pair bad kicker should be worse than Good
+    //       TwoPair with a board pair is also worse than good (unless top?)
+    //       Sets are not as good as straight or flush? i.e. if a strong draw is on the board,
+    //       then our set should be treated a bit more sceptically.
     let top_rank = gamehand.highest_rank().unwrap();
     let mut on_the_board = true; // if a hand result came from board cards and not hole cards
     for used_card in &hand_result.constituent_cards {
