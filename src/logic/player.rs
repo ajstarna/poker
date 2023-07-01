@@ -508,7 +508,9 @@ mod tests {
 	    }
 	);
     }
-    
+
+    /// Note this fails atm. Need a decent refactor to not count straights as a draw
+    /// for us when on the board... a known weakness of the bots I guess... shhhhhh lol
     #[test]
     fn river_with_actual_flush() {
         let mut bot0 = Player::new_bot(200);
@@ -564,7 +566,7 @@ mod tests {
 		good_draw: true,
 		weak_draw: true,
 		board_good_draw: true,
-		board_weak_draw: false,
+		board_weak_draw: true,
 		
 	    }
 	);

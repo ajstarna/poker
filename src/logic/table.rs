@@ -1007,7 +1007,7 @@ impl Table {
 	    }
 	    // check the status of the game in terms of active players, all-in players,
 	    // and players settled
-	    let hand_status = gamehand.get_hand_status(&mut self.players);
+	    let hand_status = gamehand.get_hand_status(&self.players);
 	    match hand_status {
 		HandStatus::HandOver => {
 		    // we are done the entire hand
@@ -1041,68 +1041,8 @@ impl Table {
                 gamehand,
 		i
             );
+	    gamehand.enact_player_action(i, action, &mut self.players);
 	    
-	    println!("action = {:?}", action);
-	    gamehand.last_action = Some(action);
-	    
-	    let player_cumulative = gamehand.street_contributions.get_mut(&gamehand.street).unwrap()[i];
-            // now that we have gotten the current player's action and handled
-            // any meta actions, we are free to respond and mutate the player
-            // so we re-borrow it as mutable
-            let player = self.players[i].as_mut().unwrap();
-	    player.last_action = Some(action);
-            match action {
-                PlayerAction::PostSmallBlind(amount) => {	
-                    player.money -= amount;		    	    
-                    gamehand.current_bet = amount;
-                    gamehand.contribute(i, player.id, amount, player.is_all_in(), false);
-                }
-                PlayerAction::PostBigBlind(amount) => {
-                    player.money -= amount;		    		    
-                    // the new street bet is either the new amount posted or the existing bet
-		    // This handles the rare cases where the big blind can't afford the BB
-                    gamehand.current_bet = std::cmp::max(amount, gamehand.current_bet);
-
-		    // The blinds together count as the first bet of preflop.
-		    // Just count the big blind as to not double count them.
-                    gamehand.contribute(i, player.id, amount, player.is_all_in(), true);
-                }
-                PlayerAction::Fold => {
-                    player.deactivate();
-                }
-                PlayerAction::SitOut => {
-                    player.deactivate();
-                }
-                PlayerAction::Check => {
-		    
-                }
-                PlayerAction::Call => {
-                    let difference = gamehand.current_bet - player_cumulative;
-		    let amount = std::cmp::min(difference, player.money); // can only put in as much as everything!
-                    player.money -= amount;		    
-                    gamehand.contribute(i, player.id, amount, player.is_all_in(), false);
-		    
-                }
-                PlayerAction::Bet(new_bet) => {
-		    let raise_amount = new_bet - gamehand.current_bet;
-		    let must_all_in = if raise_amount < gamehand.min_raise {
-			println!("the new bet did not meet the min raise amount, so there must be an all-in");
-			true
-		    } else {
-			println!("setting new minumum raise to {raise_amount}");			
-			gamehand.min_raise = raise_amount;
-			false
-		    };
-                    let difference = new_bet - player_cumulative;
-                    gamehand.current_bet = new_bet;
-                    player.money -= difference;		    		    
-		    if must_all_in {
-			// just to make sure the code is doing what we think it is
-			assert!(player.is_all_in());
-		    }
-                    gamehand.contribute(i, player.id, difference, player.is_all_in(), false);
-                }
-            }
         };
 	self.send_game_state(Some(&gamehand), None);	
 	hand_over

@@ -191,17 +191,18 @@ fn get_garbage_action(
 	    }
 	} else {
 	    match num {
-		0..=85 => {
+		0..=60 => {
 		    if cannot_check {
-			if bet_ratio < 0.5 && (draw_analysis.good_draw ||
+			if bet_ratio < 0.4 && (draw_analysis.good_draw ||
 					       (draw_analysis.weak_draw && gamehand.street == Street::Flop
 						&& !draw_analysis.board_weak_draw)) {
 			    // we can call with a good draw or with a weak draw on the flop, as long as
 			    // the board doesnt already have a weak draw (e.g. three of same suit)
-				println!("we got a draw going so call");
-				println!("{:?}", draw_analysis);
+			    println!("we got a draw going so call");
+			    println!("{:?}", draw_analysis);
 			    PlayerAction::Call			
 			} else {
+			    println!("fold our garbage no draws even");
 			    PlayerAction::Fold
 			}
 		    } else {
@@ -213,9 +214,18 @@ fn get_garbage_action(
 			// if preflop, just fold garbage
 			PlayerAction::Fold			
 		    } else {
-			// post flop, throw in a rare garbage bluff
-			let amount: u32 = std::cmp::min(player.money, bet_size);
-			PlayerAction::Bet(amount)
+			if player.index.is_some()
+			    &&matches!(gamehand.get_previous_street_last_action_for_index(player.index.unwrap()),
+				       Some(PlayerAction::Bet(_))) {
+				// post flop, throw in a rare garbage bluff if we bet last street
+				println!("we bet last street, keep bettng with a garbage hand");
+				let amount: u32 = std::cmp::min(player.money, bet_size);
+				PlayerAction::Bet(amount)
+			    } else if cannot_check {
+				PlayerAction::Call
+			    } else {
+				PlayerAction::Check				
+			    }
 		    }
 		}
 	    }	   
@@ -235,7 +245,8 @@ fn get_mediocre_action(
     let draw_analysis = player.determine_draw_analysis(gamehand);    
     if facing_raise {
 	println!("facing a raise");	
-	if current_num_bets > 3 {
+	if (current_num_bets > 2 && gamehand.street != Street::Preflop)
+	|| (current_num_bets > 3) {
 	    // too many bets this street, time to back out
 	    if draw_analysis.good_draw {
 		PlayerAction::Call		
@@ -262,6 +273,7 @@ fn get_mediocre_action(
 			PlayerAction::Call
 		    } else if draw_analysis.good_draw ||
 		    (draw_analysis.weak_draw && gamehand.street == Street::Flop && !draw_analysis.board_good_draw) {
+			println!("we have a draw worth calling");
 			PlayerAction::Call
 		    } else {
 			PlayerAction::Fold
@@ -303,6 +315,8 @@ fn get_mediocre_action(
 		    }
 	    },
 	    _ =>  {
+		// if our last action in the previous street was a check, then continue
+		// to check now. But if we were the aggressor (bet last), then keep betting that story
 		let amount: u32 = std::cmp::min(player.money, bet_size);
 		PlayerAction::Bet(amount)		
 	    }
@@ -319,25 +333,31 @@ fn get_good_action(
 ) -> PlayerAction {
     let num = rand::thread_rng().gen_range(0..100);
     let current_num_bets = gamehand.get_current_num_bets(); // how many bets this street
-    let draw_analysis = player.determine_draw_analysis(gamehand);        
+    let draw_analysis = player.determine_draw_analysis(gamehand);
+    println!("draw analysis = {:?}", draw_analysis);
+    let bet_ratio = gamehand.current_bet as f32 / gamehand.total_money() as f32;    
     if facing_raise {
 	match num {
-	    0..=70 => {
-		if current_num_bets > 3 && !draw_analysis.good_draw {
-		    // too many bets this street, time to back out
-		    println!("too many bets for my good hand");		    
-		    PlayerAction::Fold
-		} else if draw_analysis.board_good_draw && !draw_analysis.good_draw {
-		    println!("the board is looking too juicy even for my good hand");		    
-		    PlayerAction::Fold
-		} else {
+	    0..=80 => {
+		if !draw_analysis.good_draw || gamehand.street == Street::River {		
+		    if current_num_bets > 2 {
+			println!("too many bets for my good hand");		    
+			PlayerAction::Fold
+		    } else if draw_analysis.board_good_draw && bet_ratio > 0.2 {
+			println!("the board is looking too juicy even for my good hand");		    
+			PlayerAction::Fold
+		    } else {
+			println!("good hand can call with my draw OR it is the river");			
+			PlayerAction::Call			
+		    }
+		}
+		else {
 		    println!("good hand just call");
 		    PlayerAction::Call
 		}
 	    }
 	    _ => {
-		if current_num_bets > 3 {
-		    // too many bets this street, time to back out
+		if current_num_bets > 2 {
 		    println!("many bets for my good hand. just call");		    
 		    PlayerAction::Call
 		} else {
@@ -348,7 +368,7 @@ fn get_good_action(
 	    }
 	}
     } else {
-	if current_num_bets > 3 && !draw_analysis.good_draw {
+	if current_num_bets > 3 && (!draw_analysis.good_draw || gamehand.street == Street::River) {
 	    // too many bets this street, time to back out
 	    println!("too many bets for my good hand. time to leave");		    
 	    PlayerAction::Fold
@@ -785,10 +805,20 @@ mod tests {
 		suit: Suit::Diamond,
             }
 	]);
-	let bot0 = players[index].as_ref().unwrap();			
-	let action = get_bot_action(&bot0, &gamehand, &players);
+	let bot0 = players[index].as_ref().unwrap();
 	
-        assert_eq!(action, PlayerAction::Fold);
+	// sort of a weird/hacky way to test this, but get the action multiple times,
+	// and make sure for the most part we are folding
+	// (Ideally we would mock the randomness but thats a TODO)	
+	let mut num_folds = 0;
+	for _ in 0..20 {
+	    let action = get_bot_action(&bot0, &gamehand, &players);
+	    if action == PlayerAction::Fold {
+		num_folds += 1;
+	    }
+	}
+        assert!(num_folds > 12);
+	assert!(false);
     }
 
     /// if the flop bet is small enough, then we wont fold garbage
@@ -1012,5 +1042,69 @@ mod tests {
 	assert_eq!(best_hand.hand_ranking, HandRanking::Pair);
 	let quality = qualify_hand(&bot0, &best_hand, &gamehand);
 	assert_eq!(quality, HandQuality::Garbage);
-    }    
+    }
+
+    /// if a bot has a good hand, but gets raised on the river with a strong
+    /// draw on the board, they will likely fold
+    #[test]
+    fn fold_good_river_if_board_strong() {
+	let (mut players, mut gamehand) = set_up_game_hand(2, 9);
+	let index = 0;
+	let bot0 = players[index].as_mut().unwrap();
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::King,
+            suit: Suit::Club,
+        });
+	
+        bot0.hole_cards.push(Card {
+            rank: Rank::Queen,
+            suit: Suit::Heart,
+        });
+
+	gamehand.flop = Some(vec![
+	    Card {
+		rank: Rank::Three,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::King,
+		suit: Suit::Diamond,
+            },
+	    Card {
+		rank: Rank::Four,
+		suit: Suit::Heart,
+            }
+	]);
+	gamehand.turn = Some(
+	    Card {
+		rank: Rank::Five,
+		suit: Suit::Diamond,
+            });
+
+	gamehand.river = Some(
+	    Card {
+		rank: Rank::Six,
+		suit: Suit::Spade,
+            });
+
+	gamehand.street = Street::River;
+	gamehand.current_bet = 1; // facing a raise
+	
+	// at the river we have a "good" (top pair), but the board looks great
+	let bot0 = players[index].as_ref().unwrap();
+
+	// sort of a weird/hacky way to test this, but get the action multiple times,
+	// and make sure for the most part we are folding
+	// (Ideally we would mock the randomness but thats a TODO)
+	let mut num_folds = 0;
+	for _ in 0..20 {
+	    let action = get_bot_action(&bot0, &gamehand, &players);
+	    if action == PlayerAction::Fold {
+		num_folds += 1;
+	    }
+	}
+        assert!(num_folds > 12);
+    }
+    
 }
